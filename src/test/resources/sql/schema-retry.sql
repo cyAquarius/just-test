@@ -1,0 +1,1 @@
+CREATE TABLE retry_table (id BIGINT PRIMARY KEY);
