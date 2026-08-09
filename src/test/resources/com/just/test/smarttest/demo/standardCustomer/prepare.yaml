@@ -1,0 +1,4 @@
+demo_product:
+  - id: 1
+    name: Coffee
+    price: 12.50
