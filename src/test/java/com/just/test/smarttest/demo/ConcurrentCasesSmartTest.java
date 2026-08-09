@@ -15,6 +15,8 @@ import org.springframework.test.context.ContextConfiguration;
 
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.CyclicBarrier;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -28,6 +30,7 @@ class ConcurrentCasesSmartTest implements SmartTestLifecycle {
     private static final AtomicInteger ACTIVE_CASES = new AtomicInteger();
     private static final AtomicInteger MAX_ACTIVE_CASES = new AtomicInteger();
     private static final Set<String> EXECUTION_THREADS = ConcurrentHashMap.newKeySet();
+    private static final CyclicBarrier CASE_START_BARRIER = new CyclicBarrier(2);
 
     @Autowired
     private JdbcTemplate jdbcTemplate;
@@ -39,7 +42,7 @@ class ConcurrentCasesSmartTest implements SmartTestLifecycle {
         MAX_ACTIVE_CASES.accumulateAndGet(active, Math::max);
         EXECUTION_THREADS.add(Thread.currentThread().getName());
         try {
-            Thread.sleep(150);
+            CASE_START_BARRIER.await(5, TimeUnit.SECONDS);
             assertEquals(1, jdbcTemplate.queryForObject(
                     "SELECT COUNT(*) FROM parallel_case_record", Integer.class));
             assertEquals(context.getString("marker"), jdbcTemplate.queryForObject(
