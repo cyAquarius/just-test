@@ -1,0 +1,76 @@
+package com.just.test.smarttest.scope;
+
+import org.springframework.beans.factory.ObjectFactory;
+import org.springframework.beans.factory.config.Scope;
+
+import java.util.HashMap;
+import java.util.Map;
+
+/**
+ * 线程级 Spring Scope，每个线程持有独立的 bean 实例。
+ *
+ * <p>与 {@code SmartTestRoutingDataSource} 的线程隔离策略对称：
+ * DataSource 按线程路由到独立 H2，Mock 按线程路由到独立 Mockito 实例。</p>
+ *
+ * <p>配合 {@code ScopedProxyMode.TARGET_CLASS} 使用，注入点拿到的是 CGLIB 代理，
+ * 每次方法调用委托给当前线程的实例，when() stubbing 天然线程隔离。</p>
+ *
+ * <p>每个 JUnit 工作线程独立持有实例，任务切换线程时不会继承其他 case 的 mock。</p>
+ */
+public class ThreadScope implements Scope {
+
+    private static final ThreadLocal<Map<String, Object>> SCOPE_MAP =
+            new ThreadLocal<Map<String, Object>>() {
+                @Override
+                protected Map<String, Object> initialValue() {
+                    return new HashMap<>();
+                }
+            };
+
+    private static final ThreadLocal<Map<String, Runnable>> DESTRUCTION_CALLBACKS =
+            ThreadLocal.withInitial(HashMap::new);
+
+    @Override
+    public Object get(String name, ObjectFactory<?> objectFactory) {
+        return SCOPE_MAP.get().computeIfAbsent(name, k -> objectFactory.getObject());
+    }
+
+    @Override
+    public Object remove(String name) {
+        return SCOPE_MAP.get().remove(name);
+    }
+
+    /**
+     * 清空当前线程所有 scoped bean。每个 case 执行前调用，确保 mock 状态干净。
+     */
+    public static void resetCurrentThread() {
+        Map<String, Runnable> callbacks = DESTRUCTION_CALLBACKS.get();
+        try {
+            for (Runnable callback : callbacks.values()) {
+                callback.run();
+            }
+        } finally {
+            DESTRUCTION_CALLBACKS.remove();
+            SCOPE_MAP.remove();
+        }
+    }
+
+    public static void clearCurrentThread() {
+        resetCurrentThread();
+    }
+
+    @Override
+    public void registerDestructionCallback(String name, Runnable callback) {
+        DESTRUCTION_CALLBACKS.get().put(name, callback);
+    }
+
+    @Override
+    public Object resolveContextualObject(String key) {
+        return null;
+    }
+
+    @Override
+    public String getConversationId() {
+        return Thread.currentThread().getName();
+    }
+}

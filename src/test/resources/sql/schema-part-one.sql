@@ -1,0 +1,1 @@
+CREATE TABLE first_table (id BIGINT PRIMARY KEY);

@@ -1,0 +1,3 @@
+parallel_case_record:
+  - id: 1
+    marker: D
