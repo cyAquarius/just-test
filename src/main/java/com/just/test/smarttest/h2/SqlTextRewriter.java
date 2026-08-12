@@ -59,7 +59,8 @@ final class SqlTextRewriter {
                 index = appendQuoted(sql, index, current, result, false);
                 pendingStringFunction = false;
             } else if (current == '"') {
-                index = appendQuoted(sql, index, current, result, inStringFunction);
+                index = appendQuoted(sql, index, current, result,
+                        inStringFunction || followsComparisonOperator(sql, index));
                 pendingStringFunction = false;
             } else if (startsLineComment(sql, index)) {
                 index = appendLineComment(sql, index, result);
@@ -113,6 +114,22 @@ final class SqlTextRewriter {
             end++;
         }
         return end < sql.length() && sql.charAt(end) == '(';
+    }
+
+    private static boolean followsComparisonOperator(String sql, int quoteIndex) {
+        int index = quoteIndex - 1;
+        while (index >= 0 && Character.isWhitespace(sql.charAt(index))) {
+            index--;
+        }
+        if (index < 0) {
+            return false;
+        }
+        char current = sql.charAt(index);
+        if (current == '=') {
+            return true;
+        }
+        return (current == '!' || current == '<' || current == '>')
+                && index + 1 < quoteIndex;
     }
 
     private static int appendQuoted(String sql, int index, char quote,
