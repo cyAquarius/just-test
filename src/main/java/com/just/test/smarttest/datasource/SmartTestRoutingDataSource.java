@@ -1,5 +1,6 @@
 package com.just.test.smarttest.datasource;
 
+import com.just.test.smarttest.context.CaseExecutionContext;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.DisposableBean;
@@ -13,8 +14,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicLong;
 
 /**
- * 按线程路由的 H2 数据源。每个线程对应一个独立的 H2 内存数据库，
- * 实现「不同类并行，同一类方法串行」时的数据隔离。
+ * 按执行 case 路由的 H2 数据源。每个 case 对应一个独立的 H2 内存数据库。
  *
  * <p>数据库数量 = JUnit 5 parallelism（线程池大小），而非测试类数量。
  * 线程复用时自动复用同一个数据库，由 Listener 的 TRUNCATE 清理残留数据。</p>
@@ -41,10 +41,10 @@ public class SmartTestRoutingDataSource extends AbstractDataSource implements Di
     }
 
     /**
-     * 获取当前线程对应的数据库标识（用于 SchemaInitializer 判断是否已初始化）。
+     * 获取当前 case 对应的数据库标识（用于 SchemaInitializer 判断是否已初始化）。
      */
     public String currentDbKey() {
-        return instanceKey + "_" + sanitizeThreadName(Thread.currentThread().getName());
+        return instanceKey + "_" + sanitizeCaseId(CaseExecutionContext.requireCaseId());
     }
 
     @Override
@@ -67,7 +67,7 @@ public class SmartTestRoutingDataSource extends AbstractDataSource implements Di
             ds.setUsername("sa");
             ds.setPassword("");
             ds.setSuppressClose(true);
-            log.info("[SmartTest] Created H2 database for thread [{}]: {}", k, url);
+            log.info("[SmartTest] Created H2 database for case [{}]: {}", k, url);
             return ds;
         });
     }
@@ -78,6 +78,15 @@ public class SmartTestRoutingDataSource extends AbstractDataSource implements Di
 
     void schemaInitializationFailed() {
         initializedSchemas.remove(currentDbKey());
+    }
+
+    public void releaseCurrentCase() {
+        String key = currentDbKey();
+        SingleConnectionDataSource dataSource = dataSources.remove(key);
+        initializedSchemas.remove(key);
+        if (dataSource != null) {
+            dataSource.destroy();
+        }
     }
 
     @Override
@@ -91,7 +100,7 @@ public class SmartTestRoutingDataSource extends AbstractDataSource implements Di
      * 清理线程名中不适合作为数据库名的字符。
      * H2 内存数据库名只允许字母、数字、下划线。
      */
-    private static String sanitizeThreadName(String name) {
+    private static String sanitizeCaseId(String name) {
         return name.replaceAll("[^a-zA-Z0-9]", "_");
     }
 }

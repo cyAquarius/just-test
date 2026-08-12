@@ -1,11 +1,6 @@
 package com.just.test.smarttest.lifecycle;
 
-import com.just.test.smarttest.context.ContextCreationLock;
-import com.just.test.smarttest.datasource.SchemaInitializer;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 import org.springframework.core.Ordered;
-import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.TestContext;
 import org.springframework.test.context.TestExecutionListener;
 
@@ -17,8 +12,6 @@ import org.springframework.test.context.TestExecutionListener;
  */
 public class SmartTestExecutionListener implements TestExecutionListener, Ordered {
 
-    private static final Logger log = LoggerFactory.getLogger(SmartTestExecutionListener.class);
-    private static final String SCHEMA_LOCATION = "classpath:sql/schema.sql";
 
     @Override
     public int getOrder() {
@@ -27,11 +20,6 @@ public class SmartTestExecutionListener implements TestExecutionListener, Ordere
 
     @Override
     public void beforeTestClass(TestContext testContext) {
-        synchronized (ContextCreationLock.LOCK) {
-            JdbcTemplate jdbcTemplate = SmartTestExtension.resolveJdbcTemplate(testContext.getApplicationContext());
-            if (jdbcTemplate != null) {
-                SchemaInitializer.initialize(jdbcTemplate, SCHEMA_LOCATION);
-            }
-        }
+        // Schema 必须在绑定活动 case 后初始化，避免 beforeTestClass 工作线程与 case 线程不一致。
     }
 }

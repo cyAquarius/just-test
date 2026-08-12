@@ -1,5 +1,7 @@
 package com.just.test.smarttest.h2;
 
+import com.just.test.smarttest.context.CaseContext;
+import com.just.test.smarttest.context.CaseExecutionContext;
 import com.just.test.smarttest.datasource.SchemaInitializer;
 import com.just.test.smarttest.datasource.SmartTestRoutingDataSource;
 import com.just.test.smarttest.loader.DataSetLoader;
@@ -17,6 +19,7 @@ class H2CompatibilityTest {
     void executesCleanedMySqlDdlOnH2() {
         SmartTestRoutingDataSource dataSource = new SmartTestRoutingDataSource(URL);
         try {
+            CaseExecutionContext.bind(new CaseContext("mysql-ddl", "test/mysql-ddl"));
             JdbcTemplate jdbcTemplate = new JdbcTemplate(dataSource);
             SchemaInitializer.initialize(jdbcTemplate, "classpath:sql/schema-mysql-compat.sql");
 
@@ -40,6 +43,7 @@ class H2CompatibilityTest {
             assertEquals(10L, jdbcTemplate.queryForObject(
                     "SELECT id FROM mysql_compat", Long.class));
         } finally {
+            CaseExecutionContext.clear();
             dataSource.destroy();
         }
     }
@@ -48,6 +52,7 @@ class H2CompatibilityTest {
     void executesRegisteredAndRewrittenMySqlFunctions() {
         SmartTestRoutingDataSource dataSource = new SmartTestRoutingDataSource(URL);
         try {
+            CaseExecutionContext.bind(new CaseContext("mysql-functions", "test/mysql-functions"));
             JdbcTemplate jdbcTemplate = new JdbcTemplate(dataSource);
             SchemaInitializer.initialize(jdbcTemplate, "classpath:sql/schema-concurrent.sql");
 
@@ -67,6 +72,7 @@ class H2CompatibilityTest {
                             "SELECT REPLACE('a,b', \",\", \"-\")"),
                     String.class));
         } finally {
+            CaseExecutionContext.clear();
             dataSource.destroy();
         }
     }

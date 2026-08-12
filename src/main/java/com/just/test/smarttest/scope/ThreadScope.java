@@ -5,6 +5,7 @@ import org.springframework.beans.factory.config.Scope;
 
 import java.util.HashMap;
 import java.util.Map;
+import java.util.UUID;
 
 /**
  * 线程级 Spring Scope，每个线程持有独立的 bean 实例。
@@ -29,16 +30,18 @@ public class ThreadScope implements Scope {
 
     private static final ThreadLocal<Map<String, Runnable>> DESTRUCTION_CALLBACKS =
             ThreadLocal.withInitial(HashMap::new);
+    private final String scopeKey = UUID.randomUUID().toString();
 
     @Override
     public Object get(String name, ObjectFactory<?> objectFactory) {
-        return SCOPE_MAP.get().computeIfAbsent(name, k -> objectFactory.getObject());
+        return SCOPE_MAP.get().computeIfAbsent(qualifiedName(name), k -> objectFactory.getObject());
     }
 
     @Override
     public Object remove(String name) {
-        DESTRUCTION_CALLBACKS.get().remove(name);
-        return SCOPE_MAP.get().remove(name);
+        String qualifiedName = qualifiedName(name);
+        DESTRUCTION_CALLBACKS.get().remove(qualifiedName);
+        return SCOPE_MAP.get().remove(qualifiedName);
     }
 
     /**
@@ -74,7 +77,7 @@ public class ThreadScope implements Scope {
 
     @Override
     public void registerDestructionCallback(String name, Runnable callback) {
-        DESTRUCTION_CALLBACKS.get().put(name, callback);
+        DESTRUCTION_CALLBACKS.get().put(qualifiedName(name), callback);
     }
 
     @Override
@@ -85,5 +88,9 @@ public class ThreadScope implements Scope {
     @Override
     public String getConversationId() {
         return Thread.currentThread().getName();
+    }
+
+    private String qualifiedName(String name) {
+        return scopeKey + ":" + name;
     }
 }

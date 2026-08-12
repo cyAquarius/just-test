@@ -21,7 +21,7 @@ It is deliberately a test-scope framework: it supplies repeatable test setup, as
 - `prepare.yaml`, `response.yaml`, `expect.yaml`, and `expect_exception.yaml` cover data setup and result, database, and exception verification.
 - `@SmartMock` creates a thread-scoped Mockito mock. When several beans share a type, SmartTest resolves the target deterministically through `name`, `@Qualifier`, field name, `@Primary`, then a unique type candidate.
 - `@ThreadScopedMock` applies the same scoped-mock model to an annotated `@Bean` method.
-- The H2 test database is isolated per SmartTest `ApplicationContext` and executing worker thread; schema initialization is retried after failure and data is deterministically cleared between cases.
+- The H2 test database is isolated per SmartTest `ApplicationContext` and active case; each case database is released at case end, and schema initialization is retried after failure.
 - MyBatis test SQL receives narrowly scoped MySQL-to-H2 rewrites: `IF(...)` becomes `CASEWHEN(...)`; legacy double-quoted string literals are supported inside known string functions and on the right side of comparison operators.
 
 ## Boundaries and concurrency
@@ -29,7 +29,7 @@ It is deliberately a test-scope framework: it supplies repeatable test setup, as
 SmartTest isolates the test resources it owns. It does **not** make arbitrary application code globally parallel-safe.
 
 - Static registries initialized by application code remain an application concern.
-- Manually created threads, `CompletableFuture` common-pool tasks, and executors not managed by SmartTest do not receive mock or database context automatically.
+- Manually created threads, `CompletableFuture` common-pool tasks, and executors not managed by SmartTest do not receive mock or database context automatically; database access without an active case fails fast instead of creating an empty H2 database.
 - A passing rerun is not proof of concurrency safety. Keep flaky suites serial until their ownership and lifecycle boundaries are established.
 - Write new SQL with standard single-quoted strings. The double-quote rewrite is only a compatibility bridge for existing MySQL mapper SQL.
 
@@ -122,13 +122,13 @@ For database expectations, prefer explicit `[C]` fields so the intended row is u
 
 For every YAML case SmartTest performs:
 
-1. initialize the schema for the active database when needed and clear all business tables;
+1. bind a unique case identity, initialize its database schema, and prepare a clean database;
 2. load `prepare.yaml`;
 3. reset and prewarm scoped mocks, then inject `@SmartMock` fields;
 4. invoke matching `@BeforeCase("case-name")` methods and `beforeExecute`;
 5. execute the JUnit method, then `afterExecute`;
 6. verify exception, result, and database data unless the `SmartTestLifecycle` implementation opts out;
-7. release scoped objects and retain cleanup failures as suppressed exceptions without hiding the test failure.
+7. release scoped objects and the case database, then retain cleanup failures as suppressed exceptions without hiding the test failure.
 
 ## Build and publish
 

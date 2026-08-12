@@ -1,5 +1,7 @@
 package com.just.test.smarttest.datasource;
 
+import com.just.test.smarttest.context.CaseContext;
+import com.just.test.smarttest.context.CaseExecutionContext;
 import com.just.test.smarttest.loader.DataSetLoader;
 import org.junit.jupiter.api.Test;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -27,8 +29,10 @@ class SmartTestRoutingDataSourceTest {
         SmartTestRoutingDataSource first = new SmartTestRoutingDataSource(URL);
         SmartTestRoutingDataSource second = new SmartTestRoutingDataSource(URL);
         try {
+            bindCase("contexts");
             assertNotEquals(first.currentDbKey(), second.currentDbKey());
         } finally {
+            CaseExecutionContext.clear();
             first.destroy();
             second.destroy();
         }
@@ -37,11 +41,13 @@ class SmartTestRoutingDataSourceTest {
     @Test
     void releasesMemoryDatabaseWhenContextIsDestroyed() {
         SmartTestRoutingDataSource dataSource = new SmartTestRoutingDataSource(URL);
+        bindCase("release");
         String databaseKey = dataSource.currentDbKey();
         JdbcTemplate jdbcTemplate = new JdbcTemplate(dataSource);
         jdbcTemplate.execute("CREATE TABLE released_table(id INT PRIMARY KEY)");
 
         dataSource.destroy();
+        CaseExecutionContext.clear();
 
         JdbcTemplate reopened = new JdbcTemplate(new org.springframework.jdbc.datasource.DriverManagerDataSource(
                 "jdbc:h2:mem:" + databaseKey + ";MODE=MySQL", "sa", ""));
@@ -54,6 +60,7 @@ class SmartTestRoutingDataSourceTest {
     void initializesAllSchemaResourcesAndCleansEveryTable() {
         SmartTestRoutingDataSource dataSource = new SmartTestRoutingDataSource(URL);
         try {
+            bindCase("clean");
             JdbcTemplate jdbcTemplate = new JdbcTemplate(dataSource);
             SchemaInitializer.initialize(jdbcTemplate,
                     "classpath:sql/schema-part-one.sql", "classpath:sql/schema-part-two.sql");
@@ -71,6 +78,7 @@ class SmartTestRoutingDataSourceTest {
             assertEquals(0, jdbcTemplate.queryForObject("SELECT COUNT(*) FROM second_table", Integer.class));
             assertEquals(0, jdbcTemplate.queryForObject("SELECT COUNT(*) FROM unexpected_audit", Integer.class));
         } finally {
+            CaseExecutionContext.clear();
             dataSource.destroy();
         }
     }
@@ -79,6 +87,7 @@ class SmartTestRoutingDataSourceTest {
     void retriesInitializationAfterFailure() {
         SmartTestRoutingDataSource dataSource = new SmartTestRoutingDataSource(URL);
         try {
+            bindCase("retry");
             JdbcTemplate jdbcTemplate = new JdbcTemplate(dataSource);
             assertThrows(RuntimeException.class, () -> SchemaInitializer.initialize(
                     jdbcTemplate, "classpath:sql/schema-invalid.sql"));
@@ -89,6 +98,7 @@ class SmartTestRoutingDataSourceTest {
                     "SELECT COUNT(*) FROM INFORMATION_SCHEMA.TABLES WHERE UPPER(TABLE_NAME) = 'RETRY_TABLE'",
                     Integer.class));
         } finally {
+            CaseExecutionContext.clear();
             dataSource.destroy();
         }
     }
@@ -104,6 +114,7 @@ class SmartTestRoutingDataSourceTest {
                 for (int caseIndex = 0; caseIndex < 4; caseIndex++) {
                     final String marker = "round-" + round + "-case-" + caseIndex;
                     futures.add(executor.submit(() -> {
+                        bindCase(marker);
                         JdbcTemplate jdbcTemplate = new JdbcTemplate(dataSource);
                         SchemaInitializer.initialize(jdbcTemplate, "classpath:sql/schema-concurrent.sql");
                         DataSetLoader.cleanTables(jdbcTemplate);
@@ -114,7 +125,12 @@ class SmartTestRoutingDataSourceTest {
                                 "SELECT COUNT(*) FROM concurrent_record", Integer.class));
                         assertEquals(marker, jdbcTemplate.queryForObject(
                                 "SELECT marker FROM concurrent_record WHERE id = 1", String.class));
-                        return dataSource.currentDbKey();
+                        try {
+                            return dataSource.currentDbKey();
+                        } finally {
+                            dataSource.releaseCurrentCase();
+                            CaseExecutionContext.clear();
+                        }
                     }));
                 }
                 Set<String> databaseKeys = new HashSet<>();
@@ -127,5 +143,42 @@ class SmartTestRoutingDataSourceTest {
             executor.shutdownNow();
             dataSource.destroy();
         }
+    }
+
+    @Test
+    void rejectsDatabaseAccessOutsideSmartTestCase() {
+        SmartTestRoutingDataSource dataSource = new SmartTestRoutingDataSource(URL);
+        try {
+            IllegalStateException failure = assertThrows(IllegalStateException.class, dataSource::getConnection);
+            org.junit.jupiter.api.Assertions.assertTrue(failure.getMessage().contains("active SmartTest case"));
+        } finally {
+            dataSource.destroy();
+        }
+    }
+
+    @Test
+    void isolatesCasesReusingTheSameThread() {
+        SmartTestRoutingDataSource dataSource = new SmartTestRoutingDataSource(URL);
+        try {
+            bindCase("first");
+            String firstKey = dataSource.currentDbKey();
+            new JdbcTemplate(dataSource).execute("CREATE TABLE first_case(id INT)");
+            dataSource.releaseCurrentCase();
+            CaseExecutionContext.clear();
+
+            bindCase("second");
+            String secondKey = dataSource.currentDbKey();
+            assertNotEquals(firstKey, secondKey);
+            assertEquals(0, new JdbcTemplate(dataSource).queryForObject(
+                    "SELECT COUNT(*) FROM INFORMATION_SCHEMA.TABLES WHERE UPPER(TABLE_NAME) = 'FIRST_CASE'",
+                    Integer.class));
+        } finally {
+            CaseExecutionContext.clear();
+            dataSource.destroy();
+        }
+    }
+
+    private static void bindCase(String name) {
+        CaseExecutionContext.bind(new CaseContext(name, "test/" + name));
     }
 }
