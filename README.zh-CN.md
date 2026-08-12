@@ -16,7 +16,7 @@
 
 ## SmartTest 提供的能力
 
-- `@SmartTest` 配置 Spring Test、H2、`JdbcTemplate` 与测试事务管理器。
+- `@SmartTest` 配置 Spring Test、H2、`JdbcTemplate` 与事务管理器，使被测服务可以按正常事务行为执行。
 - `@CaseSource` 发现 YAML 用例，并将 `CaseContext` 传给 JUnit 参数化测试。
 - 通过 `prepare.yaml`、`response.yaml`、`expect.yaml`、`expect_exception.yaml` 完成数据准备以及结果、数据库和异常验证。
 - `@SmartMock` 创建线程作用域 Mockito mock；同类型多 Bean 时，按 `name`、`@Qualifier`、字段名、`@Primary`、唯一类型候选的顺序确定目标。
@@ -30,6 +30,7 @@ SmartTest 只隔离自己拥有的测试资源，不能让任意业务代码天�
 
 - 业务代码初始化的 static registry 仍由业务侧负责。
 - 手工线程、`CompletableFuture` common pool 和未由 SmartTest 接管的 executor，不会自动获得 mock 或数据库上下文；没有活动 case 的数据库访问会立即失败，而不会静默创建空 H2。
+- 测试方法上的 Spring `@Transactional` 与 `@Sql` 不支持用于 `@CaseSource`：它们的生命周期早于 case 绑定。请使用 `prepare.yaml` 和 `expect.yaml` 管理确定性的 case 数据。
 - 重跑成功不能证明并发安全。存在 Flake 的测试应保持串行，直到其所有权和生命周期边界清晰。
 - 新 SQL 应使用标准单引号字符串；双引号改写仅是兼容历史 MySQL Mapper 的过渡能力。
 

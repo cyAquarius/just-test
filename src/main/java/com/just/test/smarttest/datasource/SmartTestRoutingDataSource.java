@@ -13,6 +13,7 @@ import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.locks.ReentrantReadWriteLock;
 
 /**
  * 按执行 case 路由的 H2 数据源。每个 case 对应一个独立的 H2 内存数据库。
@@ -31,6 +32,8 @@ public class SmartTestRoutingDataSource extends AbstractDataSource implements Di
     private final ConcurrentHashMap<String, SingleConnectionDataSource> dataSources = new ConcurrentHashMap<>();
     private final Set<String> initializedSchemas = ConcurrentHashMap.newKeySet();
     private final AtomicBoolean destroyed = new AtomicBoolean();
+    private final ReentrantReadWriteLock lifecycleLock = new ReentrantReadWriteLock();
+    private final ThreadLocal<Boolean> caseLease = new ThreadLocal<>();
 
     /**
      * @param urlTemplate H2 URL 模板，{key} 占位符在运行时替换为 case 标识。
@@ -44,8 +47,13 @@ public class SmartTestRoutingDataSource extends AbstractDataSource implements Di
      * 获取当前 case 对应的数据库标识（用于 SchemaInitializer 判断是否已初始化）。
      */
     public String currentDbKey() {
-        assertNotDestroyed();
-        return instanceKey + "_" + sanitizeCaseId(CaseExecutionContext.requireCaseId());
+        lifecycleLock.readLock().lock();
+        try {
+            assertNotDestroyed();
+            return instanceKey + "_" + sanitizeCaseId(CaseExecutionContext.requireCaseId());
+        } finally {
+            lifecycleLock.readLock().unlock();
+        }
     }
 
     @Override
@@ -59,18 +67,41 @@ public class SmartTestRoutingDataSource extends AbstractDataSource implements Di
     }
 
     private SingleConnectionDataSource resolve() {
-        String key = currentDbKey();
-        return dataSources.computeIfAbsent(key, k -> {
-            String url = urlTemplate.replace("{key}", k);
-            SingleConnectionDataSource ds = new SingleConnectionDataSource();
-            ds.setDriverClassName("org.h2.Driver");
-            ds.setUrl(url);
-            ds.setUsername("sa");
-            ds.setPassword("");
-            ds.setSuppressClose(true);
-            log.info("[SmartTest] Created H2 database for case [{}]: {}", k, url);
-            return ds;
-        });
+        lifecycleLock.readLock().lock();
+        try {
+            String key = currentDbKey();
+            return dataSources.computeIfAbsent(key, k -> {
+                String url = urlTemplate.replace("{key}", k);
+                SingleConnectionDataSource ds = new SingleConnectionDataSource();
+                ds.setDriverClassName("org.h2.Driver");
+                ds.setUrl(url);
+                ds.setUsername("sa");
+                ds.setPassword("");
+                ds.setSuppressClose(true);
+                log.info("[SmartTest] Created H2 database for case [{}]: {}", k, url);
+                return ds;
+            });
+        } finally {
+            lifecycleLock.readLock().unlock();
+        }
+    }
+
+    /**
+     * 将当前线程的 SmartTest case 注册为活动使用方。ApplicationContext 销毁会等待
+     * 已注册的 case 释放数据库，避免关闭后的旧引用重新创建空 H2。
+     */
+    public void beginCase() {
+        if (caseLease.get() != null) {
+            throw new IllegalStateException("[SmartTest] A database case is already active on this thread.");
+        }
+        lifecycleLock.readLock().lock();
+        try {
+            assertNotDestroyed();
+            caseLease.set(Boolean.TRUE);
+        } catch (RuntimeException e) {
+            lifecycleLock.readLock().unlock();
+            throw e;
+        }
     }
 
     boolean beginSchemaInitialization() {
@@ -82,22 +113,38 @@ public class SmartTestRoutingDataSource extends AbstractDataSource implements Di
     }
 
     public void releaseCurrentCase() {
-        String key = currentDbKey();
-        SingleConnectionDataSource dataSource = dataSources.remove(key);
-        initializedSchemas.remove(key);
-        if (dataSource != null) {
-            dataSource.destroy();
+        boolean ownsLease = caseLease.get() != null;
+        if (!ownsLease) {
+            lifecycleLock.readLock().lock();
+        }
+        try {
+            String key = currentDbKey();
+            SingleConnectionDataSource dataSource = dataSources.remove(key);
+            initializedSchemas.remove(key);
+            if (dataSource != null) {
+                dataSource.destroy();
+            }
+        } finally {
+            if (ownsLease) {
+                caseLease.remove();
+            }
+            lifecycleLock.readLock().unlock();
         }
     }
 
     @Override
     public void destroy() {
-        if (!destroyed.compareAndSet(false, true)) {
-            return;
+        lifecycleLock.writeLock().lock();
+        try {
+            if (!destroyed.compareAndSet(false, true)) {
+                return;
+            }
+            dataSources.values().forEach(SingleConnectionDataSource::destroy);
+            dataSources.clear();
+            initializedSchemas.clear();
+        } finally {
+            lifecycleLock.writeLock().unlock();
         }
-        dataSources.values().forEach(SingleConnectionDataSource::destroy);
-        dataSources.clear();
-        initializedSchemas.clear();
     }
 
     private void assertNotDestroyed() {

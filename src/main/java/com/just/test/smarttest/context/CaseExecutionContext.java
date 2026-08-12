@@ -16,7 +16,7 @@ public final class CaseExecutionContext {
         String caseId = CASE_ID.get();
         if (caseId == null) {
             throw new IllegalStateException("[SmartTest] Database access requires an active SmartTest case. "
-                    + "Use a SmartTest-managed executor or explicitly keep asynchronous work within the case lifecycle.");
+                    + "Asynchronous work does not inherit this context; do not access the SmartTest database from it.");
         }
         return caseId;
     }
