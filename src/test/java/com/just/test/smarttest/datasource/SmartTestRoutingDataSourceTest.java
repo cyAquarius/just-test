@@ -17,6 +17,7 @@ import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
@@ -69,6 +70,29 @@ class SmartTestRoutingDataSourceTest {
             org.junit.jupiter.api.Assertions.assertTrue(failure.getMessage().contains("ApplicationContext was destroyed"));
         } finally {
             CaseExecutionContext.clear();
+            dataSource.destroy();
+        }
+    }
+
+    @Test
+    void waitsForActiveCaseBeforeDestroyingContext() throws Exception {
+        SmartTestRoutingDataSource dataSource = new SmartTestRoutingDataSource(URL);
+        ExecutorService executor = Executors.newSingleThreadExecutor();
+        try {
+            bindCase("active");
+            dataSource.beginCase();
+            new JdbcTemplate(dataSource).execute("CREATE TABLE active_case(id INT)");
+
+            Future<?> destroy = executor.submit(dataSource::destroy);
+            Thread.sleep(100);
+            assertFalse(destroy.isDone(), "Context destruction must wait for the active case");
+
+            dataSource.releaseCurrentCase();
+            destroy.get(5, TimeUnit.SECONDS);
+            assertThrows(IllegalStateException.class, dataSource::getConnection);
+        } finally {
+            CaseExecutionContext.clear();
+            executor.shutdownNow();
             dataSource.destroy();
         }
     }

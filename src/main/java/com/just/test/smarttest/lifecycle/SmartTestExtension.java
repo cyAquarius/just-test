@@ -62,6 +62,7 @@ public class SmartTestExtension implements InvocationInterceptor {
         String casePath = ctx.getCasePath();
 
         ApplicationContext appCtx = SpringExtension.getApplicationContext(extensionContext);
+        SmartTestRoutingDataSource routingDataSource = beginCaseDatabase(appCtx);
         Throwable testFailure = null;
         try {
             CaseExecutionContext.bind(ctx);
@@ -142,17 +143,31 @@ public class SmartTestExtension implements InvocationInterceptor {
             testFailure = t;
             throw t;
         } finally {
+            Throwable cleanupFailure = null;
             try {
                 ThreadScope.clearCurrentThread();
-            } catch (RuntimeException cleanupFailure) {
+            } catch (Throwable t) {
+                cleanupFailure = t;
+            }
+            try {
+                if (routingDataSource != null) {
+                    routingDataSource.releaseCurrentCase();
+                }
+            } catch (Throwable t) {
+                if (cleanupFailure == null) {
+                    cleanupFailure = t;
+                } else {
+                    cleanupFailure.addSuppressed(t);
+                }
+            } finally {
+                CaseExecutionContext.clear();
+            }
+            if (cleanupFailure != null) {
                 if (testFailure != null) {
                     testFailure.addSuppressed(cleanupFailure);
                 } else {
                     throw cleanupFailure;
                 }
-            } finally {
-                releaseCaseDatabase(appCtx);
-                CaseExecutionContext.clear();
             }
         }
     }
@@ -195,11 +210,14 @@ public class SmartTestExtension implements InvocationInterceptor {
         return resolveJdbcTemplate(SpringExtension.getApplicationContext(extensionContext));
     }
 
-    private void releaseCaseDatabase(ApplicationContext context) {
+    private SmartTestRoutingDataSource beginCaseDatabase(ApplicationContext context) {
         try {
-            context.getBean(SmartTestRoutingDataSource.class).releaseCurrentCase();
+            SmartTestRoutingDataSource dataSource = context.getBean(SmartTestRoutingDataSource.class);
+            dataSource.beginCase();
+            return dataSource;
         } catch (NoSuchBeanDefinitionException ignored) {
             // 使用外部数据源时由外部生命周期管理。
+            return null;
         }
     }
 

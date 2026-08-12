@@ -10,8 +10,8 @@ import java.util.UUID;
 /**
  * 线程级 Spring Scope，每个线程持有独立的 bean 实例。
  *
- * <p>与 {@code SmartTestRoutingDataSource} 的线程隔离策略对称：
- * DataSource 按线程路由到独立 H2，Mock 按线程路由到独立 Mockito 实例。</p>
+ * <p>Mock 按工作线程隔离；{@code SmartTestRoutingDataSource} 则按执行 case
+ * 隔离数据库。二者都在 case 生命周期开始和结束时清理，避免线程复用残留状态。</p>
  *
  * <p>配合 {@code ScopedProxyMode.TARGET_CLASS} 使用，注入点拿到的是 CGLIB 代理，
  * 每次方法调用委托给当前线程的实例，when() stubbing 天然线程隔离。</p>
