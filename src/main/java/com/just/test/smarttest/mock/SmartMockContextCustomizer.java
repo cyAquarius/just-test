@@ -22,17 +22,17 @@ import java.util.Set;
  */
 class SmartMockContextCustomizer implements ContextCustomizer {
 
-    private final Set<Class<?>> mockTypes;
+    private final Set<SmartMockDefinition> mockDefinitions;
 
-    SmartMockContextCustomizer(Set<Class<?>> mockTypes) {
-        this.mockTypes = mockTypes;
+    SmartMockContextCustomizer(Set<SmartMockDefinition> mockDefinitions) {
+        this.mockDefinitions = mockDefinitions;
     }
 
     @Override
     public void customizeContext(ConfigurableApplicationContext context,
                                  MergedContextConfiguration mergedConfig) {
         registerSmartTestConfiguration(context);
-        SmartMockPostProcessor postProcessor = new SmartMockPostProcessor(mockTypes);
+        SmartMockPostProcessor postProcessor = new SmartMockPostProcessor(mockDefinitions);
         // 仅通过 addBeanFactoryPostProcessor 注册一次。
         // 之前同时 registerSingleton + addBeanFactoryPostProcessor 会让 Spring 执行 PostProcessor 两次
         // （一次作为 BeanFactoryPostProcessor bean,一次来自 context.beanFactoryPostProcessors 列表),
@@ -56,11 +56,11 @@ class SmartMockContextCustomizer implements ContextCustomizer {
         if (this == o) return true;
         if (o == null || getClass() != o.getClass()) return false;
         SmartMockContextCustomizer that = (SmartMockContextCustomizer) o;
-        return Objects.equals(mockTypes, that.mockTypes);
+        return Objects.equals(mockDefinitions, that.mockDefinitions);
     }
 
     @Override
     public int hashCode() {
-        return Objects.hash(mockTypes);
+        return Objects.hash(mockDefinitions);
     }
 }
