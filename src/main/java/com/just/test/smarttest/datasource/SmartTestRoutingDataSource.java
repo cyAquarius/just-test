@@ -11,15 +11,14 @@ import java.sql.Connection;
 import java.sql.SQLException;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
 
 /**
  * 按执行 case 路由的 H2 数据源。每个 case 对应一个独立的 H2 内存数据库。
  *
- * <p>数据库数量 = JUnit 5 parallelism（线程池大小），而非测试类数量。
- * 线程复用时自动复用同一个数据库，由 Listener 的 TRUNCATE 清理残留数据。</p>
- *
- * <p>未配置并行时，所有类在同一线程执行，只创建 1 个数据库，等价于原单库行为。</p>
+ * <p>数据库数量 = 当前活动 case 数量。case 结束时会释放对应的内存数据库，
+ * 因此线程复用不会复用上一个 case 的数据。</p>
  */
 public class SmartTestRoutingDataSource extends AbstractDataSource implements DisposableBean {
 
@@ -31,9 +30,10 @@ public class SmartTestRoutingDataSource extends AbstractDataSource implements Di
     private final String instanceKey = "smarttest_" + INSTANCE_SEQUENCE.incrementAndGet();
     private final ConcurrentHashMap<String, SingleConnectionDataSource> dataSources = new ConcurrentHashMap<>();
     private final Set<String> initializedSchemas = ConcurrentHashMap.newKeySet();
+    private final AtomicBoolean destroyed = new AtomicBoolean();
 
     /**
-     * @param urlTemplate H2 URL 模板，{key} 占位符在运行时替换为线程标识。
+     * @param urlTemplate H2 URL 模板，{key} 占位符在运行时替换为 case 标识。
      *                    示例：jdbc:h2:mem:{key};MODE=MySQL;DB_CLOSE_DELAY=-1
      */
     public SmartTestRoutingDataSource(String urlTemplate) {
@@ -44,6 +44,7 @@ public class SmartTestRoutingDataSource extends AbstractDataSource implements Di
      * 获取当前 case 对应的数据库标识（用于 SchemaInitializer 判断是否已初始化）。
      */
     public String currentDbKey() {
+        assertNotDestroyed();
         return instanceKey + "_" + sanitizeCaseId(CaseExecutionContext.requireCaseId());
     }
 
@@ -91,9 +92,18 @@ public class SmartTestRoutingDataSource extends AbstractDataSource implements Di
 
     @Override
     public void destroy() {
+        if (!destroyed.compareAndSet(false, true)) {
+            return;
+        }
         dataSources.values().forEach(SingleConnectionDataSource::destroy);
         dataSources.clear();
         initializedSchemas.clear();
+    }
+
+    private void assertNotDestroyed() {
+        if (destroyed.get()) {
+            throw new IllegalStateException("[SmartTest] Database access attempted after its ApplicationContext was destroyed.");
+        }
     }
 
     /**

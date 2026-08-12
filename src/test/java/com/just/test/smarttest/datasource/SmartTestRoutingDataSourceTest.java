@@ -57,6 +57,23 @@ class SmartTestRoutingDataSourceTest {
     }
 
     @Test
+    void rejectsDatabaseAccessAfterContextIsDestroyed() {
+        SmartTestRoutingDataSource dataSource = new SmartTestRoutingDataSource(URL);
+        try {
+            bindCase("destroyed");
+            new JdbcTemplate(dataSource).execute("CREATE TABLE before_destroy(id INT)");
+
+            dataSource.destroy();
+
+            IllegalStateException failure = assertThrows(IllegalStateException.class, dataSource::getConnection);
+            org.junit.jupiter.api.Assertions.assertTrue(failure.getMessage().contains("ApplicationContext was destroyed"));
+        } finally {
+            CaseExecutionContext.clear();
+            dataSource.destroy();
+        }
+    }
+
+    @Test
     void initializesAllSchemaResourcesAndCleansEveryTable() {
         SmartTestRoutingDataSource dataSource = new SmartTestRoutingDataSource(URL);
         try {
