@@ -1,6 +1,7 @@
 package com.just.test.smarttest.mock;
 
 import com.just.test.smarttest.annotation.SmartMock;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.aop.framework.Advised;
@@ -43,7 +44,16 @@ public class SmartMockTestExecutionListener implements TestExecutionListener {
 
     private static void injectMock(Object testInstance, Field field, ApplicationContext ctx) {
         try {
-            Object bean = ctx.getBean(field.getType());
+            SmartMock smartMock = field.getAnnotation(SmartMock.class);
+            Qualifier qualifier = field.getAnnotation(Qualifier.class);
+            SmartMockDefinition definition = new SmartMockDefinition(field.getType(), field.getName(),
+                    smartMock.name(), qualifier == null ? "" : qualifier.value(),
+                    field.getDeclaringClass().getName());
+            String beanName = ctx.getBean(SmartMockBindings.class).getBeanName(definition);
+            if (beanName == null) {
+                throw new IllegalStateException("No resolved bean binding for " + definition.describe());
+            }
+            Object bean = ctx.getBean(beanName);
             // 从 ScopedProxy 解析出当前线程的实际 Mockito mock
             if (bean instanceof Advised) {
                 bean = ((Advised) bean).getTargetSource().getTarget();

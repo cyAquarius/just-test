@@ -29,4 +29,6 @@ import java.lang.annotation.Target;
 @Target(ElementType.FIELD)
 @Retention(RetentionPolicy.RUNTIME)
 public @interface SmartMock {
+    /** 显式指定要替换的 Bean 名；未指定时按 Spring 的常见注入语义解析。 */
+    String name() default "";
 }
