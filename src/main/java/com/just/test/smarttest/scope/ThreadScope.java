@@ -37,6 +37,7 @@ public class ThreadScope implements Scope {
 
     @Override
     public Object remove(String name) {
+        DESTRUCTION_CALLBACKS.get().remove(name);
         return SCOPE_MAP.get().remove(name);
     }
 
@@ -45,13 +46,25 @@ public class ThreadScope implements Scope {
      */
     public static void resetCurrentThread() {
         Map<String, Runnable> callbacks = DESTRUCTION_CALLBACKS.get();
+        RuntimeException cleanupFailure = null;
         try {
             for (Runnable callback : callbacks.values()) {
-                callback.run();
+                try {
+                    callback.run();
+                } catch (RuntimeException e) {
+                    if (cleanupFailure == null) {
+                        cleanupFailure = e;
+                    } else {
+                        cleanupFailure.addSuppressed(e);
+                    }
+                }
             }
         } finally {
             DESTRUCTION_CALLBACKS.remove();
             SCOPE_MAP.remove();
+        }
+        if (cleanupFailure != null) {
+            throw cleanupFailure;
         }
     }
 
