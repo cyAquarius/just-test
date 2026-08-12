@@ -1,35 +1,48 @@
 # just-test
 
-just-test 是一个面向自动化测试的通用工具库。当前提供 SmartTest：基于 Spring、H2、JUnit 5 和 YAML 的数据驱动集成测试框架。
+[中文文档](README.zh-CN.md)
 
-## 兼容范围
+`just-test` is a reusable Java test toolkit. Its current module, SmartTest, provides YAML-driven Spring integration tests backed by JUnit 5 and an isolated in-memory H2 database.
+
+It is deliberately a test-scope framework: it supplies repeatable test setup, assertions, and test doubles, but it does not replace application design, production database compatibility testing, or concurrency control in application code.
+
+## Compatibility
 
 - Java 8
 - Spring Boot 2.7.18
 - JUnit 5.9.3
 - H2 2.x
+- Maven
 
-框架代码位于 `com.just.test.smarttest`，业务项目只应在测试范围内引入本依赖。
+## What SmartTest provides
 
-## 构建与本地安装
+- `@SmartTest` configures Spring Test, H2, `JdbcTemplate`, and a transaction manager for test use.
+- `@CaseSource` discovers YAML cases and passes a `CaseContext` into a parameterized JUnit test.
+- `prepare.yaml`, `response.yaml`, `expect.yaml`, and `expect_exception.yaml` cover data setup and result, database, and exception verification.
+- `@SmartMock` creates a thread-scoped Mockito mock. When several beans share a type, SmartTest resolves the target deterministically through `name`, `@Qualifier`, field name, `@Primary`, then a unique type candidate.
+- `@ThreadScopedMock` applies the same scoped-mock model to an annotated `@Bean` method.
+- The H2 test database is isolated per SmartTest `ApplicationContext` and executing worker thread; schema initialization is retried after failure and data is deterministically cleared between cases.
+- MyBatis test SQL receives narrowly scoped MySQL-to-H2 rewrites: `IF(...)` becomes `CASEWHEN(...)`; legacy double-quoted string literals are supported inside known string functions and on the right side of comparison operators.
 
-```bash
-mvn clean verify
-mvn clean install
-```
+## Boundaries and concurrency
 
-构建和测试均使用 Maven，产物默认安装到本机 `~/.m2`。
+SmartTest isolates the test resources it owns. It does **not** make arbitrary application code globally parallel-safe.
 
-## 引入依赖
+- Static registries initialized by application code remain an application concern.
+- Manually created threads, `CompletableFuture` common-pool tasks, and executors not managed by SmartTest do not receive mock or database context automatically.
+- A passing rerun is not proof of concurrency safety. Keep flaky suites serial until their ownership and lifecycle boundaries are established.
+- Write new SQL with standard single-quoted strings. The double-quote rewrite is only a compatibility bridge for existing MySQL mapper SQL.
+
+## Add the dependency
+
+Use this library only in test scope:
 
 ```xml
 <repositories>
     <repository>
         <id>github</id>
         <url>https://maven.pkg.github.com/cyaquarius/just-test</url>
-        <snapshots>
-            <enabled>true</enabled>
-        </snapshots>
+        <snapshots><enabled>true</enabled></snapshots>
     </repository>
 </repositories>
 
@@ -41,27 +54,11 @@ mvn clean install
 </dependency>
 ```
 
-GitHub Packages 中的私有包需要认证。请在消费方的 `~/.m2/settings.xml` 中配置只读凭据，不要把 Token 写入项目：
+GitHub Packages requires credentials in the consumer's `~/.m2/settings.xml`. Keep the token outside the project, for example `${env.GITHUB_PACKAGES_TOKEN}`. A classic PAT needs `read:packages`; private-repository consumers also need `repo`.
 
-```xml
-<settings xmlns="http://maven.apache.org/SETTINGS/1.0.0"
-          xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
-          xsi:schemaLocation="http://maven.apache.org/SETTINGS/1.0.0 https://maven.apache.org/xsd/settings-1.0.0.xsd">
-    <servers>
-        <server>
-            <id>github</id>
-            <username>cyAquarius</username>
-            <password>${env.GITHUB_PACKAGES_TOKEN}</password>
-        </server>
-    </servers>
-</settings>
-```
+## Write a test
 
-`GITHUB_PACKAGES_TOKEN` 应使用具有 `read:packages` 权限的 classic PAT。私有源码仓库的消费场景还需要 `repo` 权限。
-
-## 编写测试
-
-业务项目需要提供 `src/test/resources/sql/schema.sql`，框架会使用它初始化 H2 表结构。
+The consumer project must provide `src/test/resources/sql/schema.sql` for H2 schema initialization.
 
 ```java
 @SmartTest
@@ -71,40 +68,73 @@ class OrderServiceTest implements SmartTestLifecycle {
     @Autowired
     private OrderService orderService;
 
-    @ParameterizedTest
+    @SmartMock
+    private PricingClient pricingClient;
+
+    @ParameterizedTest(name = "{0}")
     @CaseSource
     void createOrder(CaseContext context) {
-        Object result = orderService.create(context.getLong("customerId"));
-        context.setResult(result);
+        context.setResult(orderService.create(context.getLong("customerId")));
     }
 }
 ```
 
-每个测试类的 YAML 用例默认放在与测试类包名和类名对应的目录中：
+Use `@SmartMock(name = "beanName")` or `@Qualifier("beanName")` when a type has multiple candidates.
+
+By default, cases live below the test class package and simple name:
 
 ```text
 src/test/resources/com/example/order/OrderServiceTest/
-├── normal/
-│   ├── request.yaml
-│   ├── prepare.yaml
-│   ├── response.yaml
-│   └── expect.yaml
-└── failure/
+└── create-order/
     ├── request.yaml
     ├── prepare.yaml
+    ├── response.yaml
+    ├── expect.yaml
     └── expect_exception.yaml
 ```
 
-- `request.yaml`：测试输入。
-- `prepare.yaml`：执行前写入 H2 的数据。
-- `response.yaml`：预期返回值。
-- `expect.yaml`：预期数据库状态。
-- `expect_exception.yaml`：预期异常。
+`@CaseSource("custom-root")` uses a custom root below the test class package. If the default class-name directory is absent, SmartTest remains compatible with the older package-level case layout.
 
-生命周期为：清理脏表 → 加载 `prepare.yaml` → 执行 `@BeforeCase` → 执行测试 → 验证返回值、异常和数据库。
+## YAML files and flags
 
-## 发布
+- `request.yaml`: input exposed through `CaseContext` (`getString`, `getLong`, `getInt`, `getObject`, `getList`, and `getMap`).
+- `prepare.yaml`: rows inserted before the case.
+- `response.yaml`: expected return value.
+- `expect.yaml`: expected database rows.
+- `expect_exception.yaml`: expected exception type and optional message.
 
-推送到 `main` 后，GitHub Actions 会使用仓库自带的 `GITHUB_TOKEN` 自动执行 Java 8 构建，并将当前版本发布到 GitHub Packages。也可以在 Actions 页面手动触发发布工作流。
+Field suffix flags apply to response and database assertions:
 
-仓库只包含可复用框架代码和最小演示，不应加入具体业务包、业务表结构或业务测试用例。
+| Flag | Meaning |
+| --- | --- |
+| `[C]` | Row selection key; also enables unordered list matching. |
+| `[CN]` | Selected row must not exist. |
+| `[N]` | Skip the field; in `prepare.yaml`, do not insert it. |
+| `[R]` | Regular-expression match. |
+| `[A]` | Non-null assertion. |
+| `[D]` / `[D60]` | Timestamp tolerance in seconds (default: 60). |
+| `[J]` | JSON structural comparison. |
+| `[F]` | Raw database function in `prepare.yaml`, such as `NOW()`. |
+
+For database expectations, prefer explicit `[C]` fields so the intended row is unambiguous.
+
+## Lifecycle
+
+For every YAML case SmartTest performs:
+
+1. initialize the schema for the active database when needed and clear all business tables;
+2. load `prepare.yaml`;
+3. reset and prewarm scoped mocks, then inject `@SmartMock` fields;
+4. invoke matching `@BeforeCase("case-name")` methods and `beforeExecute`;
+5. execute the JUnit method, then `afterExecute`;
+6. verify exception, result, and database data unless the `SmartTestLifecycle` implementation opts out;
+7. release scoped objects and retain cleanup failures as suppressed exceptions without hiding the test failure.
+
+## Build and publish
+
+```bash
+mvn clean verify
+mvn clean install
+```
+
+Pushing to `main` runs the Java 8 GitHub Actions workflow, which executes `mvn clean deploy` and publishes the configured version to GitHub Packages. This repository contains reusable framework code and minimal demos only; do not add product-specific packages, schemas, or tests.
