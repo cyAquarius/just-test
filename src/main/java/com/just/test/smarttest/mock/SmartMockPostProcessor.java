@@ -34,11 +34,12 @@ import java.util.Set;
 class SmartMockPostProcessor implements BeanFactoryPostProcessor {
 
     private static final Logger log = LoggerFactory.getLogger(SmartMockPostProcessor.class);
+    private static final String SCOPED_TARGET_PREFIX = "scopedTarget.";
 
-    private final Set<Class<?>> mockTypes;
+    private final Set<SmartMockDefinition> mockDefinitions;
 
-    SmartMockPostProcessor(Set<Class<?>> mockTypes) {
-        this.mockTypes = mockTypes;
+    SmartMockPostProcessor(Set<SmartMockDefinition> mockDefinitions) {
+        this.mockDefinitions = mockDefinitions;
     }
 
     @Override
@@ -50,19 +51,31 @@ class SmartMockPostProcessor implements BeanFactoryPostProcessor {
         BeanDefinitionRegistry registry = (BeanDefinitionRegistry) beanFactory;
 
         // 合并 @SmartMock 字段类型 + @ThreadScopedMock @Bean 方法返回类型
-        Set<Class<?>> allMockTypes = new LinkedHashSet<>(mockTypes);
-        allMockTypes.addAll(collectThreadScopedMockTypes(beanFactory));
+        Set<SmartMockDefinition> allMockDefinitions = new LinkedHashSet<>(mockDefinitions);
+        allMockDefinitions.addAll(collectThreadScopedMockDefinitions(beanFactory));
 
         Set<String> registeredBeanNames = new LinkedHashSet<>();
-        for (Class<?> mockType : allMockTypes) {
-            String beanName = registerThreadScopedMock(beanFactory, registry, mockType);
+        java.util.Map<SmartMockDefinition, String> bindings = new java.util.LinkedHashMap<>();
+        for (SmartMockDefinition definition : allMockDefinitions) {
+            String beanName = registerThreadScopedMock(beanFactory, registry, definition);
             if (beanName != null) {
                 registeredBeanNames.add(beanName);
+                bindings.put(definition, beanName);
             }
         }
 
+        registerBindingsBean(registry, bindings);
         // 注册 Registry bean，供 SmartTestExtension 在 case 开始时预热所有 thread-scoped mock
         registerRegistryBean(registry, registeredBeanNames);
+    }
+
+    private void registerBindingsBean(BeanDefinitionRegistry registry,
+                                      java.util.Map<SmartMockDefinition, String> bindings) {
+        BeanDefinition definition = BeanDefinitionBuilder
+                .genericBeanDefinition(SmartMockBindings.class,
+                        () -> new SmartMockBindings(bindings))
+                .getBeanDefinition();
+        registry.registerBeanDefinition("smartMockBindings", definition);
     }
 
     private void registerRegistryBean(BeanDefinitionRegistry registry, Set<String> beanNames) {
@@ -81,8 +94,8 @@ class SmartMockPostProcessor implements BeanFactoryPostProcessor {
      * <p>Spring 处理 {@code @Configuration} 时，每个 {@code @Bean} 方法会产生
      * {@code AnnotatedBeanDefinition}，通过 {@code getFactoryMethodMetadata()} 可读取方法级注解。</p>
      */
-    private Set<Class<?>> collectThreadScopedMockTypes(ConfigurableListableBeanFactory beanFactory) {
-        Set<Class<?>> types = new LinkedHashSet<>();
+    private Set<SmartMockDefinition> collectThreadScopedMockDefinitions(ConfigurableListableBeanFactory beanFactory) {
+        Set<SmartMockDefinition> definitions = new LinkedHashSet<>();
         for (String beanName : beanFactory.getBeanDefinitionNames()) {
             BeanDefinition bd = beanFactory.getBeanDefinition(beanName);
             if (!(bd instanceof AnnotatedBeanDefinition)) {
@@ -100,47 +113,80 @@ class SmartMockPostProcessor implements BeanFactoryPostProcessor {
                 log.warn("[SmartMock] @ThreadScopedMock bean '{}' has null type, skipping", beanName);
                 continue;
             }
-            types.add(type);
+            definitions.add(new SmartMockDefinition(type, beanName, beanName, "", "@ThreadScopedMock"));
             log.debug("[SmartMock] Discovered @ThreadScopedMock bean '{}' of type {}", beanName, type.getSimpleName());
         }
-        return types;
+        return definitions;
     }
 
     private String registerThreadScopedMock(ConfigurableListableBeanFactory beanFactory,
                                             BeanDefinitionRegistry registry,
-                                            Class<?> mockType) {
-        // 找到现有 bean 名称
-        String[] beanNames = beanFactory.getBeanNamesForType(mockType, true, false);
-        if (beanNames.length == 0) {
-            log.warn("[SmartMock] No existing bean found for type {}, registering new mock", mockType.getName());
-            beanNames = new String[]{generateBeanName(mockType)};
-        } else if (beanNames.length > 1) {
-            throw new IllegalStateException(String.format(
-                    "[SmartMock] Multiple beans found for type %s: %s. "
-                            + "SmartMock cannot choose a target safely.",
-                    mockType.getName(), java.util.Arrays.toString(beanNames)));
-        } else {
-            String name = beanNames[0];
-            if (registry.containsBeanDefinition(name)) {
-                registry.removeBeanDefinition(name);
-                log.debug("[SmartMock] Removed existing bean definition: {}", name);
+                                            SmartMockDefinition definition) {
+        String targetBeanName = resolveBeanName(beanFactory, definition);
+        if (registry.containsBeanDefinition(targetBeanName)) {
+            registry.removeBeanDefinition(targetBeanName);
+            String scopedTargetName = ScopedProxyUtils.getTargetBeanName(targetBeanName);
+            if (registry.containsBeanDefinition(scopedTargetName)) {
+                registry.removeBeanDefinition(scopedTargetName);
             }
+            log.debug("[SmartMock] Removed existing bean definition: {}", targetBeanName);
         }
 
-        String targetBeanName = beanNames[0];
-        String innerBeanName = "smartMock.target." + targetBeanName;
-
         // 注册 thread-scoped mock bean
-        BeanDefinition mockDef = createMockBeanDefinition(mockType);
-        registry.registerBeanDefinition(innerBeanName, mockDef);
-
-        // 包装 ScopedProxy，原 bean 名称指向 proxy
-        BeanDefinitionHolder holder = new BeanDefinitionHolder(mockDef, innerBeanName);
+        BeanDefinition mockDef = createMockBeanDefinition(definition.getType());
+        BeanDefinitionHolder holder = new BeanDefinitionHolder(mockDef, targetBeanName);
         BeanDefinitionHolder proxy = ScopedProxyUtils.createScopedProxy(holder, registry, true);
         registry.registerBeanDefinition(targetBeanName, proxy.getBeanDefinition());
 
-        log.info("[SmartMock] Registered thread-scoped mock for {} as '{}'", mockType.getSimpleName(), targetBeanName);
+        log.info("[SmartMock] Registered thread-scoped mock for {} as '{}'", definition.getType().getSimpleName(), targetBeanName);
         return targetBeanName;
+    }
+
+    private String resolveBeanName(ConfigurableListableBeanFactory beanFactory,
+                                   SmartMockDefinition definition) {
+        String[] candidates = beanFactory.getBeanNamesForType(definition.getType(), true, false);
+        java.util.LinkedHashSet<String> logicalCandidates = new java.util.LinkedHashSet<>();
+        for (String candidate : candidates) {
+            if (!candidate.startsWith(SCOPED_TARGET_PREFIX)) {
+                logicalCandidates.add(candidate);
+            }
+        }
+        if (!definition.getExplicitBeanName().isEmpty()) {
+            return requireCandidate(definition, logicalCandidates, definition.getExplicitBeanName());
+        }
+        if (!definition.getQualifier().isEmpty()) {
+            return requireCandidate(definition, logicalCandidates, definition.getQualifier());
+        }
+        if (logicalCandidates.isEmpty()) {
+            String generated = generateBeanName(definition.getType());
+            log.warn("[SmartMock] No existing bean found for {}, registering '{}'", definition.describe(), generated);
+            return generated;
+        }
+        String primary = null;
+        for (String candidate : logicalCandidates) {
+            if (beanFactory.containsBeanDefinition(candidate)
+                    && beanFactory.getBeanDefinition(candidate).isPrimary()) {
+                if (primary != null) {
+                    throw ambiguous(definition, logicalCandidates);
+                }
+                primary = candidate;
+            }
+        }
+        if (primary != null) return primary;
+        if (logicalCandidates.contains(definition.getFieldName())) return definition.getFieldName();
+        if (logicalCandidates.size() == 1) return logicalCandidates.iterator().next();
+        throw ambiguous(definition, logicalCandidates);
+    }
+
+    private String requireCandidate(SmartMockDefinition definition, Set<String> candidates, String requestedName) {
+        if (candidates.contains(requestedName)) return requestedName;
+        throw new IllegalStateException("[SmartMock] No bean named '" + requestedName + "' for "
+                + definition.describe() + ". Candidates: " + candidates);
+    }
+
+    private IllegalStateException ambiguous(SmartMockDefinition definition, Set<String> candidates) {
+        return new IllegalStateException("[SmartMock] Multiple beans found for " + definition.describe()
+                + ": " + candidates + ". Use @SmartMock(name = \"...\") or @Qualifier.");
     }
 
     private String generateBeanName(Class<?> type) {
