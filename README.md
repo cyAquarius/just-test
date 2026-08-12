@@ -16,7 +16,7 @@ It is deliberately a test-scope framework: it supplies repeatable test setup, as
 
 ## What SmartTest provides
 
-- `@SmartTest` configures Spring Test, H2, `JdbcTemplate`, and a transaction manager for test use.
+- `@SmartTest` configures Spring Test, H2, `JdbcTemplate`, and a transaction manager so application services can exercise their normal transaction behavior.
 - `@CaseSource` discovers YAML cases and passes a `CaseContext` into a parameterized JUnit test.
 - `prepare.yaml`, `response.yaml`, `expect.yaml`, and `expect_exception.yaml` cover data setup and result, database, and exception verification.
 - `@SmartMock` creates a thread-scoped Mockito mock. When several beans share a type, SmartTest resolves the target deterministically through `name`, `@Qualifier`, field name, `@Primary`, then a unique type candidate.
@@ -30,6 +30,7 @@ SmartTest isolates the test resources it owns. It does **not** make arbitrary ap
 
 - Static registries initialized by application code remain an application concern.
 - Manually created threads, `CompletableFuture` common-pool tasks, and executors not managed by SmartTest do not receive mock or database context automatically; database access without an active case fails fast instead of creating an empty H2 database.
+- Test-level Spring `@Transactional` and `@Sql` are not supported for `@CaseSource` methods: their lifecycle runs before a case is bound. Use `prepare.yaml` and `expect.yaml` for deterministic case data instead.
 - A passing rerun is not proof of concurrency safety. Keep flaky suites serial until their ownership and lifecycle boundaries are established.
 - Write new SQL with standard single-quoted strings. The double-quote rewrite is only a compatibility bridge for existing MySQL mapper SQL.
 
