@@ -16,7 +16,7 @@ import javax.sql.DataSource;
 @Configuration
 public class SmartTestDataSourceConfig {
     public static final String DEFAULT_H2_URL =
-            "jdbc:h2:mem:{key};MODE=MySQL;DB_CLOSE_DELAY=-1;"
+            "jdbc:h2:mem:{key};MODE=MySQL;"
                     + "DATABASE_TO_LOWER=TRUE;CASE_INSENSITIVE_IDENTIFIERS=TRUE";
 
     @Bean
