@@ -33,4 +33,14 @@ class SqlTextRewriterTest {
         assertEquals("SELECT REPLACE(name, 'a', 'b') /* REPLACE(\"x\", \"y\") */",
                 SqlTextRewriter.rewriteDoubleQuotedLiterals(sql));
     }
+
+    @Test
+    void rewritesDoubleQuotedLiteralOnRightSideOfComparisonOnly() {
+        String sql = "SELECT \"quoted_column\" FROM sample WHERE description != \"historical\" "
+                + "AND category = \"A\"";
+
+        assertEquals("SELECT \"quoted_column\" FROM sample WHERE description != 'historical' "
+                        + "AND category = 'A'",
+                SqlTextRewriter.rewriteDoubleQuotedLiterals(sql));
+    }
 }
