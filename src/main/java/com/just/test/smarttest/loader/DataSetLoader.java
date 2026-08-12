@@ -33,13 +33,6 @@ public class DataSetLoader {
     private static final String ALL_TABLES_SQL =
             "SELECT TABLE_NAME FROM INFORMATION_SCHEMA.TABLES "
                     + "WHERE TABLE_SCHEMA = CURRENT_SCHEMA() AND TABLE_TYPE = 'BASE TABLE'";
-    private static final String DIRTY_TABLES_SQL =
-            "SELECT T.TABLE_NAME FROM INFORMATION_SCHEMA.TABLES T "
-                    + "WHERE T.TABLE_SCHEMA = CURRENT_SCHEMA() AND T.TABLE_TYPE = 'BASE TABLE' "
-                    + "AND (T.ROW_COUNT_ESTIMATE <> 0 OR EXISTS ("
-                    + "SELECT 1 FROM INFORMATION_SCHEMA.COLUMNS C "
-                    + "WHERE C.TABLE_SCHEMA = T.TABLE_SCHEMA AND C.TABLE_NAME = T.TABLE_NAME "
-                    + "AND C.IS_IDENTITY = 'YES' AND C.IDENTITY_BASE <> C.IDENTITY_START))";
 
     /**
      * 校验表名只包含安全字符（字母、数字、下划线）。
@@ -69,18 +62,16 @@ public class DataSetLoader {
     }
 
     /**
-     * 清空当前 Schema 中有数据或 identity 已推进的表，避免测试间数据污染。
-     * H2 1.4 无法可靠判断 identity 状态时回退为全表清理。
+     * 清空当前 Schema 的全部业务表，避免测试间数据污染。
+     *
+     * <p>不能以 H2 的行数估算决定是否清理：它是性能统计，不是隔离正确性信号。
+     * 后续若需要优化，应使用精确的写表跟踪，而不是跳过可能残留的表。</p>
      */
     public static void cleanTables(JdbcTemplate jdbcTemplate) {
         jdbcTemplate.execute((ConnectionCallback<Void>) connection -> {
             List<String> tables = new ArrayList<>();
-            // H2 2.x 能从元数据准确识别有数据或 identity 已推进的表；
-            // H2 1.4 缺少 identity 元数据，兼容模式下继续执行全表清理。
-            String tableQuery = connection.getMetaData().getDatabaseMajorVersion() >= 2
-                    ? DIRTY_TABLES_SQL : ALL_TABLES_SQL;
             try (Statement query = connection.createStatement();
-                 ResultSet resultSet = query.executeQuery(tableQuery)) {
+                 ResultSet resultSet = query.executeQuery(ALL_TABLES_SQL)) {
                 while (resultSet.next()) {
                     String table = resultSet.getString(1);
                     validateTableName(table);
@@ -99,7 +90,7 @@ public class DataSetLoader {
                     cleanup.execute("SET REFERENTIAL_INTEGRITY TRUE");
                 }
             }
-            log.debug("[SmartTest] Truncated {} dirty tables in one batch", tables.size());
+            log.debug("[SmartTest] Truncated {} tables in one batch", tables.size());
             return null;
         });
     }
