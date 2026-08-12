@@ -59,6 +59,7 @@ public class SmartTestExtension implements InvocationInterceptor {
         JdbcTemplate jdbcTemplate = getJdbcTemplate(extensionContext);
         String casePath = ctx.getCasePath();
 
+        Throwable testFailure = null;
         try {
             // 1. clean
             if (jdbcTemplate != null) {
@@ -135,8 +136,19 @@ public class SmartTestExtension implements InvocationInterceptor {
 
             log.debug("[SmartTest] Verification passed for case: {}", ctx.getCaseName());
 
+        } catch (Throwable t) {
+            testFailure = t;
+            throw t;
         } finally {
-            ThreadScope.clearCurrentThread();
+            try {
+                ThreadScope.clearCurrentThread();
+            } catch (RuntimeException cleanupFailure) {
+                if (testFailure != null) {
+                    testFailure.addSuppressed(cleanupFailure);
+                } else {
+                    throw cleanupFailure;
+                }
+            }
         }
     }
 
