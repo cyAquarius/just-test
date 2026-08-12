@@ -59,4 +59,16 @@ class ThreadScopeTest {
 
         assertTrue(!destroyed.get());
     }
+
+    @Test
+    void isolatesSameBeanNameAcrossScopeInstancesOnOneThread() {
+        ThreadScope firstScope = new ThreadScope();
+        ThreadScope secondScope = new ThreadScope();
+
+        Object first = firstScope.get("client", Object::new);
+        Object second = secondScope.get("client", Object::new);
+
+        assertNotSame(first, second);
+        ThreadScope.clearCurrentThread();
+    }
 }

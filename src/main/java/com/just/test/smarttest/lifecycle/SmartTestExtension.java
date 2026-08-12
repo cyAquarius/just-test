@@ -2,6 +2,8 @@ package com.just.test.smarttest.lifecycle;
 
 import com.just.test.smarttest.annotation.BeforeCase;
 import com.just.test.smarttest.context.CaseContext;
+import com.just.test.smarttest.context.CaseExecutionContext;
+import com.just.test.smarttest.datasource.SmartTestRoutingDataSource;
 import com.just.test.smarttest.datasource.SchemaInitializer;
 import com.just.test.smarttest.loader.DataSetLoader;
 import com.just.test.smarttest.mock.SmartMockTestExecutionListener;
@@ -59,8 +61,10 @@ public class SmartTestExtension implements InvocationInterceptor {
         JdbcTemplate jdbcTemplate = getJdbcTemplate(extensionContext);
         String casePath = ctx.getCasePath();
 
+        ApplicationContext appCtx = SpringExtension.getApplicationContext(extensionContext);
         Throwable testFailure = null;
         try {
+            CaseExecutionContext.bind(ctx);
             // 1. clean
             if (jdbcTemplate != null) {
                 SchemaInitializer.initialize(jdbcTemplate, SCHEMA_LOCATION);
@@ -72,8 +76,6 @@ public class SmartTestExtension implements InvocationInterceptor {
 
             // 3. reset thread-scoped mocks（每个 case 拿到全新 mock 实例）
             ThreadScope.resetCurrentThread();
-
-            ApplicationContext appCtx = SpringExtension.getApplicationContext(extensionContext);
 
             // 3.5 预热所有 thread-scoped mock，避免 ScopedProxy 懒加载与 Mockito matcher 时序冲突
             //    （@Autowired 注入的 ScopedProxy 在测试里首次 when(proxy.method(anyMatcher())) 时
@@ -148,6 +150,9 @@ public class SmartTestExtension implements InvocationInterceptor {
                 } else {
                     throw cleanupFailure;
                 }
+            } finally {
+                releaseCaseDatabase(appCtx);
+                CaseExecutionContext.clear();
             }
         }
     }
@@ -188,6 +193,14 @@ public class SmartTestExtension implements InvocationInterceptor {
 
     private JdbcTemplate getJdbcTemplate(ExtensionContext extensionContext) {
         return resolveJdbcTemplate(SpringExtension.getApplicationContext(extensionContext));
+    }
+
+    private void releaseCaseDatabase(ApplicationContext context) {
+        try {
+            context.getBean(SmartTestRoutingDataSource.class).releaseCurrentCase();
+        } catch (NoSuchBeanDefinitionException ignored) {
+            // 使用外部数据源时由外部生命周期管理。
+        }
     }
 
     /**

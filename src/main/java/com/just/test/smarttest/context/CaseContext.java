@@ -4,6 +4,7 @@ import com.alibaba.fastjson2.JSON;
 
 import java.math.BigDecimal;
 import java.util.Collections;
+import java.util.UUID;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
@@ -21,6 +22,7 @@ public class CaseContext {
     private final String caseName;
     private final String casePath;
     private final Map<String, Object> params;
+    private final String executionId = UUID.randomUUID().toString();
     private Object result;
     private Throwable exception;
 
@@ -48,6 +50,10 @@ public class CaseContext {
 
     public Map<String, Object> getParams() {
         return params;
+    }
+
+    public String getExecutionId() {
+        return executionId;
     }
 
     // ---- 类型安全的参数取值 ----
