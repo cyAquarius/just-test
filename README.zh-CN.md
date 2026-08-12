@@ -21,7 +21,7 @@
 - 通过 `prepare.yaml`、`response.yaml`、`expect.yaml`、`expect_exception.yaml` 完成数据准备以及结果、数据库和异常验证。
 - `@SmartMock` 创建线程作用域 Mockito mock；同类型多 Bean 时，按 `name`、`@Qualifier`、字段名、`@Primary`、唯一类型候选的顺序确定目标。
 - `@ThreadScopedMock` 将同一 scoped mock 模型用于标注的 `@Bean` 方法。
-- H2 数据库按 SmartTest `ApplicationContext` 与执行工作线程隔离；schema 初始化失败可重试，case 间确定性清理数据。
+- H2 数据库按 SmartTest `ApplicationContext` 与活动 case 隔离；case 结束时释放对应数据库，schema 初始化失败可重试。
 - MyBatis 测试 SQL 进行受控的 MySQL→H2 改写：`IF(...)` 改为 `CASEWHEN(...)`；历史双引号字符串仅在已知字符串函数参数和比较运算符右值中兼容。
 
 ## 边界与并发
@@ -29,7 +29,7 @@
 SmartTest 只隔离自己拥有的测试资源，不能让任意业务代码天然全局并发安全。
 
 - 业务代码初始化的 static registry 仍由业务侧负责。
-- 手工线程、`CompletableFuture` common pool 和未由 SmartTest 接管的 executor，不会自动获得 mock 或数据库上下文。
+- 手工线程、`CompletableFuture` common pool 和未由 SmartTest 接管的 executor，不会自动获得 mock 或数据库上下文；没有活动 case 的数据库访问会立即失败，而不会静默创建空 H2。
 - 重跑成功不能证明并发安全。存在 Flake 的测试应保持串行，直到其所有权和生命周期边界清晰。
 - 新 SQL 应使用标准单引号字符串；双引号改写仅是兼容历史 MySQL Mapper 的过渡能力。
 
@@ -122,13 +122,13 @@ src/test/resources/com/example/order/OrderServiceTest/
 
 每个 YAML case 依次执行：
 
-1. 必要时初始化当前数据库 schema，并清理所有业务表；
+1. 绑定唯一 case 身份，初始化对应数据库 schema 并准备干净数据库；
 2. 加载 `prepare.yaml`；
 3. 重置、预热 scoped mock，并注入 `@SmartMock` 字段；
 4. 调用匹配的 `@BeforeCase("case-name")` 及 `beforeExecute`；
 5. 执行 JUnit 方法，然后调用 `afterExecute`；
 6. 除非 `SmartTestLifecycle` 明确跳过，否则验证异常、返回值和数据库；
-7. 释放 scoped 对象；清理失败作为 suppressed exception 保留，且不掩盖原始测试失败。
+7. 释放 scoped 对象与 case 数据库；清理失败作为 suppressed exception 保留，且不掩盖原始测试失败。
 
 ## 构建与发布
 
