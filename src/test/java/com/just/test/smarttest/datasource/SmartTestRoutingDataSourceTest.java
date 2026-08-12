@@ -20,7 +20,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 
 class SmartTestRoutingDataSourceTest {
 
-    private static final String URL = "jdbc:h2:mem:{key};MODE=MySQL;DB_CLOSE_DELAY=-1";
+    private static final String URL = "jdbc:h2:mem:{key};MODE=MySQL";
 
     @Test
     void isolatesDatabasesAcrossApplicationContexts() {
@@ -32,6 +32,22 @@ class SmartTestRoutingDataSourceTest {
             first.destroy();
             second.destroy();
         }
+    }
+
+    @Test
+    void releasesMemoryDatabaseWhenContextIsDestroyed() {
+        SmartTestRoutingDataSource dataSource = new SmartTestRoutingDataSource(URL);
+        String databaseKey = dataSource.currentDbKey();
+        JdbcTemplate jdbcTemplate = new JdbcTemplate(dataSource);
+        jdbcTemplate.execute("CREATE TABLE released_table(id INT PRIMARY KEY)");
+
+        dataSource.destroy();
+
+        JdbcTemplate reopened = new JdbcTemplate(new org.springframework.jdbc.datasource.DriverManagerDataSource(
+                "jdbc:h2:mem:" + databaseKey + ";MODE=MySQL", "sa", ""));
+        assertEquals(0, reopened.queryForObject(
+                "SELECT COUNT(*) FROM INFORMATION_SCHEMA.TABLES WHERE UPPER(TABLE_NAME) = 'RELEASED_TABLE'",
+                Integer.class));
     }
 
     @Test
