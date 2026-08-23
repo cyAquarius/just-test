@@ -40,10 +40,7 @@ public class H2MySqlIfInterceptor implements Interceptor {
     @Override
     public Object intercept(Invocation invocation) throws Throwable {
         StatementHandler handler = (StatementHandler) invocation.getTarget();
-        MetaObject metaObject = SystemMetaObject.forObject(handler);
-        while (metaObject.hasGetter("h.target")) {
-            metaObject = SystemMetaObject.forObject(metaObject.getValue("h.target"));
-        }
+        MetaObject metaObject = SystemMetaObject.forObject(MyBatisPluginTargetResolver.unwrap(handler));
         String originalSql = (String) metaObject.getValue("delegate.boundSql.sql");
 
         String rewrittenSql = SqlTextRewriter.rewriteIfFunctions(originalSql);

@@ -369,23 +369,7 @@ public class ResultVerifier {
 
             // 嵌套 List — 委托 verifyList
             if (expectValue instanceof List) {
-                if (!(actualValue instanceof List)) {
-                    failures.add(String.format("[%s]: expected List but got <%s>",
-                            fieldPath, actualValue == null ? "null" : actualValue.getClass().getSimpleName()));
-                    continue;
-                }
-                List<Object> expectList = (List<Object>) expectValue;
-                List<Object> actualList = (List<Object>) actualValue;
-                if (expectList.size() != actualList.size()) {
-                    failures.add(String.format("[%s]: expected list size %d but got %d",
-                            fieldPath, expectList.size(), actualList.size()));
-                    continue;
-                }
-                if (hasKeyFlag(expectList)) {
-                    verifyListUnordered(actualList, expectList, fieldPath, failures);
-                } else {
-                    verifyListOrdered(actualList, expectList, fieldPath, failures);
-                }
+                failures.addAll(verifyList(actualValue, (List<Object>) expectValue, fieldPath));
                 continue;
             }
 
