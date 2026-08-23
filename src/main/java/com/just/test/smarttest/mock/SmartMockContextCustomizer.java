@@ -13,7 +13,7 @@ import java.util.Set;
 /**
  * 将 {@link SmartMockPostProcessor} 注册到 ApplicationContext。
  *
- * <p>equals/hashCode 基于 mock 类型集合，决定 Spring Context 缓存 key：
+ * <p>equals/hashCode 基于影响 Bean 选择的 mock 语义，决定 Spring Context 缓存 key：
  * 相同 mock 组合共享 Context，不同组合独立 Context。</p>
  *
  * <p><b>Context 创建串行化</b>：通过全局锁确保同一时刻只有一个 Context 在初始化，

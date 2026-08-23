@@ -19,7 +19,7 @@ It is deliberately a test-scope framework: it supplies repeatable test setup, as
 - `@SmartTest` configures Spring Test, H2, `JdbcTemplate`, and a transaction manager so application services can exercise their normal transaction behavior.
 - `@CaseSource` discovers YAML cases and passes a `CaseContext` into a parameterized JUnit test.
 - `prepare.yaml`, `response.yaml`, `expect.yaml`, and `expect_exception.yaml` cover data setup and result, database, and exception verification.
-- `@SmartMock` creates a thread-scoped Mockito mock. When several beans share a type, SmartTest resolves the target deterministically through `name`, `@Qualifier`, field name, `@Primary`, then a unique type candidate.
+- `@SmartMock` creates a thread-scoped Mockito mock. When several beans share a type, an explicit `name` wins; otherwise SmartTest applies Spring autowire and qualifier rules, then resolves `@Primary`, field name or alias, and finally a unique candidate.
 - `@ThreadScopedMock` applies the same scoped-mock model to an annotated `@Bean` method.
 - The H2 test database is isolated per SmartTest `ApplicationContext` and active case; each case database is released at case end, and schema initialization is retried after failure.
 - MyBatis test SQL receives narrowly scoped MySQL-to-H2 rewrites: `IF(...)` becomes `CASEWHEN(...)`; legacy double-quoted string literals are supported inside known string functions and on the right side of comparison operators.
