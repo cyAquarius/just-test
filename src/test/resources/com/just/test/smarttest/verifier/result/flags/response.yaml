@@ -1,0 +1,8 @@
+status: ready
+ignored[N]: ignored
+metadata[J]: '{"enabled":true,"items":[2,1]}'
+items:
+  - id[C]: 2
+    name: second
+  - id[C]: 1
+    name[R]: 'fir.*'

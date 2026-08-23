@@ -79,14 +79,22 @@ final class SmartMockDefinition {
         if (this == other) return true;
         if (!(other instanceof SmartMockDefinition)) return false;
         SmartMockDefinition that = (SmartMockDefinition) other;
-        return Objects.equals(type, that.type)
-                && Objects.equals(fieldName, that.fieldName)
-                && Objects.equals(explicitBeanName, that.explicitBeanName)
+        if (!Objects.equals(type, that.type)
+                || !Objects.equals(explicitBeanName, that.explicitBeanName)) {
+            return false;
+        }
+        if (!explicitBeanName.isEmpty()) {
+            return true;
+        }
+        return Objects.equals(fieldName, that.fieldName)
                 && Objects.equals(qualifierAnnotations, that.qualifierAnnotations);
     }
 
     @Override
     public int hashCode() {
+        if (!explicitBeanName.isEmpty()) {
+            return Objects.hash(type, explicitBeanName);
+        }
         return Objects.hash(type, fieldName, explicitBeanName, qualifierAnnotations);
     }
 }
