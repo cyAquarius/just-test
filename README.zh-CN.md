@@ -85,6 +85,25 @@ class OrderServiceTest implements SmartTestLifecycle {
 
 同类型有多个候选 Bean 时，使用 `@SmartMock(name = "beanName")` 或 `@Qualifier("beanName")`。
 
+### Spring Boot Test 接入
+
+SmartTest 核心不依赖 Spring Boot Test。Spring Boot 消费工程需要加载 `application-{profile}.yml` 等 Boot TestContext 能力时，由消费工程提供与自身 Boot 版本一致的 `spring-boot-test`（通常已由 `spring-boot-starter-test` 引入），并组合 Boot bootstrapper：
+
+```java
+@SmartTest
+@BootstrapWith(SpringBootTestContextBootstrapper.class)
+@ContextConfiguration(classes = YourTestApplication.class)
+class OrderServiceSmartTest implements SmartTestLifecycle {
+
+    @CaseSource
+    void createOrder(CaseContext context) {
+        // application-test.yml 已按 @SmartTest 的 test profile 加载
+    }
+}
+```
+
+`YourTestApplication`、业务组件扫描及排除规则、Mapper 装配和项目级外部依赖 Mock 均由消费工程定义。替换 Spring Bean 时优先使用 `@SmartMock`；保留 Boot bootstrapper 是为了 Boot 配置加载，不代表必须使用 `@MockBean`。未使用 Spring Boot 的工程不需要引入任何 Boot Test 依赖。
+
 业务通过静态入口获取 Spring Context 时，可按 case 显式绑定：
 
 ```java
