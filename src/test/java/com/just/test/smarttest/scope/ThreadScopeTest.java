@@ -1,7 +1,14 @@
 package com.just.test.smarttest.scope;
 
+import com.just.test.smarttest.context.CaseContext;
+import com.just.test.smarttest.context.CaseExecutionContext;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 
@@ -10,6 +17,17 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class ThreadScopeTest {
+
+    @BeforeEach
+    void bindCase() {
+        CaseExecutionContext.bind(new CaseContext("scope-test", "scope-test"));
+    }
+
+    @AfterEach
+    void clearCase() {
+        ThreadScope.clearCurrentThread();
+        CaseExecutionContext.clear();
+    }
 
     @Test
     void resetDestroysAndRemovesCurrentThreadBeans() {
@@ -69,6 +87,32 @@ class ThreadScopeTest {
         Object second = secondScope.get("client", Object::new);
 
         assertNotSame(first, second);
-        ThreadScope.clearCurrentThread();
+    }
+
+    @Test
+    void rejectsAsyncAccessBeforeCreatingBean() throws Exception {
+        ThreadScope scope = new ThreadScope();
+        AtomicInteger creations = new AtomicInteger();
+        ExecutorService executor = Executors.newSingleThreadExecutor();
+        try {
+            Future<Throwable> result = executor.submit(() -> {
+                try {
+                    scope.get("client", () -> {
+                        creations.incrementAndGet();
+                        return new Object();
+                    });
+                    return null;
+                } catch (Throwable failure) {
+                    return failure;
+                }
+            });
+
+            Throwable failure = result.get();
+            assertTrue(failure instanceof IllegalStateException);
+            assertTrue(failure.getMessage().contains("requires an active SmartTest case"));
+            assertTrue(creations.get() == 0);
+        } finally {
+            executor.shutdownNow();
+        }
     }
 }

@@ -39,6 +39,17 @@ class ResultVerifierTest {
         assertTrue(failures.stream().anyMatch(failure -> failure.contains("result.status")));
     }
 
+    @Test
+    void rejectsMixedKeyedAndUnkeyedUnorderedItems() {
+        List<Map<String, Object>> actual = Arrays.asList(item(2, "second"), item(1, "first"));
+
+        List<String> failures = ResultVerifier.verify(actual,
+                "com/just/test/smarttest/verifier/result/mixed-keys");
+
+        assertTrue(failures.stream().anyMatch(
+                failure -> failure.contains("every expected item must declare at least one [C] field")));
+    }
+
     private static Map<String, Object> item(int id, String name) {
         Map<String, Object> item = new LinkedHashMap<>();
         item.put("id", id);

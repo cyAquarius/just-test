@@ -21,6 +21,10 @@ public final class CaseExecutionContext {
         return caseId;
     }
 
+    public static boolean hasActiveCase() {
+        return CASE_ID.get() != null;
+    }
+
     public static void clear() {
         CASE_ID.remove();
     }
