@@ -2,7 +2,7 @@
 
 [English](README.md)
 
-`just-test` 是可复用的 Java 测试工具库。当前模块 SmartTest 基于 JUnit 5、Spring 与隔离的 H2 内存库，提供 YAML 驱动的集成测试能力。
+`just-test` 是可复用的 Java 测试工具库。当前模块 SmartTest 基于 JUnit 5、Spring Boot 与隔离的 H2 内存库，提供 YAML 驱动的集成测试能力。
 
 它定位为测试范围框架：负责可重复的测试准备、断言与替身，不替代业务架构、生产数据库兼容性验证或业务代码的并发治理。
 
@@ -63,12 +63,28 @@ GitHub Packages 需要在消费项目的 `~/.m2/settings.xml` 中配置凭据。
 
 ## 编写测试
 
-消费项目必须提供 `src/test/resources/sql/schema.sql`，用于初始化 H2 表结构。
+SmartTest 统一使用 Spring Boot TestContext。消费项目必须提供 `src/test/resources/sql/schema.sql`，用于初始化 H2 表结构，并提供专用测试启动配置：
+
+```java
+// src/test/java/com/example/smarttest/SmartTestApplication.java
+@SpringBootConfiguration
+@EnableAutoConfiguration
+@ComponentScan(
+    basePackages = "com.example",
+    excludeFilters = @ComponentScan.Filter(
+        type = FilterType.ASSIGNABLE_TYPE,
+        classes = Application.class
+    )
+)
+public class SmartTestApplication {
+}
+```
+
+`SmartTestApplication` 是消费工程专用于 SmartTest 的测试启动配置，不需要 `main` 方法。将它放入独立测试包，并将所有 SmartTest 测试类放在该包或其子包下，例如 `com.example.smarttest.order`。Spring Boot 会先发现这个更近的测试配置，不会继续搜索父包中的生产 `Application`；仅放在 `src/test` 并不能避免两个启动类冲突，因为测试 classpath 同时包含生产类和测试类。扫描业务根包时还应像示例一样排除生产启动类，避免其配置被组件扫描重新加载；业务组件扫描及其他排除规则、Mapper 装配和项目级外部依赖 Mock 均由消费工程在这里定义。
 
 ```java
 @SmartTest
-@ContextConfiguration(classes = YourApplication.class)
-class OrderServiceTest implements SmartTestLifecycle {
+class OrderServiceSmartTest implements SmartTestLifecycle {
 
     @Autowired
     private OrderService orderService;
@@ -83,26 +99,9 @@ class OrderServiceTest implements SmartTestLifecycle {
 }
 ```
 
-同类型有多个候选 Bean 时，使用 `@SmartMock(name = "beanName")` 或 `@Qualifier("beanName")`。
+`@SmartTest` 已包含 Spring Boot bootstrapper，并通过 `test` profile 加载 `application-test.yml`，不要再组合 `@SpringBootTest` 或重复声明 `@BootstrapWith`。独立测试包内应只有一个可发现的 `@SpringBootConfiguration`。测试类不在其子包下、存在多个候选启动配置或某个测试需要特殊配置时，再使用 `@ContextConfiguration(classes = SmartTestApplication.class)` 显式选择。
 
-### Spring Boot Test 接入
-
-SmartTest 核心不依赖 Spring Boot Test。Spring Boot 消费工程需要加载 `application-{profile}.yml` 等 Boot TestContext 能力时，由消费工程提供与自身 Boot 版本一致的 `spring-boot-test`（通常已由 `spring-boot-starter-test` 引入），并组合 Boot bootstrapper：
-
-```java
-@SmartTest
-@BootstrapWith(SpringBootTestContextBootstrapper.class)
-@ContextConfiguration(classes = YourTestApplication.class)
-class OrderServiceSmartTest implements SmartTestLifecycle {
-
-    @CaseSource
-    void createOrder(CaseContext context) {
-        // application-test.yml 已按 @SmartTest 的 test profile 加载
-    }
-}
-```
-
-`YourTestApplication`、业务组件扫描及排除规则、Mapper 装配和项目级外部依赖 Mock 均由消费工程定义。替换 Spring Bean 时优先使用 `@SmartMock`；保留 Boot bootstrapper 是为了 Boot 配置加载，不代表必须使用 `@MockBean`。未使用 Spring Boot 的工程不需要引入任何 Boot Test 依赖。
+同类型有多个候选 Bean 时，使用 `@SmartMock(name = "beanName")` 或 `@Qualifier("beanName")`。替换 Spring Bean 时优先使用 `@SmartMock`，不要求使用 `@MockBean`。
 
 业务通过静态入口获取 Spring Context 时，可按 case 显式绑定：
 
