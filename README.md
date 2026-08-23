@@ -17,10 +17,11 @@ It is deliberately a test-scope framework: it supplies repeatable test setup, as
 ## What SmartTest provides
 
 - `@SmartTest` configures Spring Test, H2, `JdbcTemplate`, and a transaction manager so application services can exercise their normal transaction behavior.
-- `@CaseSource` discovers YAML cases and passes a `CaseContext` into a parameterized JUnit test.
+- `@CaseSource` discovers YAML cases and creates one full JUnit test-template invocation per case, with `CaseContext` available to the test and standard per-test lifecycle methods.
 - `prepare.yaml`, `response.yaml`, `expect.yaml`, and `expect_exception.yaml` cover data setup and result, database, and exception verification.
 - `@SmartMock` creates a thread-scoped Mockito mock. When several beans share a type, an explicit `name` wins; otherwise SmartTest applies Spring autowire and qualifier rules, then resolves `@Primary`, field name or alias, and finally a unique candidate.
 - `@ThreadScopedMock` applies the same scoped-mock model to an annotated `@Bean` method.
+- `StaticMockContext` can replace an application static context/factory gateway per case thread and restores it automatically at case end.
 - The H2 test database is isolated per SmartTest `ApplicationContext` and active case; each case database is released at case end, and schema initialization is retried after failure.
 - MyBatis test SQL receives narrowly scoped MySQL-to-H2 rewrites: `IF(...)` becomes `CASEWHEN(...)`; legacy double-quoted string literals are supported inside known string functions and on the right side of comparison operators.
 
@@ -29,6 +30,9 @@ It is deliberately a test-scope framework: it supplies repeatable test setup, as
 SmartTest isolates the test resources it owns. It does **not** make arbitrary application code globally parallel-safe.
 
 - Static registries initialized by application code remain an application concern.
+- Case static mocks affect only the current thread. They are active for user `@BeforeEach`, the test, and user `@AfterEach`; they cannot cover Spring context refresh or Spring Test listeners that run before the case invocation, and do not propagate to application-created asynchronous threads.
+- When multiple Spring contexts are detected, SmartTest emits one risk warning. A related case failure adds a diagnostic log without replacing the original exception. The presence of an arbitrary static mock does not suppress this hint because the framework cannot know whether it covers the relevant gateway.
+- New and legacy test classes can coexist; legacy classes without `@SmartTest` do not activate the SmartTest lifecycle. If both run in parallel while application code shares a JVM-static ContextHolder or factory, SmartTest cannot protect the legacy test thread. Keep affected legacy tests serial or migrate their static gateway.
 - Manually created threads, `CompletableFuture` common-pool tasks, and executors not managed by SmartTest do not receive mock or database context automatically; database access without an active case fails fast instead of creating an empty H2 database.
 - Test-level Spring `@Transactional` and `@Sql` are not supported for `@CaseSource` methods: their lifecycle runs before a case is bound. Use `prepare.yaml` and `expect.yaml` for deterministic case data instead.
 - A passing rerun is not proof of concurrency safety. Keep flaky suites serial until their ownership and lifecycle boundaries are established.
@@ -72,7 +76,6 @@ class OrderServiceTest implements SmartTestLifecycle {
     @SmartMock
     private PricingClient pricingClient;
 
-    @ParameterizedTest(name = "{0}")
     @CaseSource
     void createOrder(CaseContext context) {
         context.setResult(orderService.create(context.getLong("customerId")));
@@ -81,6 +84,21 @@ class OrderServiceTest implements SmartTestLifecycle {
 ```
 
 Use `@SmartMock(name = "beanName")` or `@Qualifier("beanName")` when a type has multiple candidates.
+
+If application code obtains Spring through a static gateway, bind that gateway explicitly per case:
+
+```java
+@Override
+public void configureStaticMocks(CaseContext context, StaticMockContext mocks) {
+    MockedStatic<SpringContextHolder> holder = mocks.mockStatic(SpringContextHolder.class);
+    holder.when(SpringContextHolder::getApplicationContext)
+          .thenReturn(mocks.getApplicationContext());
+}
+```
+
+Unstubbed static methods continue to call their real implementation. Do not close the returned `MockedStatic` manually; SmartTest closes all registrations after user `@AfterEach` on the original case thread.
+
+This feature requires the consumer to enable Mockito's inline mock maker explicitly. For example, put `mock-maker-inline` in the consumer's `src/test/resources/mockito-extensions/org.mockito.plugins.MockMaker`, or add `mockito-inline` matching its Mockito version. SmartTest does not select a MockMaker from its published JAR, avoiding conflicts with existing Mockito or PowerMock configuration.
 
 By default, cases live below the test class package and simple name:
 
@@ -121,15 +139,17 @@ For database expectations, prefer explicit `[C]` fields so the intended row is u
 
 ## Lifecycle
 
-For every YAML case SmartTest performs:
+`@SmartTest` is a class-level execution contract: every executable test method in the class must use `@CaseSource`. If the class contains `@Test`, `@RepeatedTest`, `@ParameterizedTest`, `@TestFactory`, or another ordinary JUnit test method, SmartTest fails before execution and asks you to split the class. For incremental adoption, leave existing JUnit test classes unchanged and put new cases in a separate `@SmartTest` class; legacy classes without `@SmartTest` are unaffected.
 
-1. bind a unique case identity, initialize its database schema, and prepare a clean database;
-2. load `prepare.yaml`;
-3. reset and prewarm scoped mocks, then inject `@SmartMock` fields;
-4. invoke matching `@BeforeCase("case-name")` methods and `beforeExecute`;
-5. execute the JUnit method, then `afterExecute`;
-6. verify exception, result, and database data unless the `SmartTestLifecycle` implementation opts out;
-7. release scoped objects and the case database, then retain cleanup failures as suppressed exceptions without hiding the test failure.
+`@CaseSource` is itself the test annotation; do not combine it with another JUnit test annotation. For every YAML case SmartTest performs:
+
+1. create an independent JUnit invocation and its `CaseContext`;
+2. bind the case, initialize its schema, prepare a clean database, and load `prepare.yaml`;
+3. reset and prewarm scoped mocks, inject `@SmartMock` fields, and configure case static mocks;
+4. execute user `@BeforeEach` methods;
+5. invoke matching `@BeforeCase("case-name")` methods and `beforeExecute`, execute the test, call `afterExecute`, and verify exception, result, and database data;
+6. execute user `@AfterEach` methods;
+7. close static and scoped mocks and release the case database, retaining cleanup failures without hiding the original test failure.
 
 ## Build and publish
 

@@ -11,6 +11,9 @@ import java.lang.annotation.Target;
  * <p>底层通过 ThreadScope + ScopedProxy 实现：每个线程拿到独立的 Mockito mock 实例，
  * when() stubbing 天然线程隔离，与 H2 数据库路由完全对称。</p>
  *
+ * <p>字段只在 {@link SmartTest} 的 {@link CaseSource} invocation 生命周期内注入；
+ * 它不是普通 JUnit 测试类中的通用 Mock 注解。</p>
+ *
  * <p>使用方式与 {@code @MockBean} 一致：</p>
  * <pre>
  * class SomeTest extends BaseTest {

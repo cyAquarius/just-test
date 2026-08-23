@@ -12,10 +12,10 @@ import java.util.stream.Collectors;
 /**
  * Case 运行时上下文，承载单个测试 case 的输入参数、执行结果和异常。
  *
- * <p>由 {@code CaseArgumentsProvider} 创建，作为 {@code @ParameterizedTest} 的参数注入测试方法。
- * {@code SmartTestExtension} 在测试执行过程中填充 result 和 exception。</p>
+ * <p>由 {@link CaseTemplateInvocationContextProvider} 为每个 {@code @CaseSource} invocation 创建，
+ * {@code SmartTestExtension} 将其注入测试及标准 JUnit 生命周期方法，并在执行过程中填充结果和异常。</p>
  *
- * <p>{@link #toString()} 返回 caseName，JUnit 报告中显示为 {@code [1] deductBalance}。</p>
+ * <p>{@link #toString()} 返回 caseName；JUnit invocation 也使用 caseName 作为显示名。</p>
  */
 public class CaseContext {
 

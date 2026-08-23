@@ -3,17 +3,22 @@ package com.just.test.smarttest.lifecycle;
 import com.just.test.smarttest.annotation.BeforeCase;
 import com.just.test.smarttest.context.CaseContext;
 import com.just.test.smarttest.context.CaseExecutionContext;
-import com.just.test.smarttest.datasource.SmartTestRoutingDataSource;
 import com.just.test.smarttest.datasource.SchemaInitializer;
+import com.just.test.smarttest.datasource.SmartTestRoutingDataSource;
 import com.just.test.smarttest.loader.DataSetLoader;
-import com.just.test.smarttest.mock.SmartMockTestExecutionListener;
+import com.just.test.smarttest.mock.SmartMockInjector;
+import com.just.test.smarttest.mock.StaticMockContext;
 import com.just.test.smarttest.mock.ThreadScopedMockRegistry;
 import com.just.test.smarttest.scope.ThreadScope;
 import com.just.test.smarttest.verifier.DataSetVerifier;
 import com.just.test.smarttest.verifier.ExceptionVerifier;
 import com.just.test.smarttest.verifier.ResultVerifier;
+import org.junit.jupiter.api.extension.AfterEachCallback;
+import org.junit.jupiter.api.extension.BeforeEachCallback;
 import org.junit.jupiter.api.extension.ExtensionContext;
 import org.junit.jupiter.api.extension.InvocationInterceptor;
+import org.junit.jupiter.api.extension.ParameterContext;
+import org.junit.jupiter.api.extension.ParameterResolver;
 import org.junit.jupiter.api.extension.ReflectiveInvocationContext;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -29,185 +34,234 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * 数据驱动模式的完整生命周期管理。
+ * 单个 SmartTest case invocation 的完整生命周期。
  *
- * <p>测试实例必须实现 {@link SmartTestLifecycle}。</p>
- *
- * <p>执行顺序：clean → prepare → @BeforeCase → beforeExecute → proceed
- * → afterExecute → verify(exception/result/db) → clean</p>
+ * <p>执行顺序：case bind / clean / prepare / mock setup → JUnit {@code @BeforeEach}
+ * → {@code @BeforeCase} / lifecycle / test / verify → JUnit {@code @AfterEach} → resource cleanup。</p>
  */
-public class SmartTestExtension implements InvocationInterceptor {
+public final class SmartTestExtension implements BeforeEachCallback, AfterEachCallback,
+        InvocationInterceptor, ParameterResolver {
 
     private static final Logger log = LoggerFactory.getLogger(SmartTestExtension.class);
     private static final String SCHEMA_LOCATION = "classpath:sql/schema.sql";
+    private static final ApplicationContextDiagnostics CONTEXT_DIAGNOSTICS =
+            new ApplicationContextDiagnostics();
+
+    private final CaseContext caseContext;
+    private SmartTestRoutingDataSource routingDataSource;
+    private StaticMockContext staticMockContext;
+    private JdbcTemplate jdbcTemplate;
+    private SmartTestLifecycle lifecycle;
+    private boolean caseBound;
+
+    public SmartTestExtension(CaseContext caseContext) {
+        if (caseContext == null) {
+            throw new IllegalArgumentException("caseContext must not be null");
+        }
+        this.caseContext = caseContext;
+    }
 
     @Override
-    public void interceptTestTemplateMethod(Invocation<Void> invocation,
-                                            ReflectiveInvocationContext<Method> invocationContext,
-                                            ExtensionContext extensionContext) throws Throwable {
-        CaseContext ctx = extractCaseContext(invocationContext);
-        if (ctx == null) {
-            invocation.proceed();
-            return;
-        }
+    public boolean supportsParameter(ParameterContext parameterContext,
+                                     ExtensionContext extensionContext) {
+        return parameterContext.getParameter().getType() == CaseContext.class;
+    }
 
+    @Override
+    public Object resolveParameter(ParameterContext parameterContext,
+                                   ExtensionContext extensionContext) {
+        return caseContext;
+    }
+
+    @Override
+    public void beforeEach(ExtensionContext extensionContext) throws Exception {
         Object testInstance = extensionContext.getRequiredTestInstance();
         if (!(testInstance instanceof SmartTestLifecycle)) {
             throw new IllegalStateException(String.format(
                     "[SmartTest] %s must implement SmartTestLifecycle",
                     testInstance.getClass().getName()));
         }
-        SmartTestLifecycle lifecycle = (SmartTestLifecycle) testInstance;
-        JdbcTemplate jdbcTemplate = getJdbcTemplate(extensionContext);
-        String casePath = ctx.getCasePath();
+        lifecycle = (SmartTestLifecycle) testInstance;
+        ApplicationContext applicationContext = SpringExtension.getApplicationContext(extensionContext);
+        CONTEXT_DIAGNOSTICS.observe(applicationContext);
+        jdbcTemplate = resolveJdbcTemplate(applicationContext);
 
-        ApplicationContext appCtx = SpringExtension.getApplicationContext(extensionContext);
-        SmartTestRoutingDataSource routingDataSource = beginCaseDatabase(appCtx);
-        Throwable testFailure = null;
+        CaseExecutionContext.bind(caseContext);
+        caseBound = true;
         try {
-            CaseExecutionContext.bind(ctx);
-            // 1. clean
-            if (jdbcTemplate != null) {
-                SchemaInitializer.initialize(jdbcTemplate, SCHEMA_LOCATION);
-                DataSetLoader.cleanTables(jdbcTemplate);
-                // 2. prepare
-                DataSetLoader.load(jdbcTemplate, casePath);
-                log.debug("[SmartTest] Data prepared for case: {}", ctx.getCaseName());
-            }
+            routingDataSource = beginCaseDatabase(applicationContext);
+            prepareCaseData();
 
-            // 3. reset thread-scoped mocks（每个 case 拿到全新 mock 实例）
             ThreadScope.resetCurrentThread();
+            prewarmThreadScopedMocks(applicationContext);
+            SmartMockInjector.injectSmartMocks(testInstance, applicationContext);
 
-            // 3.5 预热所有 thread-scoped mock，避免 ScopedProxy 懒加载与 Mockito matcher 时序冲突
-            //    （@Autowired 注入的 ScopedProxy 在测试里首次 when(proxy.method(anyMatcher())) 时
-            //     会触发 Mockito.mock() 懒加载，此时 matcher 栈已非空，抛 InvalidUseOfMatchersException）
-            prewarmThreadScopedMocks(appCtx);
+            staticMockContext = new StaticMockContext(applicationContext);
+            lifecycle.configureStaticMocks(caseContext, staticMockContext);
+            warnIfMultipleContexts(testInstance.getClass());
+        } catch (Throwable failure) {
+            warnFailure(extensionContext, failure);
+            Throwable cleanupFailure = cleanupCaseResources();
+            if (cleanupFailure != null) {
+                failure.addSuppressed(cleanupFailure);
+            }
+            throw asException(failure);
+        }
+    }
 
-            // 4. 重新注入 @SmartMock 字段为实际的 thread-local mock（非 proxy）
-            SmartMockTestExecutionListener.injectSmartMocks(testInstance, appCtx);
+    @Override
+    public void interceptTestTemplateMethod(Invocation<Void> invocation,
+                                            ReflectiveInvocationContext<Method> invocationContext,
+                                            ExtensionContext extensionContext) throws Throwable {
+        try {
+            invokeBeforeCaseMethods(extensionContext, caseContext.getCaseName());
+            lifecycle.beforeExecute(caseContext);
 
-            // 5. @BeforeCase
-            invokeBeforeCaseMethods(extensionContext, ctx.getCaseName());
-
-            // 6. beforeExecute
-            lifecycle.beforeExecute(ctx);
-
-            // 7. proceed
             try {
                 invocation.proceed();
-            } catch (Throwable t) {
-                ctx.setException(t);
-                if (!ExceptionVerifier.hasExpectException(casePath)) {
-                    throw t;
+            } catch (Throwable failure) {
+                caseContext.setException(failure);
+                if (!ExceptionVerifier.hasExpectException(caseContext.getCasePath())) {
+                    throw failure;
                 }
                 log.debug("[SmartTest] Exception captured for case [{}]: {}",
-                        ctx.getCaseName(), t.getClass().getSimpleName());
+                        caseContext.getCaseName(), failure.getClass().getSimpleName());
             }
 
-            // 8. afterExecute
-            lifecycle.afterExecute(ctx);
-
-            // 9. verify
-            List<String> failures = new ArrayList<>();
-
-            if (!lifecycle.verifyException(ctx)) {
-                if (ctx.getException() != null) {
-                    failures.addAll(ExceptionVerifier.verify(ctx.getException(), casePath));
-                } else if (ExceptionVerifier.hasExpectException(casePath)) {
-                    failures.add("[exception]: expected exception but none was thrown");
-                }
-            }
-
-            if (!lifecycle.verifyResult(ctx)) {
-                failures.addAll(ResultVerifier.verify(ctx.getResult(), casePath));
-            }
-
-            if (!lifecycle.verifyDatabase(ctx, jdbcTemplate)) {
-                if (jdbcTemplate != null) {
-                    failures.addAll(DataSetVerifier.verify(jdbcTemplate, casePath));
-                }
-            }
-
-            if (!failures.isEmpty()) {
-                StringBuilder sb = new StringBuilder("[SmartTest] Verification failed for case [")
-                        .append(ctx.getCaseName()).append("]:\n");
-                for (String f : failures) {
-                    sb.append("  - ").append(f).append("\n");
-                }
-                throw new AssertionError(sb.toString());
-            }
-
-            log.debug("[SmartTest] Verification passed for case: {}", ctx.getCaseName());
-
-        } catch (Throwable t) {
-            testFailure = t;
-            throw t;
-        } finally {
-            Throwable cleanupFailure = null;
-            try {
-                ThreadScope.clearCurrentThread();
-            } catch (Throwable t) {
-                cleanupFailure = t;
-            }
-            try {
-                if (routingDataSource != null) {
-                    routingDataSource.releaseCurrentCase();
-                }
-            } catch (Throwable t) {
-                if (cleanupFailure == null) {
-                    cleanupFailure = t;
-                } else {
-                    cleanupFailure.addSuppressed(t);
-                }
-            } finally {
-                CaseExecutionContext.clear();
-            }
-            if (cleanupFailure != null) {
-                if (testFailure != null) {
-                    testFailure.addSuppressed(cleanupFailure);
-                } else {
-                    throw cleanupFailure;
-                }
-            }
+            lifecycle.afterExecute(caseContext);
+            verifyCase();
+            log.debug("[SmartTest] Verification passed for case: {}", caseContext.getCaseName());
+        } catch (Throwable failure) {
+            warnFailure(extensionContext, failure);
+            throw failure;
         }
     }
 
-    /**
-     * 预热所有 thread-scoped mock：对 Registry 里记录的每个 bean，触发 ScopedProxy 的 target 创建。
-     *
-     * <p>这样当测试代码执行 {@code when(proxy.method(anyMatcher()))} 时，target 已经存在，
-     * proxy 不再触发懒加载 {@code Mockito.mock()}，避免与 matcher 栈冲突。</p>
-     */
-    private void prewarmThreadScopedMocks(ApplicationContext ctx) {
-        ThreadScopedMockRegistry registry;
+    @Override
+    public void afterEach(ExtensionContext extensionContext) throws Exception {
+        extensionContext.getExecutionException()
+                .ifPresent(failure -> warnFailure(extensionContext, failure));
+        Throwable cleanupFailure = cleanupCaseResources();
+        if (cleanupFailure == null) {
+            return;
+        }
+        if (extensionContext.getExecutionException().isPresent()) {
+            extensionContext.getExecutionException().get().addSuppressed(cleanupFailure);
+            return;
+        }
+        throw asException(cleanupFailure);
+    }
+
+    private void prepareCaseData() {
+        if (jdbcTemplate == null) {
+            return;
+        }
+        SchemaInitializer.initialize(jdbcTemplate, SCHEMA_LOCATION);
+        DataSetLoader.cleanTables(jdbcTemplate);
+        DataSetLoader.load(jdbcTemplate, caseContext.getCasePath());
+        log.debug("[SmartTest] Data prepared for case: {}", caseContext.getCaseName());
+    }
+
+    private void verifyCase() {
+        List<String> failures = new ArrayList<>();
+        String casePath = caseContext.getCasePath();
+
+        if (!lifecycle.verifyException(caseContext)) {
+            if (caseContext.getException() != null) {
+                failures.addAll(ExceptionVerifier.verify(caseContext.getException(), casePath));
+            } else if (ExceptionVerifier.hasExpectException(casePath)) {
+                failures.add("[exception]: expected exception but none was thrown");
+            }
+        }
+        if (!lifecycle.verifyResult(caseContext)) {
+            failures.addAll(ResultVerifier.verify(caseContext.getResult(), casePath));
+        }
+        if (!lifecycle.verifyDatabase(caseContext, jdbcTemplate) && jdbcTemplate != null) {
+            failures.addAll(DataSetVerifier.verify(jdbcTemplate, casePath));
+        }
+        if (!failures.isEmpty()) {
+            StringBuilder message = new StringBuilder("[SmartTest] Verification failed for case [")
+                    .append(caseContext.getCaseName()).append("]:\n");
+            for (String failure : failures) {
+                message.append("  - ").append(failure).append("\n");
+            }
+            throw new AssertionError(message.toString());
+        }
+    }
+
+    private Throwable cleanupCaseResources() {
+        if (!caseBound) {
+            return null;
+        }
+        Throwable failure = null;
+        failure = closeStaticMocks(failure);
+        failure = clearThreadScope(failure);
+        failure = releaseCaseDatabase(failure);
+        CaseExecutionContext.clear();
+        caseBound = false;
+        return failure;
+    }
+
+    private Throwable closeStaticMocks(Throwable failure) {
         try {
-            registry = ctx.getBean(ThreadScopedMockRegistry.class);
-        } catch (NoSuchBeanDefinitionException e) {
-            return;  // 无 thread-scoped mock，跳过
-        }
-        for (String beanName : registry.getBeanNames()) {
-            try {
-                Object bean = ctx.getBean(beanName);
-                if (bean instanceof Advised) {
-                    ((Advised) bean).getTargetSource().getTarget();
-                }
-            } catch (Exception e) {
-                log.warn("[SmartTest] Failed to prewarm thread-scoped mock '{}': {}", beanName, e.getMessage());
+            if (staticMockContext != null) {
+                staticMockContext.close();
             }
+        } catch (Throwable cleanupFailure) {
+            failure = appendFailure(failure, cleanupFailure);
+        } finally {
+            staticMockContext = null;
+        }
+        return failure;
+    }
+
+    private Throwable clearThreadScope(Throwable failure) {
+        try {
+            ThreadScope.clearCurrentThread();
+        } catch (Throwable cleanupFailure) {
+            failure = appendFailure(failure, cleanupFailure);
+        }
+        return failure;
+    }
+
+    private Throwable releaseCaseDatabase(Throwable failure) {
+        try {
+            if (routingDataSource != null) {
+                routingDataSource.releaseCurrentCase();
+            }
+        } catch (Throwable cleanupFailure) {
+            failure = appendFailure(failure, cleanupFailure);
+        } finally {
+            routingDataSource = null;
+        }
+        return failure;
+    }
+
+    private Throwable appendFailure(Throwable failure, Throwable additional) {
+        if (failure == null) {
+            return additional;
+        }
+        failure.addSuppressed(additional);
+        return failure;
+    }
+
+    private void warnIfMultipleContexts(Class<?> testClass) {
+        if (CONTEXT_DIAGNOSTICS.markRiskWarning()) {
+            log.warn("[SmartTest] Multiple Spring ApplicationContexts detected for {}. "
+                            + "If application code uses a static ContextHolder, factory, or registry, "
+                            + "ensure configureStaticMocks() covers the relevant static gateway.",
+                    testClass.getName());
         }
     }
 
-    private CaseContext extractCaseContext(ReflectiveInvocationContext<Method> invocationContext) {
-        for (Object arg : invocationContext.getArguments()) {
-            if (arg instanceof CaseContext) {
-                return (CaseContext) arg;
-            }
+    private void warnFailure(ExtensionContext extensionContext, Throwable failure) {
+        Class<?> testClass = extensionContext.getRequiredTestClass();
+        if (CONTEXT_DIAGNOSTICS.markFailureWarningFor(testClass)) {
+            log.warn("[SmartTest] Case [{}] failed with {} while multiple Spring ApplicationContexts "
+                            + "were observed. Check JVM static ContextHolder/factory/registry state and "
+                            + "ensure configureStaticMocks() covers the relevant gateway.",
+                    caseContext.getCaseName(), failure.getClass().getName());
         }
-        return null;
-    }
-
-    private JdbcTemplate getJdbcTemplate(ExtensionContext extensionContext) {
-        return resolveJdbcTemplate(SpringExtension.getApplicationContext(extensionContext));
     }
 
     private SmartTestRoutingDataSource beginCaseDatabase(ApplicationContext context) {
@@ -216,15 +270,11 @@ public class SmartTestExtension implements InvocationInterceptor {
             dataSource.beginCase();
             return dataSource;
         } catch (NoSuchBeanDefinitionException ignored) {
-            // 使用外部数据源时由外部生命周期管理。
             return null;
         }
     }
 
-    /**
-     * 从 ApplicationContext 获取 JdbcTemplate，找不到返回 null。
-     * 供 SmartTestExecutionListener 等同包类复用。
-     */
+    /** 从 ApplicationContext 获取唯一 JdbcTemplate；没有候选时跳过数据操作。 */
     static JdbcTemplate resolveJdbcTemplate(ApplicationContext applicationContext) {
         try {
             return applicationContext.getBean(JdbcTemplate.class);
@@ -236,24 +286,58 @@ public class SmartTestExtension implements InvocationInterceptor {
         }
     }
 
+    private void prewarmThreadScopedMocks(ApplicationContext context) {
+        ThreadScopedMockRegistry registry;
+        try {
+            registry = context.getBean(ThreadScopedMockRegistry.class);
+        } catch (NoSuchBeanDefinitionException e) {
+            return;
+        }
+        for (String beanName : registry.getBeanNames()) {
+            try {
+                Object bean = context.getBean(beanName);
+                if (bean instanceof Advised) {
+                    ((Advised) bean).getTargetSource().getTarget();
+                }
+            } catch (Exception e) {
+                log.warn("[SmartTest] Failed to prewarm thread-scoped mock '{}': {}", beanName, e.getMessage());
+            }
+        }
+    }
+
     private void invokeBeforeCaseMethods(ExtensionContext extensionContext, String caseName) {
         Object testInstance = extensionContext.getRequiredTestInstance();
-        for (Class<?> clazz = testInstance.getClass(); clazz != null && clazz != Object.class; clazz = clazz.getSuperclass()) {
-            for (Method method : clazz.getDeclaredMethods()) {
+        for (Class<?> type = testInstance.getClass(); type != null && type != Object.class;
+             type = type.getSuperclass()) {
+            for (Method method : type.getDeclaredMethods()) {
                 BeforeCase annotation = method.getAnnotation(BeforeCase.class);
                 if (annotation != null && annotation.value().equals(caseName)) {
-                    try {
-                        method.setAccessible(true);
-                        method.invoke(testInstance);
-                        log.debug("[SmartTest] Invoked @BeforeCase(\"{}\") -> {}", caseName, method.getName());
-                    } catch (Exception e) {
-                        Throwable cause = e.getCause() != null ? e.getCause() : e;
-                        throw new RuntimeException(
-                                String.format("[SmartTest] @BeforeCase(\"%s\") method %s failed: %s",
-                                        caseName, method.getName(), cause.getMessage()), cause);
-                    }
+                    invokeBeforeCaseMethod(testInstance, method, caseName);
                 }
             }
         }
+    }
+
+    private void invokeBeforeCaseMethod(Object testInstance, Method method, String caseName) {
+        try {
+            method.setAccessible(true);
+            method.invoke(testInstance);
+            log.debug("[SmartTest] Invoked @BeforeCase(\"{}\") -> {}", caseName, method.getName());
+        } catch (Exception e) {
+            Throwable cause = e.getCause() != null ? e.getCause() : e;
+            throw new RuntimeException(String.format(
+                    "[SmartTest] @BeforeCase(\"%s\") method %s failed: %s",
+                    caseName, method.getName(), cause.getMessage()), cause);
+        }
+    }
+
+    private Exception asException(Throwable failure) {
+        if (failure instanceof Error) {
+            throw (Error) failure;
+        }
+        if (failure instanceof Exception) {
+            return (Exception) failure;
+        }
+        return new RuntimeException(failure);
     }
 }
