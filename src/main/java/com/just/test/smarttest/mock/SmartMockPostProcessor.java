@@ -9,7 +9,10 @@ import org.springframework.beans.factory.annotation.AnnotatedBeanDefinition;
 import org.springframework.beans.factory.config.BeanDefinition;
 import org.springframework.beans.factory.config.BeanDefinitionHolder;
 import org.springframework.beans.factory.config.ConfigurableListableBeanFactory;
+import org.springframework.beans.factory.config.DependencyDescriptor;
+import org.springframework.beans.factory.support.AbstractBeanDefinition;
 import org.springframework.beans.factory.support.BeanDefinitionBuilder;
+import org.springframework.beans.factory.support.BeanDefinitionReaderUtils;
 import org.springframework.beans.factory.support.BeanDefinitionRegistry;
 import org.springframework.beans.factory.config.BeanFactoryPostProcessor;
 import org.springframework.core.type.MethodMetadata;
@@ -113,7 +116,7 @@ class SmartMockPostProcessor implements BeanFactoryPostProcessor {
                 log.warn("[SmartMock] @ThreadScopedMock bean '{}' has null type, skipping", beanName);
                 continue;
             }
-            definitions.add(new SmartMockDefinition(type, beanName, beanName, "", "@ThreadScopedMock"));
+            definitions.add(SmartMockDefinition.forBeanName(type, beanName, "@ThreadScopedMock"));
             log.debug("[SmartMock] Discovered @ThreadScopedMock bean '{}' of type {}", beanName, type.getSimpleName());
         }
         return definitions;
@@ -123,19 +126,28 @@ class SmartMockPostProcessor implements BeanFactoryPostProcessor {
                                             BeanDefinitionRegistry registry,
                                             SmartMockDefinition definition) {
         String targetBeanName = resolveBeanName(beanFactory, definition);
+        BeanDefinition originalDefinition = null;
+        BeanDefinition originalScopedTarget = null;
         if (registry.containsBeanDefinition(targetBeanName)) {
+            originalDefinition = registry.getBeanDefinition(targetBeanName);
             registry.removeBeanDefinition(targetBeanName);
             String scopedTargetName = ScopedProxyUtils.getTargetBeanName(targetBeanName);
             if (registry.containsBeanDefinition(scopedTargetName)) {
+                originalScopedTarget = registry.getBeanDefinition(scopedTargetName);
                 registry.removeBeanDefinition(scopedTargetName);
             }
             log.debug("[SmartMock] Removed existing bean definition: {}", targetBeanName);
         }
 
         // 注册 thread-scoped mock bean
-        BeanDefinition mockDef = createMockBeanDefinition(definition.getType());
+        AbstractBeanDefinition mockDef = createMockBeanDefinition(definition.getType());
+        copyAutowireMetadata(mockDef, originalDefinition, originalScopedTarget);
         BeanDefinitionHolder holder = new BeanDefinitionHolder(mockDef, targetBeanName);
         BeanDefinitionHolder proxy = ScopedProxyUtils.createScopedProxy(holder, registry, true);
+        if (proxy.getBeanDefinition() instanceof AbstractBeanDefinition) {
+            copyAutowireMetadata((AbstractBeanDefinition) proxy.getBeanDefinition(),
+                    originalDefinition, originalScopedTarget);
+        }
         registry.registerBeanDefinition(targetBeanName, proxy.getBeanDefinition());
 
         log.info("[SmartMock] Registered thread-scoped mock for {} as '{}'", definition.getType().getSimpleName(), targetBeanName);
@@ -152,36 +164,74 @@ class SmartMockPostProcessor implements BeanFactoryPostProcessor {
             }
         }
         if (!definition.getExplicitBeanName().isEmpty()) {
-            return requireCandidate(definition, logicalCandidates, definition.getExplicitBeanName());
+            return requireCandidate(beanFactory, definition, logicalCandidates,
+                    definition.getExplicitBeanName());
         }
-        if (!definition.getQualifier().isEmpty()) {
-            return requireCandidate(definition, logicalCandidates, definition.getQualifier());
+
+        DependencyDescriptor descriptor = definition.toDependencyDescriptor();
+        java.util.LinkedHashSet<String> injectableCandidates = new java.util.LinkedHashSet<>();
+        for (String candidate : logicalCandidates) {
+            if (beanFactory.isAutowireCandidate(candidate, descriptor)) {
+                injectableCandidates.add(candidate);
+            }
         }
-        if (logicalCandidates.isEmpty()) {
-            String generated = generateBeanName(definition.getType());
-            log.warn("[SmartMock] No existing bean found for {}, registering '{}'", definition.describe(), generated);
+
+        if (injectableCandidates.isEmpty()) {
+            if (definition.hasQualifierAnnotations()) {
+                throw new IllegalStateException("[SmartMock] No autowire candidate matches the qualifier for "
+                        + definition.describe() + ". Type candidates: " + logicalCandidates);
+            }
+            String generated = generateAvailableBeanName(
+                    definition.getType(), beanFactory, (BeanDefinitionRegistry) beanFactory);
+            log.warn("[SmartMock] No injectable bean found for {}, registering '{}'", definition.describe(), generated);
             return generated;
         }
         String primary = null;
-        for (String candidate : logicalCandidates) {
+        for (String candidate : injectableCandidates) {
             if (beanFactory.containsBeanDefinition(candidate)
                     && beanFactory.getBeanDefinition(candidate).isPrimary()) {
                 if (primary != null) {
-                    throw ambiguous(definition, logicalCandidates);
+                    throw ambiguous(definition, injectableCandidates);
                 }
                 primary = candidate;
             }
         }
         if (primary != null) return primary;
-        if (logicalCandidates.contains(definition.getFieldName())) return definition.getFieldName();
-        if (logicalCandidates.size() == 1) return logicalCandidates.iterator().next();
-        throw ambiguous(definition, logicalCandidates);
+        for (String candidate : injectableCandidates) {
+            if (matchesName(beanFactory, candidate, definition.getFieldName())) {
+                return candidate;
+            }
+        }
+        if (injectableCandidates.size() == 1) return injectableCandidates.iterator().next();
+        throw ambiguous(definition, injectableCandidates);
     }
 
-    private String requireCandidate(SmartMockDefinition definition, Set<String> candidates, String requestedName) {
-        if (candidates.contains(requestedName)) return requestedName;
+    private String requireCandidate(ConfigurableListableBeanFactory beanFactory,
+                                    SmartMockDefinition definition, Set<String> candidates,
+                                    String requestedName) {
+        for (String candidate : candidates) {
+            if (matchesName(beanFactory, candidate, requestedName)) {
+                return candidate;
+            }
+        }
         throw new IllegalStateException("[SmartMock] No bean named '" + requestedName + "' for "
                 + definition.describe() + ". Candidates: " + candidates);
+    }
+
+    private boolean matchesName(ConfigurableListableBeanFactory beanFactory,
+                                String candidate, String requestedName) {
+        if (candidate.equals(requestedName)) {
+            return true;
+        }
+        if (beanFactory == null) {
+            return false;
+        }
+        for (String alias : beanFactory.getAliases(candidate)) {
+            if (alias.equals(requestedName)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private IllegalStateException ambiguous(SmartMockDefinition definition, Set<String> candidates) {
@@ -194,11 +244,40 @@ class SmartMockPostProcessor implements BeanFactoryPostProcessor {
         return Character.toLowerCase(simpleName.charAt(0)) + simpleName.substring(1);
     }
 
+    private String generateAvailableBeanName(Class<?> type,
+                                             ConfigurableListableBeanFactory beanFactory,
+                                             BeanDefinitionRegistry registry) {
+        String baseName = generateBeanName(type);
+        if (!registry.containsBeanDefinition(baseName)
+                && !registry.isAlias(baseName)
+                && !beanFactory.containsSingleton(baseName)) {
+            return baseName;
+        }
+        return BeanDefinitionReaderUtils.uniqueBeanName(baseName, registry);
+    }
+
     @SuppressWarnings("unchecked")
-    private <T> BeanDefinition createMockBeanDefinition(Class<T> mockType) {
+    private <T> AbstractBeanDefinition createMockBeanDefinition(Class<T> mockType) {
         return BeanDefinitionBuilder
                 .genericBeanDefinition(mockType, () -> Mockito.mock(mockType))
                 .setScope("thread")
                 .getBeanDefinition();
+    }
+
+    private void copyAutowireMetadata(AbstractBeanDefinition target,
+                                      BeanDefinition logicalDefinition,
+                                      BeanDefinition scopedTargetDefinition) {
+        if (logicalDefinition != null) {
+            target.setPrimary(logicalDefinition.isPrimary());
+            target.setAutowireCandidate(logicalDefinition.isAutowireCandidate());
+            copyQualifiers(target, logicalDefinition);
+        }
+        copyQualifiers(target, scopedTargetDefinition);
+    }
+
+    private void copyQualifiers(AbstractBeanDefinition target, BeanDefinition source) {
+        if (source instanceof AbstractBeanDefinition) {
+            target.copyQualifiersFrom((AbstractBeanDefinition) source);
+        }
     }
 }

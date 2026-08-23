@@ -3,7 +3,6 @@ package com.just.test.smarttest.mock;
 import com.just.test.smarttest.annotation.SmartMock;
 import com.just.test.smarttest.annotation.SmartTest;
 import org.springframework.core.annotation.AnnotatedElementUtils;
-import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.test.context.ContextConfigurationAttributes;
 import org.springframework.test.context.ContextCustomizer;
 import org.springframework.test.context.ContextCustomizerFactory;
@@ -28,10 +27,7 @@ public class SmartMockContextCustomizerFactory implements ContextCustomizerFacto
             for (Field field : clazz.getDeclaredFields()) {
                 SmartMock smartMock = field.getAnnotation(SmartMock.class);
                 if (smartMock != null) {
-                    Qualifier qualifier = field.getAnnotation(Qualifier.class);
-                    definitions.add(new SmartMockDefinition(field.getType(), field.getName(),
-                            smartMock.name(), qualifier == null ? "" : qualifier.value(),
-                            clazz.getName()));
+                    definitions.add(SmartMockDefinition.forField(field, smartMock));
                 }
             }
         }
