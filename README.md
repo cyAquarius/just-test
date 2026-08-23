@@ -85,6 +85,25 @@ class OrderServiceTest implements SmartTestLifecycle {
 
 Use `@SmartMock(name = "beanName")` or `@Qualifier("beanName")` when a type has multiple candidates.
 
+### Spring Boot Test integration
+
+The SmartTest core does not depend on Spring Boot Test. When a Spring Boot consumer needs Boot TestContext features such as `application-{profile}.yml` loading, the consumer supplies `spring-boot-test` matching its Boot version (normally through `spring-boot-starter-test`) and combines the Boot bootstrapper with SmartTest:
+
+```java
+@SmartTest
+@BootstrapWith(SpringBootTestContextBootstrapper.class)
+@ContextConfiguration(classes = YourTestApplication.class)
+class OrderServiceSmartTest implements SmartTestLifecycle {
+
+    @CaseSource
+    void createOrder(CaseContext context) {
+        // application-test.yml is loaded through the test profile from @SmartTest
+    }
+}
+```
+
+The consumer owns `YourTestApplication`, application component-scan exclusions, mapper wiring, and project-level external-dependency mocks. Prefer `@SmartMock` when replacing Spring beans; retaining the Boot bootstrapper enables Boot configuration loading and does not imply that `@MockBean` is required. Non-Boot consumers need no Boot Test dependency.
+
 If application code obtains Spring through a static gateway, bind that gateway explicitly per case:
 
 ```java
