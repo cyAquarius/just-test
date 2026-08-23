@@ -1,6 +1,7 @@
 package com.just.test.smarttest.context;
 
 import com.just.test.smarttest.annotation.CaseSource;
+import com.just.test.smarttest.annotation.SmartTest;
 import com.just.test.smarttest.lifecycle.SmartTestExtension;
 import com.just.test.smarttest.loader.DataSetLoader;
 import org.junit.jupiter.api.extension.Extension;
@@ -10,6 +11,7 @@ import org.junit.jupiter.api.extension.TestTemplateInvocationContext;
 import org.junit.jupiter.api.extension.TestTemplateInvocationContextProvider;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.core.annotation.AnnotatedElementUtils;
 import org.springframework.core.io.Resource;
 import org.springframework.core.io.support.PathMatchingResourcePatternResolver;
 
@@ -29,9 +31,17 @@ public class CaseTemplateInvocationContextProvider implements TestTemplateInvoca
 
     @Override
     public boolean supportsTestTemplate(ExtensionContext context) {
-        return context.getTestMethod()
+        boolean caseSource = context.getTestMethod()
                 .map(method -> method.isAnnotationPresent(CaseSource.class))
                 .orElse(false);
+        if (caseSource && !AnnotatedElementUtils.hasAnnotation(
+                context.getRequiredTestClass(), SmartTest.class)) {
+            throw new ExtensionConfigurationException(String.format(
+                    "[SmartTest] %s uses @CaseSource without @SmartTest. "
+                            + "Add @SmartTest to the test class or use a standard JUnit test annotation.",
+                    context.getRequiredTestClass().getName()));
+        }
+        return caseSource;
     }
 
     @Override

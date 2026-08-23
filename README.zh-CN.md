@@ -33,7 +33,7 @@ SmartTest 只隔离自己拥有的测试资源，不能让任意业务代码天�
 - case 静态 Mock 只作用于当前线程，在用户 `@BeforeEach`、测试方法和用户 `@AfterEach` 中持续生效；它不能覆盖 Spring Context refresh 或早于 case invocation 的 Spring Test listener，也不会传播到业务自行创建的异步线程。
 - 检测到多个 Spring Context 时，SmartTest 会输出一次风险警告；相关 case 失败时会追加诊断日志，但不会替换原始异常。任意静态 Mock 的存在不会抑制该提示，因为框架无法判断它是否覆盖了相关入口。
 - 新旧测试类可以并存；未标注 `@SmartTest` 的旧测试不会启用 SmartTest 生命周期。但如果新旧测试并行执行，并且业务代码共享 JVM static ContextHolder/工厂，SmartTest 无法保护旧测试线程；应让受影响的旧测试保持串行，或迁移其静态入口。
-- 手工线程、`CompletableFuture` common pool 和未由 SmartTest 接管的 executor，不会自动获得 mock 或数据库上下文；没有活动 case 的数据库访问会立即失败，而不会静默创建空 H2。
+- 手工线程、`CompletableFuture` common pool 和未由 SmartTest 接管的 executor，不会自动获得 mock 或数据库上下文；没有活动 case 的数据库或 thread-scoped mock 访问会立即失败，而不会静默创建空 H2 或未配置的 mock。
 - 测试类或 `@CaseSource` 方法上的 Spring `@Transactional` 与 `@Sql` 不受支持：它们的生命周期早于 case 绑定，框架会在执行前报错。请使用 `prepare.yaml` 和 `expect.yaml` 管理确定性的 case 数据。
 - 重跑成功不能证明并发安全。存在 Flake 的测试应保持串行，直到其所有权和生命周期边界清晰。
 - 新 SQL 应使用标准单引号字符串；双引号改写仅是兼容历史 MySQL Mapper 的过渡能力。
@@ -97,6 +97,8 @@ public class SmartTestApplication {
 
 `SmartTestApplication` 是消费工程专用于 SmartTest 的测试启动配置，不需要 `main` 方法。将它放入独立测试包，并将所有 SmartTest 测试类放在该包或其子包下，例如 `com.example.smarttest.order`。Spring Boot 会先发现这个更近的测试配置，不会继续搜索父包中的生产 `Application`；仅放在 `src/test` 并不能避免两个启动类冲突，因为测试 classpath 同时包含生产类和测试类。扫描业务根包时还应像示例一样排除生产启动类，避免其配置被组件扫描重新加载；业务组件扫描及其他排除规则、Mapper 装配和项目级外部依赖 Mock 均由消费工程在这里定义。
 
+SmartTest Context 使用框架提供的 H2 `DataSource`、事务管理器和 `JdbcTemplate`。测试启动配置不得同时加载生产 `DataSource`、事务管理器或其他数据库基础设施配置；请通过 `test` profile 或组件扫描排除这些生产配置。框架内部会精确连接自身 H2，但不会改写用户 Bean 的 `@Primary` 属性，也不会替测试选择生产与测试数据源。
+
 ```java
 @SmartTest
 class OrderServiceSmartTest implements SmartTestLifecycle {
@@ -155,7 +157,7 @@ src/test/resources/com/example/order/OrderServiceTest/
 - `expect.yaml`：预期数据库记录。
 - `expect_exception.yaml`：预期异常类型及可选消息。
 
-字段后缀 Flag 按文件阶段生效：`[C]` 用于 `expect.yaml` 的行定位和 `response.yaml` 的 List 无序匹配，`[CN]` 仅用于 `expect.yaml`，`[F]` 仅用于 `prepare.yaml`，其他 Flag 按下表用于相应的数据准备或断言：
+字段后缀 Flag 按文件阶段生效：`[C]` 用于 `expect.yaml` 的行定位和 `response.yaml` 的 List 无序匹配。只要 List 中使用了 `[C]`，每个预期元素都必须是对象并至少声明一个 `[C]` 字段；框架会拒绝混合有定位键和无定位键的无序预期。`[CN]` 仅用于 `expect.yaml`，`[F]` 仅用于 `prepare.yaml`，其他 Flag 按下表用于相应的数据准备或断言：
 
 | Flag | 含义 |
 | --- | --- |
@@ -191,4 +193,4 @@ mvn clean verify
 mvn clean install
 ```
 
-推送到 `main` 会触发 Java 8 GitHub Actions 工作流，执行 `mvn clean deploy` 并发布当前版本至 GitHub Packages。仓库只包含可复用框架代码和最小演示，不应加入具体业务包、业务表结构或业务测试。
+面向 `main` 的 Pull Request 会先运行 Java 8 `mvn clean verify`。推送到 `main` 后，发布工作流执行 `mvn clean deploy` 并将当前版本发布至 GitHub Packages。仓库只包含可复用框架代码和最小演示，不应加入具体业务包、业务表结构或业务测试。

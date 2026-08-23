@@ -32,6 +32,15 @@ public class SmartMockContextCustomizerFactory implements ContextCustomizerFacto
             }
         }
         boolean smartTest = AnnotatedElementUtils.hasAnnotation(testClass, SmartTest.class);
-        return !smartTest && definitions.isEmpty() ? null : new SmartMockContextCustomizer(definitions);
+        if (!smartTest) {
+            if (!definitions.isEmpty()) {
+                throw new IllegalStateException(String.format(
+                        "[SmartTest] %s uses @SmartMock without @SmartTest. "
+                                + "@SmartMock is only supported during SmartTest case invocations.",
+                        testClass.getName()));
+            }
+            return null;
+        }
+        return new SmartMockContextCustomizer(definitions);
     }
 }

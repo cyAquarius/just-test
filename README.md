@@ -33,7 +33,7 @@ SmartTest isolates the test resources it owns. It does **not** make arbitrary ap
 - Case static mocks affect only the current thread. They are active for user `@BeforeEach`, the test, and user `@AfterEach`; they cannot cover Spring context refresh or Spring Test listeners that run before the case invocation, and do not propagate to application-created asynchronous threads.
 - When multiple Spring contexts are detected, SmartTest emits one risk warning. A related case failure adds a diagnostic log without replacing the original exception. The presence of an arbitrary static mock does not suppress this hint because the framework cannot know whether it covers the relevant gateway.
 - New and legacy test classes can coexist; legacy classes without `@SmartTest` do not activate the SmartTest lifecycle. If both run in parallel while application code shares a JVM-static ContextHolder or factory, SmartTest cannot protect the legacy test thread. Keep affected legacy tests serial or migrate their static gateway.
-- Manually created threads, `CompletableFuture` common-pool tasks, and executors not managed by SmartTest do not receive mock or database context automatically; database access without an active case fails fast instead of creating an empty H2 database.
+- Manually created threads, `CompletableFuture` common-pool tasks, and executors not managed by SmartTest do not receive mock or database context automatically; database or thread-scoped mock access without an active case fails fast instead of creating an empty H2 database or an unstubbed mock.
 - Spring `@Transactional` and `@Sql` are unsupported on a SmartTest class or `@CaseSource` method because their lifecycle runs before a case is bound; SmartTest fails fast on these configurations. Use `prepare.yaml` and `expect.yaml` for deterministic case data instead.
 - A passing rerun is not proof of concurrency safety. Keep flaky suites serial until their ownership and lifecycle boundaries are established.
 - Write new SQL with standard single-quoted strings. The double-quote rewrite is only a compatibility bridge for existing MySQL mapper SQL.
@@ -97,6 +97,8 @@ public class SmartTestApplication {
 
 `SmartTestApplication` is the consumer-owned startup configuration dedicated to SmartTest and needs no `main` method. Put it in a dedicated test package and place every SmartTest class in that package or a child package, for example `com.example.smarttest.order`. Spring Boot finds this nearer test configuration before searching the parent package that contains the production `Application`. Merely placing it under `src/test` does not prevent a conflict because the test classpath contains both production and test classes. When scanning the application root package, exclude the production startup class as shown so component scanning does not load its configuration again. The consumer owns any additional component-scan exclusions, mapper wiring, and project-level external-dependency mocks.
 
+The SmartTest context uses the H2 `DataSource`, transaction manager, and `JdbcTemplate` supplied by the framework. Its test startup configuration must not also load production `DataSource`, transaction-manager, or other database-infrastructure configurations; exclude them with the `test` profile or component-scan filters. The framework wires its own infrastructure explicitly, but does not rewrite user Bean `@Primary` metadata or choose between production and test data sources on the consumer's behalf.
+
 ```java
 @SmartTest
 class OrderServiceSmartTest implements SmartTestLifecycle {
@@ -155,7 +157,7 @@ src/test/resources/com/example/order/OrderServiceTest/
 - `expect.yaml`: expected database rows.
 - `expect_exception.yaml`: expected exception type and optional message.
 
-Field suffix flags are stage-specific: `[C]` selects rows in `expect.yaml` and enables unordered List matching in `response.yaml`, `[CN]` applies only to `expect.yaml`, `[F]` applies only to `prepare.yaml`, and the remaining flags apply to the corresponding preparation or assertion stage shown below:
+Field suffix flags are stage-specific: `[C]` selects rows in `expect.yaml` and enables unordered List matching in `response.yaml`. Once any List item uses `[C]`, every expected item must be an object with at least one `[C]` field; SmartTest rejects unordered expectations that mix keyed and unkeyed items. `[CN]` applies only to `expect.yaml`, `[F]` applies only to `prepare.yaml`, and the remaining flags apply to the corresponding preparation or assertion stage shown below:
 
 | Flag | Meaning |
 | --- | --- |
@@ -191,4 +193,4 @@ mvn clean verify
 mvn clean install
 ```
 
-Pushing to `main` runs the Java 8 GitHub Actions workflow, which executes `mvn clean deploy` and publishes the configured version to GitHub Packages. This repository contains reusable framework code and minimal demos only; do not add product-specific packages, schemas, or tests.
+Pull requests targeting `main` first run Java 8 `mvn clean verify`. After a push to `main`, the publishing workflow executes `mvn clean deploy` and publishes the configured version to GitHub Packages. This repository contains reusable framework code and minimal demos only; do not add product-specific packages, schemas, or tests.
