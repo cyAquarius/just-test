@@ -16,9 +16,8 @@ import java.util.Set;
  * <p>equals/hashCode 基于影响 Bean 选择的 mock 语义，决定 Spring Context 缓存 key：
  * 相同 mock 组合共享 Context，不同组合独立 Context。</p>
  *
- * <p><b>Context 创建串行化</b>：通过全局锁确保同一时刻只有一个 Context 在初始化，
- * 解决 static 工厂注册表（如 GenericRegistry）
- * 在多 Context 并行初始化时的 @PostConstruct 竞争覆盖问题。</p>
+ * <p>这里只隔离 SmartTest 自己拥有的资源；业务 JVM 静态状态不属于
+ * ApplicationContext，不能通过 Context 创建锁获得通用的并发隔离。</p>
  */
 class SmartMockContextCustomizer implements ContextCustomizer {
 
