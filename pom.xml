@@ -28,6 +28,7 @@
         <junit.version>5.9.3</junit.version>
         <spring.boot.version>2.7.18</spring.boot.version>
         <mybatis.version>3.5.19</mybatis.version>
+        <mybatis.spring.version>2.1.2</mybatis.spring.version>
         <mockito.version>4.11.0</mockito.version>
         <fastjson2.version>2.0.61</fastjson2.version>
         <snakeyaml.version>1.33</snakeyaml.version>
@@ -57,6 +58,7 @@
         <dependency><groupId>org.springframework</groupId><artifactId>spring-jdbc</artifactId></dependency>
         <dependency><groupId>org.springframework</groupId><artifactId>spring-test</artifactId></dependency>
         <dependency><groupId>org.mybatis</groupId><artifactId>mybatis</artifactId><version>${mybatis.version}</version></dependency>
+        <dependency><groupId>org.mybatis</groupId><artifactId>mybatis-spring</artifactId><version>${mybatis.spring.version}</version><scope>test</scope></dependency>
         <dependency><groupId>org.mockito</groupId><artifactId>mockito-core</artifactId><version>${mockito.version}</version></dependency>
         <dependency><groupId>com.alibaba.fastjson2</groupId><artifactId>fastjson2</artifactId><version>${fastjson2.version}</version></dependency>
         <dependency><groupId>org.yaml</groupId><artifactId>snakeyaml</artifactId><version>${snakeyaml.version}</version></dependency>
