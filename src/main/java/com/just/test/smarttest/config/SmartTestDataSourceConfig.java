@@ -5,6 +5,7 @@ import com.just.test.smarttest.h2.SmartTestMyBatisInterceptorConfigurer;
 import com.just.test.smarttest.scope.ThreadScope;
 import org.springframework.beans.factory.config.BeanPostProcessor;
 import org.springframework.beans.factory.config.CustomScopeConfigurer;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Primary;
@@ -39,13 +40,14 @@ public class SmartTestDataSourceConfig {
 
     @Bean(name = "smartTestTransactionManager")
     @Primary
-    public DataSourceTransactionManager smartTestTransactionManager(DataSource dataSource) {
+    public DataSourceTransactionManager smartTestTransactionManager(
+            @Qualifier("smartTestDataSource") DataSource dataSource) {
         return new DataSourceTransactionManager(dataSource);
     }
 
     @Bean
     @Primary
-    public JdbcTemplate jdbcTemplate(DataSource dataSource) {
+    public JdbcTemplate jdbcTemplate(@Qualifier("smartTestDataSource") DataSource dataSource) {
         return new JdbcTemplate(dataSource);
     }
 }

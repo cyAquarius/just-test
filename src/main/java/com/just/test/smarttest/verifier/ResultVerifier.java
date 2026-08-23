@@ -130,6 +130,10 @@ public class ResultVerifier {
         }
 
         List<Object> actualList = (List<Object>) actual;
+        boolean unordered = hasKeyFlag(expectList);
+        if (unordered && !validateUnorderedExpectList(expectList, path, failures)) {
+            return failures;
+        }
         if (expectList.size() != actualList.size()) {
             failures.add(String.format("[%s]: expected list size %d but got %d",
                     path, expectList.size(), actualList.size()));
@@ -137,7 +141,7 @@ public class ResultVerifier {
         }
 
         // 检测是否有 [C] flag → 无序匹配模式
-        if (hasKeyFlag(expectList)) {
+        if (unordered) {
             verifyListUnordered(actualList, expectList, path, failures);
         } else {
             verifyListOrdered(actualList, expectList, path, failures);
@@ -168,15 +172,7 @@ public class ResultVerifier {
         Set<Integer> matchedIndexes = new LinkedHashSet<>();
 
         for (int ei = 0; ei < expectList.size(); ei++) {
-            Object expectItem = expectList.get(ei);
-            if (!(expectItem instanceof Map)) {
-                // 非 Map 元素降级为按下标
-                compareListItem(expectItem, actualList.get(ei), path + "[" + ei + "]", failures);
-                matchedIndexes.add(ei);
-                continue;
-            }
-
-            Map<String, Object> expectMap = (Map<String, Object>) expectItem;
+            Map<String, Object> expectMap = (Map<String, Object>) expectList.get(ei);
             Map<String, String> keyFields = extractKeyFields(expectMap);
 
             int matchedIdx = -1;
@@ -199,6 +195,29 @@ public class ResultVerifier {
                 compareMap(actualMap, expectMap, path + "[key=" + keyFields.values() + "]", failures);
             }
         }
+    }
+
+    @SuppressWarnings("unchecked")
+    private static boolean validateUnorderedExpectList(List<Object> expectList, String path,
+                                                       List<String> failures) {
+        boolean valid = true;
+        for (int i = 0; i < expectList.size(); i++) {
+            Object item = expectList.get(i);
+            if (!(item instanceof Map)) {
+                failures.add(String.format(
+                        "[%s[%d]]: every expected item must be an object with at least one [C] field "
+                                + "when unordered list matching is enabled", path, i));
+                valid = false;
+                continue;
+            }
+            if (extractKeyFields((Map<String, Object>) item).isEmpty()) {
+                failures.add(String.format(
+                        "[%s[%d]]: every expected item must declare at least one [C] field "
+                                + "when unordered list matching is enabled", path, i));
+                valid = false;
+            }
+        }
+        return valid;
     }
 
     /**
@@ -227,7 +246,9 @@ public class ResultVerifier {
             String flag = BuiltInMatchers.extractFlag(entry.getKey());
             if (BuiltInMatchers.FLAG_C.equals(flag)) {
                 String fieldName = BuiltInMatchers.extractFieldName(entry.getKey());
-                keys.put(fieldName, entry.getValue() == null ? null : entry.getValue().toString());
+                if (!fieldName.isEmpty()) {
+                    keys.put(fieldName, entry.getValue() == null ? null : entry.getValue().toString());
+                }
             }
         }
         return keys;
