@@ -1,0 +1,5 @@
+sample:
+  - id[C]: 1
+    status: ready
+    ignored[N]: deliberately-different
+  - id[CN]: 2

@@ -126,6 +126,7 @@ class SmartMockPostProcessor implements BeanFactoryPostProcessor {
                                             BeanDefinitionRegistry registry,
                                             SmartMockDefinition definition) {
         String targetBeanName = resolveBeanName(beanFactory, definition);
+        Class<?> mockType = resolveMockType(beanFactory, registry, targetBeanName, definition);
         BeanDefinition originalDefinition = null;
         BeanDefinition originalScopedTarget = null;
         if (registry.containsBeanDefinition(targetBeanName)) {
@@ -140,7 +141,7 @@ class SmartMockPostProcessor implements BeanFactoryPostProcessor {
         }
 
         // 注册 thread-scoped mock bean
-        AbstractBeanDefinition mockDef = createMockBeanDefinition(definition.getType());
+        AbstractBeanDefinition mockDef = createMockBeanDefinition(mockType);
         copyAutowireMetadata(mockDef, originalDefinition, originalScopedTarget);
         BeanDefinitionHolder holder = new BeanDefinitionHolder(mockDef, targetBeanName);
         BeanDefinitionHolder proxy = ScopedProxyUtils.createScopedProxy(holder, registry, true);
@@ -150,8 +151,23 @@ class SmartMockPostProcessor implements BeanFactoryPostProcessor {
         }
         registry.registerBeanDefinition(targetBeanName, proxy.getBeanDefinition());
 
-        log.info("[SmartMock] Registered thread-scoped mock for {} as '{}'", definition.getType().getSimpleName(), targetBeanName);
+        log.info("[SmartMock] Registered thread-scoped mock for {} as '{}'",
+                mockType.getSimpleName(), targetBeanName);
         return targetBeanName;
+    }
+
+    private Class<?> resolveMockType(ConfigurableListableBeanFactory beanFactory,
+                                     BeanDefinitionRegistry registry,
+                                     String beanName,
+                                     SmartMockDefinition definition) {
+        if (!registry.containsBeanDefinition(beanName) && !beanFactory.containsSingleton(beanName)) {
+            return definition.getType();
+        }
+        Class<?> targetType = beanFactory.getType(beanName, false);
+        if (targetType == null || !definition.getType().isAssignableFrom(targetType)) {
+            return definition.getType();
+        }
+        return targetType;
     }
 
     private String resolveBeanName(ConfigurableListableBeanFactory beanFactory,

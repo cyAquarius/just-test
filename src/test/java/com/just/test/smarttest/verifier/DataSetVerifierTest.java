@@ -13,6 +13,9 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class DataSetVerifierTest {
 
+    private static final String FLAG_CASE_PATH =
+            "com/just/test/smarttest/verifier/database/flags";
+
     @Test
     void supportsNullConditionValues() {
         SingleConnectionDataSource dataSource = new SingleConnectionDataSource(
@@ -29,6 +32,24 @@ class DataSetVerifierTest {
             expected.put("nullable_sample", Arrays.asList(expectedRow));
 
             List<String> failures = DataSetVerifier.verifyFromMap(jdbcTemplate, expected);
+
+            assertTrue(failures.isEmpty(), failures.toString());
+        } finally {
+            dataSource.destroy();
+        }
+    }
+
+    @Test
+    void loadsYamlAndSupportsConditionNotExistAndIgnoredFields() {
+        SingleConnectionDataSource dataSource = new SingleConnectionDataSource(
+                "jdbc:h2:mem:verifier_flags;MODE=MySQL;DB_CLOSE_DELAY=-1", "sa", "", true);
+        try {
+            JdbcTemplate jdbcTemplate = new JdbcTemplate(dataSource);
+            jdbcTemplate.execute("CREATE TABLE sample(id INT, status VARCHAR(20), ignored VARCHAR(20))");
+            jdbcTemplate.update("INSERT INTO sample(id, status, ignored) VALUES (?, ?, ?)",
+                    1, "ready", "actual-value");
+
+            List<String> failures = DataSetVerifier.verify(jdbcTemplate, FLAG_CASE_PATH);
 
             assertTrue(failures.isEmpty(), failures.toString());
         } finally {

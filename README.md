@@ -34,7 +34,7 @@ SmartTest isolates the test resources it owns. It does **not** make arbitrary ap
 - When multiple Spring contexts are detected, SmartTest emits one risk warning. A related case failure adds a diagnostic log without replacing the original exception. The presence of an arbitrary static mock does not suppress this hint because the framework cannot know whether it covers the relevant gateway.
 - New and legacy test classes can coexist; legacy classes without `@SmartTest` do not activate the SmartTest lifecycle. If both run in parallel while application code shares a JVM-static ContextHolder or factory, SmartTest cannot protect the legacy test thread. Keep affected legacy tests serial or migrate their static gateway.
 - Manually created threads, `CompletableFuture` common-pool tasks, and executors not managed by SmartTest do not receive mock or database context automatically; database access without an active case fails fast instead of creating an empty H2 database.
-- Test-level Spring `@Transactional` and `@Sql` are not supported for `@CaseSource` methods: their lifecycle runs before a case is bound. Use `prepare.yaml` and `expect.yaml` for deterministic case data instead.
+- Spring `@Transactional` and `@Sql` are unsupported on a SmartTest class or `@CaseSource` method because their lifecycle runs before a case is bound; SmartTest fails fast on these configurations. Use `prepare.yaml` and `expect.yaml` for deterministic case data instead.
 - A passing rerun is not proof of concurrency safety. Keep flaky suites serial until their ownership and lifecycle boundaries are established.
 - Write new SQL with standard single-quoted strings. The double-quote rewrite is only a compatibility bridge for existing MySQL mapper SQL.
 
@@ -73,6 +73,8 @@ Use this library only in test scope:
 ```
 
 GitHub Packages requires credentials in the consumer's `~/.m2/settings.xml`. Keep the token outside the project, for example `${env.GITHUB_PACKAGES_TOKEN}`. A classic PAT needs `read:packages`; private-repository consumers also need `repo`.
+
+The artifact transitively provides the Spring Boot TestContext and auto-configuration APIs required by `@SmartTest` and the recommended configuration below. The consumer still selects and manages its own Spring Boot 2.x version.
 
 ## Write a test
 
@@ -129,7 +131,7 @@ public void configureStaticMocks(CaseContext context, StaticMockContext mocks) {
 
 Unstubbed static methods continue to call their real implementation. Do not close the returned `MockedStatic` manually; SmartTest closes all registrations after user `@AfterEach` on the original case thread.
 
-This feature requires the consumer to enable Mockito's inline mock maker explicitly. For example, put `mock-maker-inline` in the consumer's `src/test/resources/mockito-extensions/org.mockito.plugins.MockMaker`, or add `mockito-inline` matching its Mockito version. SmartTest does not select a MockMaker from its published JAR, avoiding conflicts with existing Mockito or PowerMock configuration.
+This feature requires the consumer to enable Mockito's inline mock maker explicitly; the same applies when the actual Bean targeted by `@SmartMock` is a final class. For example, put `mock-maker-inline` in the consumer's `src/test/resources/mockito-extensions/org.mockito.plugins.MockMaker`, or add `mockito-inline` matching its Mockito version. SmartTest does not select a MockMaker from its published JAR, avoiding conflicts with existing Mockito or PowerMock configuration.
 
 By default, cases live below the test class package and simple name:
 
@@ -153,7 +155,7 @@ src/test/resources/com/example/order/OrderServiceTest/
 - `expect.yaml`: expected database rows.
 - `expect_exception.yaml`: expected exception type and optional message.
 
-Field suffix flags apply to response and database assertions:
+Field suffix flags are stage-specific: `[C]` selects rows in `expect.yaml` and enables unordered List matching in `response.yaml`, `[CN]` applies only to `expect.yaml`, `[F]` applies only to `prepare.yaml`, and the remaining flags apply to the corresponding preparation or assertion stage shown below:
 
 | Flag | Meaning |
 | --- | --- |
@@ -175,7 +177,7 @@ For database expectations, prefer explicit `[C]` fields so the intended row is u
 `@CaseSource` is itself the test annotation; do not combine it with another JUnit test annotation. For every YAML case SmartTest performs:
 
 1. create an independent JUnit invocation and its `CaseContext`;
-2. bind the case, initialize its schema, prepare a clean database, and load `prepare.yaml`;
+2. bind the case, create and initialize a fresh case database, and load `prepare.yaml`;
 3. reset and prewarm scoped mocks, inject `@SmartMock` fields, and configure case static mocks;
 4. execute user `@BeforeEach` methods;
 5. invoke matching `@BeforeCase("case-name")` methods and `beforeExecute`, execute the test, call `afterExecute`, and verify exception, result, and database data;
