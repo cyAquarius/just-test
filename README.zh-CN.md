@@ -38,6 +38,19 @@ SmartTest 只隔离自己拥有的测试资源，不能让任意业务代码天�
 - 重跑成功不能证明并发安全。存在 Flake 的测试应保持串行，直到其所有权和生命周期边界清晰。
 - 新 SQL 应使用标准单引号字符串；双引号改写仅是兼容历史 MySQL Mapper 的过渡能力。
 
+### 并行配置
+
+并行调度由消费工程的 JUnit 配置控制，SmartTest 负责并行后的框架资源隔离。推荐先启用测试类之间并行、保持同一类中的 case 串行：
+
+```properties
+# src/test/resources/junit-platform.properties
+junit.jupiter.execution.parallel.enabled=true
+junit.jupiter.execution.parallel.mode.default=same_thread
+junit.jupiter.execution.parallel.mode.classes.default=concurrent
+```
+
+业务 static 状态、外部共享资源和异步线程均已确认安全时，可将 `mode.default` 改为 `concurrent`，允许同一测试类中的 case 并行。正常测试类不需要声明 `@Execution`；仅在个别测试无法满足并发边界时，使用 `@Execution(ExecutionMode.SAME_THREAD)` 局部降级。
+
 ## 引入依赖
 
 只在测试范围引入：

@@ -38,6 +38,19 @@ SmartTest isolates the test resources it owns. It does **not** make arbitrary ap
 - A passing rerun is not proof of concurrency safety. Keep flaky suites serial until their ownership and lifecycle boundaries are established.
 - Write new SQL with standard single-quoted strings. The double-quote rewrite is only a compatibility bridge for existing MySQL mapper SQL.
 
+### Parallel execution configuration
+
+The consumer project's JUnit configuration controls scheduling; SmartTest isolates framework-owned resources once tests run in parallel. Start by running test classes concurrently while keeping cases within each class sequential:
+
+```properties
+# src/test/resources/junit-platform.properties
+junit.jupiter.execution.parallel.enabled=true
+junit.jupiter.execution.parallel.mode.default=same_thread
+junit.jupiter.execution.parallel.mode.classes.default=concurrent
+```
+
+After verifying that application static state, external shared resources, and asynchronous threads are safe, set `mode.default` to `concurrent` to run cases within the same class concurrently. Normal tests do not need `@Execution`; use `@Execution(ExecutionMode.SAME_THREAD)` only to downgrade an exceptional class that cannot satisfy the concurrency boundaries.
+
 ## Add the dependency
 
 Use this library only in test scope:
