@@ -34,7 +34,7 @@ SmartTest 只隔离自己拥有的测试资源，不能让任意业务代码天�
 - 检测到多个 Spring Context 时，SmartTest 会输出一次风险警告；相关 case 失败时会追加诊断日志，但不会替换原始异常。任意静态 Mock 的存在不会抑制该提示，因为框架无法判断它是否覆盖了相关入口。
 - 新旧测试类可以并存；未标注 `@SmartTest` 的旧测试不会启用 SmartTest 生命周期。但如果新旧测试并行执行，并且业务代码共享 JVM static ContextHolder/工厂，SmartTest 无法保护旧测试线程；应让受影响的旧测试保持串行，或迁移其静态入口。
 - 手工线程、`CompletableFuture` common pool 和未由 SmartTest 接管的 executor，不会自动获得 mock 或数据库上下文；没有活动 case 的数据库访问会立即失败，而不会静默创建空 H2。
-- 测试方法上的 Spring `@Transactional` 与 `@Sql` 不支持用于 `@CaseSource`：它们的生命周期早于 case 绑定。请使用 `prepare.yaml` 和 `expect.yaml` 管理确定性的 case 数据。
+- 测试类或 `@CaseSource` 方法上的 Spring `@Transactional` 与 `@Sql` 不受支持：它们的生命周期早于 case 绑定，框架会在执行前报错。请使用 `prepare.yaml` 和 `expect.yaml` 管理确定性的 case 数据。
 - 重跑成功不能证明并发安全。存在 Flake 的测试应保持串行，直到其所有权和生命周期边界清晰。
 - 新 SQL 应使用标准单引号字符串；双引号改写仅是兼容历史 MySQL Mapper 的过渡能力。
 
@@ -73,6 +73,8 @@ junit.jupiter.execution.parallel.mode.classes.default=concurrent
 ```
 
 GitHub Packages 需要在消费项目的 `~/.m2/settings.xml` 中配置凭据。Token 应放在项目外，例如 `${env.GITHUB_PACKAGES_TOKEN}`。classic PAT 需要 `read:packages`；消费私有源码仓库时还需要 `repo`。
+
+该 artifact 会传递提供 `@SmartTest` 启动和下方推荐配置所需的 Spring Boot TestContext 与 auto-configuration API；消费工程仍负责选择并管理自身的 Spring Boot 2.x 版本。
 
 ## 编写测试
 
@@ -129,7 +131,7 @@ public void configureStaticMocks(CaseContext context, StaticMockContext mocks) {
 
 未 stub 的静态方法继续调用真实实现。不要手工关闭返回的 `MockedStatic`；SmartTest 会在用户 `@AfterEach` 结束后，于原 case 线程统一关闭。
 
-该能力要求消费工程显式启用 Mockito inline mock maker，例如在消费工程的 `src/test/resources/mockito-extensions/org.mockito.plugins.MockMaker` 写入 `mock-maker-inline`，或引入与 Mockito 版本一致的 `mockito-inline`。SmartTest 不会在发布的 JAR 中全局指定 MockMaker，避免覆盖消费工程已有的 Mockito/PowerMock 配置。
+该能力要求消费工程显式启用 Mockito inline mock maker；`@SmartMock` 的实际目标 Bean 为 final 类时也有相同要求。例如在消费工程的 `src/test/resources/mockito-extensions/org.mockito.plugins.MockMaker` 写入 `mock-maker-inline`，或引入与 Mockito 版本一致的 `mockito-inline`。SmartTest 不会在发布的 JAR 中全局指定 MockMaker，避免覆盖消费工程已有的 Mockito/PowerMock 配置。
 
 默认目录位于测试类包名与简单类名之下：
 
@@ -153,7 +155,7 @@ src/test/resources/com/example/order/OrderServiceTest/
 - `expect.yaml`：预期数据库记录。
 - `expect_exception.yaml`：预期异常类型及可选消息。
 
-字段后缀 Flag 用于返回值和数据库断言：
+字段后缀 Flag 按文件阶段生效：`[C]` 用于 `expect.yaml` 的行定位和 `response.yaml` 的 List 无序匹配，`[CN]` 仅用于 `expect.yaml`，`[F]` 仅用于 `prepare.yaml`，其他 Flag 按下表用于相应的数据准备或断言：
 
 | Flag | 含义 |
 | --- | --- |
@@ -175,7 +177,7 @@ src/test/resources/com/example/order/OrderServiceTest/
 `@CaseSource` 本身就是测试注解，不要再与其他 JUnit 测试注解组合。每个 YAML case 依次执行：
 
 1. 创建独立的 JUnit invocation 及其 `CaseContext`；
-2. 绑定 case，初始化对应数据库 schema、准备干净数据库并加载 `prepare.yaml`；
+2. 绑定 case，创建并初始化全新的 case 数据库，然后加载 `prepare.yaml`；
 3. 重置、预热 scoped mock，注入 `@SmartMock` 字段并配置 case 静态 Mock；
 4. 执行用户的 `@BeforeEach`；
 5. 调用匹配的 `@BeforeCase("case-name")` 与 `beforeExecute`，执行测试方法、`afterExecute` 及异常、返回值和数据库验证；

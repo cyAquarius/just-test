@@ -135,6 +135,27 @@ class SmartMockPostProcessorTest {
         assertNotEquals(first, different);
     }
 
+    @Test
+    void contextKeyIgnoresFieldNameAndQualifierWhenExplicitBeanNameSelectsTheTarget() {
+        SmartMockContextCustomizer first = customizer(field(ExplicitFirstTest.class, "client"));
+        SmartMockContextCustomizer equivalent = customizer(field(ExplicitEquivalentTest.class, "renamedClient"));
+
+        assertEquals(first, equivalent);
+        assertEquals(first.hashCode(), equivalent.hashCode());
+    }
+
+    @Test
+    void preservesConcreteTargetTypeForOtherConcreteInjectionPoints() {
+        DefaultListableBeanFactory beanFactory = beanFactory();
+        AbstractBeanDefinition definition = BeanDefinitionBuilder
+                .genericBeanDefinition(ConcreteClient.class).getBeanDefinition();
+        beanFactory.registerBeanDefinition("concreteClient", definition);
+
+        process(beanFactory, field(ConcreteTypeTest.class, "client"));
+
+        assertEquals(ConcreteClient.class, beanFactory.getType("scopedTarget.concreteClient"));
+    }
+
     private SmartMockContextCustomizer customizer(Field field) {
         return new SmartMockContextCustomizer(Collections.singleton(definition(field)));
     }
@@ -227,6 +248,28 @@ class SmartMockPostProcessorTest {
         @SmartMock
         @Qualifier("red")
         private SampleClient client;
+    }
+
+    private static class ExplicitFirstTest {
+        @SmartMock(name = "firstClient")
+        private SampleClient client;
+    }
+
+    private static class ExplicitEquivalentTest {
+        @SmartMock(name = "firstClient")
+        @Qualifier("ignoredForExplicitSelection")
+        private SampleClient renamedClient;
+    }
+
+    private static class ConcreteTypeTest {
+        @SmartMock
+        private Client client;
+    }
+
+    private interface Client {
+    }
+
+    private static class ConcreteClient implements Client {
     }
 
     private static class SampleClient {

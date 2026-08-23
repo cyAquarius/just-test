@@ -36,7 +36,7 @@ import java.util.List;
 /**
  * 单个 SmartTest case invocation 的完整生命周期。
  *
- * <p>执行顺序：case bind / clean / prepare / mock setup → JUnit {@code @BeforeEach}
+ * <p>执行顺序：case bind / schema / prepare / mock setup → JUnit {@code @BeforeEach}
  * → {@code @BeforeCase} / lifecycle / test / verify → JUnit {@code @AfterEach} → resource cleanup。</p>
  */
 public final class SmartTestExtension implements BeforeEachCallback, AfterEachCallback,
@@ -53,6 +53,8 @@ public final class SmartTestExtension implements BeforeEachCallback, AfterEachCa
     private JdbcTemplate jdbcTemplate;
     private SmartTestLifecycle lifecycle;
     private boolean caseBound;
+    private boolean exceptionVerificationEvaluated;
+    private boolean exceptionVerifiedByLifecycle;
 
     public SmartTestExtension(CaseContext caseContext) {
         if (caseContext == null) {
@@ -122,7 +124,11 @@ public final class SmartTestExtension implements BeforeEachCallback, AfterEachCa
             } catch (Throwable failure) {
                 caseContext.setException(failure);
                 if (!ExceptionVerifier.hasExpectException(caseContext.getCasePath())) {
-                    throw failure;
+                    exceptionVerifiedByLifecycle = lifecycle.verifyException(caseContext);
+                    exceptionVerificationEvaluated = true;
+                    if (!exceptionVerifiedByLifecycle) {
+                        throw failure;
+                    }
                 }
                 log.debug("[SmartTest] Exception captured for case [{}]: {}",
                         caseContext.getCaseName(), failure.getClass().getSimpleName());
@@ -157,7 +163,6 @@ public final class SmartTestExtension implements BeforeEachCallback, AfterEachCa
             return;
         }
         SchemaInitializer.initialize(jdbcTemplate, SCHEMA_LOCATION);
-        DataSetLoader.cleanTables(jdbcTemplate);
         DataSetLoader.load(jdbcTemplate, caseContext.getCasePath());
         log.debug("[SmartTest] Data prepared for case: {}", caseContext.getCaseName());
     }
@@ -166,7 +171,10 @@ public final class SmartTestExtension implements BeforeEachCallback, AfterEachCa
         List<String> failures = new ArrayList<>();
         String casePath = caseContext.getCasePath();
 
-        if (!lifecycle.verifyException(caseContext)) {
+        boolean exceptionHandled = exceptionVerificationEvaluated
+                ? exceptionVerifiedByLifecycle
+                : lifecycle.verifyException(caseContext);
+        if (!exceptionHandled) {
             if (caseContext.getException() != null) {
                 failures.addAll(ExceptionVerifier.verify(caseContext.getException(), casePath));
             } else if (ExceptionVerifier.hasExpectException(casePath)) {
