@@ -32,12 +32,7 @@ public class H2MySqlStringLiteralInterceptor implements Interceptor {
     @Override
     public Object intercept(Invocation invocation) throws Throwable {
         StatementHandler handler = (StatementHandler) invocation.getTarget();
-        MetaObject metaObject = SystemMetaObject.forObject(handler);
-        // MyBatis 多拦截器链会把 target 层层包成 Plugin Proxy,
-        // 这里逐层解包直到拿到真实的 RoutingStatementHandler。
-        while (metaObject.hasGetter("h.target")) {
-            metaObject = SystemMetaObject.forObject(metaObject.getValue("h.target"));
-        }
+        MetaObject metaObject = SystemMetaObject.forObject(MyBatisPluginTargetResolver.unwrap(handler));
         String originalSql = (String) metaObject.getValue("delegate.boundSql.sql");
 
         if (originalSql != null && originalSql.indexOf('"') >= 0) {

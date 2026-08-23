@@ -50,6 +50,18 @@ class ResultVerifierTest {
                 failure -> failure.contains("every expected item must declare at least one [C] field")));
     }
 
+    @Test
+    void rejectsMixedKeyedAndUnkeyedItemsInNestedList() {
+        Map<String, Object> actual = new LinkedHashMap<>();
+        actual.put("items", Arrays.asList(item(1, "first"), item(2, "second")));
+
+        List<String> failures = ResultVerifier.verify(actual,
+                "com/just/test/smarttest/verifier/result/nested-mixed-keys");
+
+        assertTrue(failures.stream().anyMatch(
+                failure -> failure.contains("every expected item must declare at least one [C] field")));
+    }
+
     private static Map<String, Object> item(int id, String name) {
         Map<String, Object> item = new LinkedHashMap<>();
         item.put("id", id);
