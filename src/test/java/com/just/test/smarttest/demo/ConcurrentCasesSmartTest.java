@@ -7,7 +7,6 @@ import com.just.test.smarttest.lifecycle.SmartTestLifecycle;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.parallel.Execution;
 import org.junit.jupiter.api.parallel.ExecutionMode;
-import org.junit.jupiter.params.ParameterizedTest;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -35,7 +34,6 @@ class ConcurrentCasesSmartTest implements SmartTestLifecycle {
     @Autowired
     private JdbcTemplate jdbcTemplate;
 
-    @ParameterizedTest(name = "{0}")
     @CaseSource
     void keepsEachConcurrentCaseInItsOwnDatabase(CaseContext context) throws Exception {
         int active = ACTIVE_CASES.incrementAndGet();

@@ -5,7 +5,7 @@ import com.just.test.smarttest.annotation.SmartMock;
 import com.just.test.smarttest.annotation.SmartTest;
 import com.just.test.smarttest.context.CaseContext;
 import com.just.test.smarttest.lifecycle.SmartTestLifecycle;
-import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.api.BeforeEach;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.test.context.ContextConfiguration;
 
@@ -21,10 +21,13 @@ class PricingServiceTest implements SmartTestLifecycle {
     @SmartMock
     private PricingClient pricingClient;
 
-    @ParameterizedTest
+    @BeforeEach
+    void configureCaseMock(CaseContext context) {
+        when(pricingClient.multiplier(anyString())).thenReturn(context.getInt("multiplier"));
+    }
+
     @CaseSource
     void calculate(CaseContext context) {
-        when(pricingClient.multiplier(anyString())).thenReturn(context.getInt("multiplier"));
         context.setResult(pricingService.calculate(
                 context.getLong("productId"),
                 context.getInt("quantity"),

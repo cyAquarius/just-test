@@ -3,18 +3,17 @@ package com.just.test.smarttest.context;
 import com.just.test.smarttest.annotation.CaseSource;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtensionContext;
-import org.junit.jupiter.params.provider.Arguments;
 
 import java.lang.reflect.Method;
 import java.util.List;
-import java.util.stream.Collectors;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
-class CaseArgumentsProviderTest {
+class CaseTemplateInvocationContextProviderTest {
 
     @Test
     void prefersTestClassDirectoryAndLoadsClasspathResources() throws Exception {
@@ -22,15 +21,15 @@ class CaseArgumentsProviderTest {
         Method method = Fixture.class.getDeclaredMethod("caseMethod", CaseContext.class);
         doReturn(Fixture.class).when(context).getRequiredTestClass();
         when(context.getRequiredTestMethod()).thenReturn(method);
+        when(context.getTestMethod()).thenReturn(java.util.Optional.of(method));
 
-        List<? extends Arguments> arguments = new CaseArgumentsProvider()
-                .provideArguments(context)
-                .collect(Collectors.toList());
+        CaseTemplateInvocationContextProvider provider = new CaseTemplateInvocationContextProvider();
+        List<CaseContext> cases = provider.discoverCases(context);
 
-        assertEquals(1, arguments.size());
-        CaseContext caseContext = (CaseContext) arguments.get(0).get()[0];
-        assertEquals("alpha", caseContext.getCaseName());
-        assertEquals(7, caseContext.getInt("value"));
+        assertTrue(provider.supportsTestTemplate(context));
+        assertEquals(1, cases.size());
+        assertEquals("alpha", cases.get(0).getCaseName());
+        assertEquals(7, cases.get(0).getInt("value"));
     }
 
     private static class Fixture {

@@ -11,7 +11,6 @@ import org.apache.ibatis.session.SqlSessionFactory;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.parallel.Execution;
 import org.junit.jupiter.api.parallel.ExecutionMode;
-import org.junit.jupiter.params.ParameterizedTest;
 import org.mybatis.spring.SqlSessionFactoryBean;
 import org.mybatis.spring.SqlSessionTemplate;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -47,7 +46,6 @@ class MyBatisTransactionLifecycleSmartTest implements SmartTestLifecycle {
     @Autowired
     private SqlSessionFactory sqlSessionFactory;
 
-    @ParameterizedTest(name = "{0}")
     @CaseSource
     void releasesSpringAndMyBatisResourcesBetweenCases(CaseContext context) {
         EXECUTION_THREADS.add(Thread.currentThread().getName());

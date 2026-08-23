@@ -17,10 +17,11 @@
 ## SmartTest 提供的能力
 
 - `@SmartTest` 配置 Spring Test、H2、`JdbcTemplate` 与事务管理器，使被测服务可以按正常事务行为执行。
-- `@CaseSource` 发现 YAML 用例，并将 `CaseContext` 传给 JUnit 参数化测试。
+- `@CaseSource` 发现 YAML 用例，并为每个 case 创建完整的 JUnit test-template invocation；测试方法和标准单测生命周期方法均可注入 `CaseContext`。
 - 通过 `prepare.yaml`、`response.yaml`、`expect.yaml`、`expect_exception.yaml` 完成数据准备以及结果、数据库和异常验证。
 - `@SmartMock` 创建线程作用域 Mockito mock；同类型多 Bean 时，显式 `name` 优先，否则先按 Spring autowire/qualifier 规则过滤，再按 `@Primary`、字段名或 alias、唯一候选确定目标。
 - `@ThreadScopedMock` 将同一 scoped mock 模型用于标注的 `@Bean` 方法。
+- `StaticMockContext` 可在每个 case 线程中替换业务静态 Context/工厂入口，并在 case 结束时自动恢复。
 - H2 数据库按 SmartTest `ApplicationContext` 与活动 case 隔离；case 结束时释放对应数据库，schema 初始化失败可重试。
 - MyBatis 测试 SQL 进行受控的 MySQL→H2 改写：`IF(...)` 改为 `CASEWHEN(...)`；历史双引号字符串仅在已知字符串函数参数和比较运算符右值中兼容。
 
@@ -29,6 +30,9 @@
 SmartTest 只隔离自己拥有的测试资源，不能让任意业务代码天然全局并发安全。
 
 - 业务代码初始化的 static registry 仍由业务侧负责。
+- case 静态 Mock 只作用于当前线程，在用户 `@BeforeEach`、测试方法和用户 `@AfterEach` 中持续生效；它不能覆盖 Spring Context refresh 或早于 case invocation 的 Spring Test listener，也不会传播到业务自行创建的异步线程。
+- 检测到多个 Spring Context 时，SmartTest 会输出一次风险警告；相关 case 失败时会追加诊断日志，但不会替换原始异常。任意静态 Mock 的存在不会抑制该提示，因为框架无法判断它是否覆盖了相关入口。
+- 新旧测试类可以并存；未标注 `@SmartTest` 的旧测试不会启用 SmartTest 生命周期。但如果新旧测试并行执行，并且业务代码共享 JVM static ContextHolder/工厂，SmartTest 无法保护旧测试线程；应让受影响的旧测试保持串行，或迁移其静态入口。
 - 手工线程、`CompletableFuture` common pool 和未由 SmartTest 接管的 executor，不会自动获得 mock 或数据库上下文；没有活动 case 的数据库访问会立即失败，而不会静默创建空 H2。
 - 测试方法上的 Spring `@Transactional` 与 `@Sql` 不支持用于 `@CaseSource`：它们的生命周期早于 case 绑定。请使用 `prepare.yaml` 和 `expect.yaml` 管理确定性的 case 数据。
 - 重跑成功不能证明并发安全。存在 Flake 的测试应保持串行，直到其所有权和生命周期边界清晰。
@@ -72,7 +76,6 @@ class OrderServiceTest implements SmartTestLifecycle {
     @SmartMock
     private PricingClient pricingClient;
 
-    @ParameterizedTest(name = "{0}")
     @CaseSource
     void createOrder(CaseContext context) {
         context.setResult(orderService.create(context.getLong("customerId")));
@@ -81,6 +84,21 @@ class OrderServiceTest implements SmartTestLifecycle {
 ```
 
 同类型有多个候选 Bean 时，使用 `@SmartMock(name = "beanName")` 或 `@Qualifier("beanName")`。
+
+业务通过静态入口获取 Spring Context 时，可按 case 显式绑定：
+
+```java
+@Override
+public void configureStaticMocks(CaseContext context, StaticMockContext mocks) {
+    MockedStatic<SpringContextHolder> holder = mocks.mockStatic(SpringContextHolder.class);
+    holder.when(SpringContextHolder::getApplicationContext)
+          .thenReturn(mocks.getApplicationContext());
+}
+```
+
+未 stub 的静态方法继续调用真实实现。不要手工关闭返回的 `MockedStatic`；SmartTest 会在用户 `@AfterEach` 结束后，于原 case 线程统一关闭。
+
+该能力要求消费工程显式启用 Mockito inline mock maker，例如在消费工程的 `src/test/resources/mockito-extensions/org.mockito.plugins.MockMaker` 写入 `mock-maker-inline`，或引入与 Mockito 版本一致的 `mockito-inline`。SmartTest 不会在发布的 JAR 中全局指定 MockMaker，避免覆盖消费工程已有的 Mockito/PowerMock 配置。
 
 默认目录位于测试类包名与简单类名之下：
 
@@ -121,15 +139,17 @@ src/test/resources/com/example/order/OrderServiceTest/
 
 ## 生命周期
 
-每个 YAML case 依次执行：
+`@SmartTest` 是测试类级执行契约：类内所有可执行测试方法都必须使用 `@CaseSource`。如果类中存在 `@Test`、`@RepeatedTest`、`@ParameterizedTest`、`@TestFactory` 或其他普通 JUnit 测试方法，SmartTest 会在执行前报错并提示拆分类。渐进迁移时，保留原有 JUnit 测试类不变，将新 case 放入独立的 `@SmartTest` 类；未标注 `@SmartTest` 的旧测试类不受影响。
 
-1. 绑定唯一 case 身份，初始化对应数据库 schema 并准备干净数据库；
-2. 加载 `prepare.yaml`；
-3. 重置、预热 scoped mock，并注入 `@SmartMock` 字段；
-4. 调用匹配的 `@BeforeCase("case-name")` 及 `beforeExecute`；
-5. 执行 JUnit 方法，然后调用 `afterExecute`；
-6. 除非 `SmartTestLifecycle` 明确跳过，否则验证异常、返回值和数据库；
-7. 释放 scoped 对象与 case 数据库；清理失败作为 suppressed exception 保留，且不掩盖原始测试失败。
+`@CaseSource` 本身就是测试注解，不要再与其他 JUnit 测试注解组合。每个 YAML case 依次执行：
+
+1. 创建独立的 JUnit invocation 及其 `CaseContext`；
+2. 绑定 case，初始化对应数据库 schema、准备干净数据库并加载 `prepare.yaml`；
+3. 重置、预热 scoped mock，注入 `@SmartMock` 字段并配置 case 静态 Mock；
+4. 执行用户的 `@BeforeEach`；
+5. 调用匹配的 `@BeforeCase("case-name")` 与 `beforeExecute`，执行测试方法、`afterExecute` 及异常、返回值和数据库验证；
+6. 执行用户的 `@AfterEach`；
+7. 关闭静态与 scoped mock，释放 case 数据库；清理失败不会掩盖原始测试失败。
 
 ## 构建与发布
 

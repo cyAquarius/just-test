@@ -7,7 +7,7 @@ import java.lang.annotation.Target;
 
 /**
  * 标记 per-case 的 mock 设置方法。当 case 名称匹配时，
- * {@code SmartTestExtension} 在测试方法执行前自动调用该方法。
+ * {@code SmartTestExtension} 在 JUnit {@code @BeforeEach} 之后、测试方法执行前自动调用该方法。
  *
  * <pre>
  * {@code @BeforeCase("deductBalance")}
