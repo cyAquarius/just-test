@@ -2,7 +2,7 @@
 
 [中文文档](README.zh-CN.md)
 
-`just-test` is a reusable Java test toolkit. Its current module, SmartTest, provides YAML-driven Spring integration tests backed by JUnit 5 and an isolated in-memory H2 database.
+`just-test` is a reusable Java test toolkit. Its current module, SmartTest, provides YAML-driven Spring Boot integration tests backed by JUnit 5 and an isolated in-memory H2 database.
 
 It is deliberately a test-scope framework: it supplies repeatable test setup, assertions, and test doubles, but it does not replace application design, production database compatibility testing, or concurrency control in application code.
 
@@ -63,12 +63,28 @@ GitHub Packages requires credentials in the consumer's `~/.m2/settings.xml`. Kee
 
 ## Write a test
 
-The consumer project must provide `src/test/resources/sql/schema.sql` for H2 schema initialization.
+SmartTest always uses the Spring Boot TestContext. The consumer project must provide `src/test/resources/sql/schema.sql` for H2 schema initialization and a dedicated test startup configuration:
+
+```java
+// src/test/java/com/example/smarttest/SmartTestApplication.java
+@SpringBootConfiguration
+@EnableAutoConfiguration
+@ComponentScan(
+    basePackages = "com.example",
+    excludeFilters = @ComponentScan.Filter(
+        type = FilterType.ASSIGNABLE_TYPE,
+        classes = Application.class
+    )
+)
+public class SmartTestApplication {
+}
+```
+
+`SmartTestApplication` is the consumer-owned startup configuration dedicated to SmartTest and needs no `main` method. Put it in a dedicated test package and place every SmartTest class in that package or a child package, for example `com.example.smarttest.order`. Spring Boot finds this nearer test configuration before searching the parent package that contains the production `Application`. Merely placing it under `src/test` does not prevent a conflict because the test classpath contains both production and test classes. When scanning the application root package, exclude the production startup class as shown so component scanning does not load its configuration again. The consumer owns any additional component-scan exclusions, mapper wiring, and project-level external-dependency mocks.
 
 ```java
 @SmartTest
-@ContextConfiguration(classes = YourApplication.class)
-class OrderServiceTest implements SmartTestLifecycle {
+class OrderServiceSmartTest implements SmartTestLifecycle {
 
     @Autowired
     private OrderService orderService;
@@ -83,26 +99,9 @@ class OrderServiceTest implements SmartTestLifecycle {
 }
 ```
 
-Use `@SmartMock(name = "beanName")` or `@Qualifier("beanName")` when a type has multiple candidates.
+`@SmartTest` already includes the Spring Boot bootstrapper and loads `application-test.yml` through the `test` profile. Do not combine it with `@SpringBootTest` or declare another `@BootstrapWith`. The dedicated test package should expose exactly one `@SpringBootConfiguration`. Use `@ContextConfiguration(classes = SmartTestApplication.class)` only when a test is outside that package hierarchy, several startup configurations are candidates, or that test needs a special configuration.
 
-### Spring Boot Test integration
-
-The SmartTest core does not depend on Spring Boot Test. When a Spring Boot consumer needs Boot TestContext features such as `application-{profile}.yml` loading, the consumer supplies `spring-boot-test` matching its Boot version (normally through `spring-boot-starter-test`) and combines the Boot bootstrapper with SmartTest:
-
-```java
-@SmartTest
-@BootstrapWith(SpringBootTestContextBootstrapper.class)
-@ContextConfiguration(classes = YourTestApplication.class)
-class OrderServiceSmartTest implements SmartTestLifecycle {
-
-    @CaseSource
-    void createOrder(CaseContext context) {
-        // application-test.yml is loaded through the test profile from @SmartTest
-    }
-}
-```
-
-The consumer owns `YourTestApplication`, application component-scan exclusions, mapper wiring, and project-level external-dependency mocks. Prefer `@SmartMock` when replacing Spring beans; retaining the Boot bootstrapper enables Boot configuration loading and does not imply that `@MockBean` is required. Non-Boot consumers need no Boot Test dependency.
+Use `@SmartMock(name = "beanName")` or `@Qualifier("beanName")` when a type has multiple candidates. Prefer `@SmartMock` when replacing Spring beans; `@MockBean` is not required.
 
 If application code obtains Spring through a static gateway, bind that gateway explicitly per case:
 
