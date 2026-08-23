@@ -19,7 +19,7 @@
 - `@SmartTest` 配置 Spring Test、H2、`JdbcTemplate` 与事务管理器，使被测服务可以按正常事务行为执行。
 - `@CaseSource` 发现 YAML 用例，并将 `CaseContext` 传给 JUnit 参数化测试。
 - 通过 `prepare.yaml`、`response.yaml`、`expect.yaml`、`expect_exception.yaml` 完成数据准备以及结果、数据库和异常验证。
-- `@SmartMock` 创建线程作用域 Mockito mock；同类型多 Bean 时，按 `name`、`@Qualifier`、字段名、`@Primary`、唯一类型候选的顺序确定目标。
+- `@SmartMock` 创建线程作用域 Mockito mock；同类型多 Bean 时，显式 `name` 优先，否则先按 Spring autowire/qualifier 规则过滤，再按 `@Primary`、字段名或 alias、唯一候选确定目标。
 - `@ThreadScopedMock` 将同一 scoped mock 模型用于标注的 `@Bean` 方法。
 - H2 数据库按 SmartTest `ApplicationContext` 与活动 case 隔离；case 结束时释放对应数据库，schema 初始化失败可重试。
 - MyBatis 测试 SQL 进行受控的 MySQL→H2 改写：`IF(...)` 改为 `CASEWHEN(...)`；历史双引号字符串仅在已知字符串函数参数和比较运算符右值中兼容。
