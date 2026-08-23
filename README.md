@@ -138,7 +138,7 @@ This feature requires the consumer to enable Mockito's inline mock maker explici
 By default, cases live below the test class package and simple name:
 
 ```text
-src/test/resources/com/example/order/OrderServiceTest/
+src/test/resources/com/example/smarttest/order/OrderServiceSmartTest/
 └── create-order/
     ├── request.yaml
     ├── prepare.yaml

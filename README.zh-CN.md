@@ -138,7 +138,7 @@ public void configureStaticMocks(CaseContext context, StaticMockContext mocks) {
 默认目录位于测试类包名与简单类名之下：
 
 ```text
-src/test/resources/com/example/order/OrderServiceTest/
+src/test/resources/com/example/smarttest/order/OrderServiceSmartTest/
 └── create-order/
     ├── request.yaml
     ├── prepare.yaml
