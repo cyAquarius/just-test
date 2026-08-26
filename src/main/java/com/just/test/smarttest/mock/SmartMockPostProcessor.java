@@ -125,7 +125,7 @@ class SmartMockPostProcessor implements BeanFactoryPostProcessor {
     private String registerThreadScopedMock(ConfigurableListableBeanFactory beanFactory,
                                             BeanDefinitionRegistry registry,
                                             SmartMockDefinition definition) {
-        String targetBeanName = resolveBeanName(beanFactory, definition);
+        String targetBeanName = resolveBeanName(beanFactory, registry, definition);
         Class<?> mockType = resolveMockType(beanFactory, registry, targetBeanName, definition);
         BeanDefinition originalDefinition = null;
         BeanDefinition originalScopedTarget = null;
@@ -171,20 +171,62 @@ class SmartMockPostProcessor implements BeanFactoryPostProcessor {
     }
 
     private String resolveBeanName(ConfigurableListableBeanFactory beanFactory,
+                                   BeanDefinitionRegistry registry,
                                    SmartMockDefinition definition) {
-        String[] candidates = beanFactory.getBeanNamesForType(definition.getType(), true, false);
+        java.util.LinkedHashSet<String> logicalCandidates =
+                collectLogicalCandidates(beanFactory, definition.getType(), false);
+        if (!definition.getExplicitBeanName().isEmpty()) {
+            String existingBeanName = findExistingBeanDefinition(
+                    registry, beanFactory, definition.getExplicitBeanName());
+            if (existingBeanName != null) {
+                return existingBeanName;
+            }
+            if (logicalCandidates.isEmpty()) {
+                logicalCandidates.addAll(
+                        collectLogicalCandidates(beanFactory, definition.getType(), true));
+            }
+            return requireCandidate(beanFactory, definition, logicalCandidates,
+                    definition.getExplicitBeanName());
+        }
+
+        DependencyDescriptor descriptor = definition.toDependencyDescriptor();
+        if (logicalCandidates.isEmpty()) {
+            String fallback = resolveNamedFallback(beanFactory, registry, definition, descriptor);
+            if (fallback != null) {
+                return fallback;
+            }
+            // FactoryBean object types are not always available without eager initialization.
+            // The name lookup above keeps this fallback independent of eager-init side effects.
+            logicalCandidates.addAll(
+                    collectLogicalCandidates(beanFactory, definition.getType(), true));
+        }
+
+        return resolveFromTypeCandidates(beanFactory, registry, definition,
+                descriptor, logicalCandidates);
+    }
+
+    private java.util.LinkedHashSet<String> collectLogicalCandidates(
+            ConfigurableListableBeanFactory beanFactory, Class<?> type, boolean allowEagerInit) {
+        String[] candidates = beanFactory.getBeanNamesForType(type, true, allowEagerInit);
         java.util.LinkedHashSet<String> logicalCandidates = new java.util.LinkedHashSet<>();
         for (String candidate : candidates) {
             if (!candidate.startsWith(SCOPED_TARGET_PREFIX)) {
                 logicalCandidates.add(candidate);
             }
         }
+        return logicalCandidates;
+    }
+
+    private String resolveFromTypeCandidates(ConfigurableListableBeanFactory beanFactory,
+                                             BeanDefinitionRegistry registry,
+                                             SmartMockDefinition definition,
+                                             DependencyDescriptor descriptor,
+                                             Set<String> logicalCandidates) {
         if (!definition.getExplicitBeanName().isEmpty()) {
             return requireCandidate(beanFactory, definition, logicalCandidates,
                     definition.getExplicitBeanName());
         }
 
-        DependencyDescriptor descriptor = definition.toDependencyDescriptor();
         java.util.LinkedHashSet<String> injectableCandidates = new java.util.LinkedHashSet<>();
         for (String candidate : logicalCandidates) {
             if (beanFactory.isAutowireCandidate(candidate, descriptor)) {
@@ -197,8 +239,12 @@ class SmartMockPostProcessor implements BeanFactoryPostProcessor {
                 throw new IllegalStateException("[SmartMock] No autowire candidate matches the qualifier for "
                         + definition.describe() + ". Type candidates: " + logicalCandidates);
             }
+            String fallback = resolveNamedFallback(beanFactory, registry, definition, descriptor);
+            if (fallback != null) {
+                return fallback;
+            }
             String generated = generateAvailableBeanName(
-                    definition.getType(), beanFactory, (BeanDefinitionRegistry) beanFactory);
+                    definition.getType(), beanFactory, registry);
             log.warn("[SmartMock] No injectable bean found for {}, registering '{}'", definition.describe(), generated);
             return generated;
         }
@@ -220,6 +266,44 @@ class SmartMockPostProcessor implements BeanFactoryPostProcessor {
         }
         if (injectableCandidates.size() == 1) return injectableCandidates.iterator().next();
         throw ambiguous(definition, injectableCandidates);
+    }
+
+    private String resolveNamedFallback(ConfigurableListableBeanFactory beanFactory,
+                                        BeanDefinitionRegistry registry,
+                                        SmartMockDefinition definition,
+                                        DependencyDescriptor descriptor) {
+        String fieldName = definition.getFieldName();
+        String fieldBeanName = findExistingBeanDefinition(registry, beanFactory, fieldName);
+        if (fieldBeanName != null && beanFactory.isAutowireCandidate(fieldBeanName, descriptor)) {
+            log.warn("[SmartMock] Type scan did not find a candidate for {}; "
+                            + "using field-name fallback '{}' (resolved bean '{}')",
+                    definition.describe(), fieldName, fieldBeanName);
+            return fieldBeanName;
+        }
+
+        String defaultBeanName = generateBeanName(definition.getType());
+        if (!defaultBeanName.equals(fieldName)) {
+            String defaultBean = findExistingBeanDefinition(registry, beanFactory, defaultBeanName);
+            if (defaultBean != null && beanFactory.isAutowireCandidate(defaultBean, descriptor)) {
+                log.warn("[SmartMock] Type scan did not find a candidate for {}; "
+                                + "using default bean-name fallback '{}' (resolved bean '{}')",
+                        definition.describe(), defaultBeanName, defaultBean);
+                return defaultBean;
+            }
+        }
+        return null;
+    }
+
+    private String findExistingBeanDefinition(BeanDefinitionRegistry registry,
+                                              ConfigurableListableBeanFactory beanFactory,
+                                              String requestedName) {
+        for (String candidate : registry.getBeanDefinitionNames()) {
+            if (!candidate.startsWith(SCOPED_TARGET_PREFIX)
+                    && matchesName(beanFactory, candidate, requestedName)) {
+                return candidate;
+            }
+        }
+        return null;
     }
 
     private String requireCandidate(ConfigurableListableBeanFactory beanFactory,
