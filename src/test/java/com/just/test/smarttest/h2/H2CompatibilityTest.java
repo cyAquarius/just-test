@@ -59,10 +59,12 @@ class H2CompatibilityTest {
             assertEquals(2, jdbcTemplate.queryForObject(
                     "SELECT FIND_IN_SET('b', 'a,b,c')", Integer.class));
             assertEquals("2024-03-05", jdbcTemplate.queryForObject(
-                    "SELECT DATE_FORMAT(TIMESTAMP '2024-03-05 12:30:00', '%Y-%m-%d')",
+                    SqlTextRewriter.rewriteDateFormatFunctions(
+                            "SELECT DATE_FORMAT(TIMESTAMP '2024-03-05 12:30:00', '%Y-%m-%d')"),
                     String.class));
             assertEquals("2024-03-05", jdbcTemplate.queryForObject(
-                    "SELECT DATE_FORMAT(DATE '2024-03-05', '%Y-%m-%d')",
+                    SqlTextRewriter.rewriteDateFormatFunctions(
+                            "SELECT DATE_FORMAT('2024-03-05', '%Y-%m-%d')"),
                     String.class));
             assertEquals("yes", jdbcTemplate.queryForObject(
                     SqlTextRewriter.rewriteIfFunctions("SELECT IF(1 = 1, 'yes', 'no')"),

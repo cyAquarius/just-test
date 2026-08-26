@@ -18,6 +18,38 @@ class SqlTextRewriterTest {
     }
 
     @Test
+    void rewritesDateFormatFunctionCaseInsensitivelyAndPreservesWhitespace() {
+        String sql = "SELECT DATE_FORMAT(create_time, '%Y-%m-%d %H:%i:%s'), "
+                + "date_format (updated_at, '%y/%m/%d %h:%i:%S') FROM sample";
+
+        assertEquals(
+                "SELECT FORMATDATETIME(create_time, 'yyyy-MM-dd HH:mm:ss'), "
+                        + "FORMATDATETIME (updated_at, 'yy/MM/dd hh:mm:ss') FROM sample",
+                SqlTextRewriter.rewriteDateFormatFunctions(sql));
+    }
+
+    @Test
+    void doesNotRewriteDateFormatTextInsideQuotesOrComments() {
+        String sql = "SELECT 'DATE_FORMAT(create_time, ''%Y-%m-%d'')', "
+                + "\"DATE_FORMAT(identifier, '%Y-%m-%d')\", `DATE_FORMAT(column, '%Y-%m-%d')` "
+                + "/* DATE_FORMAT(comment, '%Y-%m-%d') */ -- DATE_FORMAT(line, '%Y-%m-%d')\n"
+                + "FROM sample";
+
+        assertEquals(sql, SqlTextRewriter.rewriteDateFormatFunctions(sql));
+    }
+
+    @Test
+    void preservesNestedExpressionAsDateFormatFirstArgument() {
+        String sql = "SELECT DATE_FORMAT(COALESCE(create_time, fallback_time), '%Y-%m-%d') "
+                + "FROM sample";
+
+        assertEquals(
+                "SELECT FORMATDATETIME(COALESCE(create_time, fallback_time), 'yyyy-MM-dd') "
+                        + "FROM sample",
+                SqlTextRewriter.rewriteDateFormatFunctions(sql));
+    }
+
+    @Test
     void rewritesDoubleQuotedLiteralsOnlyInsideSupportedFunctions() {
         String sql = "SELECT \"quoted_column\", REPLACE(name, \",\", \"O'Reilly\"), \"outside\" FROM sample";
 
