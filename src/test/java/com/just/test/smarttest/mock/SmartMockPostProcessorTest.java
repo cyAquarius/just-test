@@ -2,6 +2,7 @@ package com.just.test.smarttest.mock;
 
 import com.just.test.smarttest.annotation.SmartMock;
 import org.junit.jupiter.api.Test;
+import org.mybatis.spring.MapperFactoryBean;
 import org.springframework.aop.scope.ScopedProxyUtils;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.config.BeanDefinitionHolder;
@@ -16,6 +17,7 @@ import java.lang.annotation.Retention;
 import java.lang.annotation.RetentionPolicy;
 import java.lang.annotation.Target;
 import java.lang.reflect.Field;
+import java.util.Arrays;
 import java.util.Collections;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -156,6 +158,23 @@ class SmartMockPostProcessorTest {
         assertEquals(ConcreteClient.class, beanFactory.getType("scopedTarget.concreteClient"));
     }
 
+    @Test
+    void replacesMapperFactoryBeanByNameWhenObjectTypeIsNotVisible() {
+        DefaultListableBeanFactory beanFactory = beanFactory();
+        AbstractBeanDefinition definition = BeanDefinitionBuilder
+                .genericBeanDefinition(MapperFactoryBean.class)
+                .addPropertyValue("mapperInterface", SampleMapper.class)
+                .getBeanDefinition();
+        beanFactory.registerBeanDefinition("sampleMapper", definition);
+
+        process(beanFactory, field(TestFields.class, "sampleMapper"));
+
+        assertTrue(beanFactory.containsBeanDefinition("sampleMapper"));
+        assertTrue(beanFactory.containsBeanDefinition("scopedTarget.sampleMapper"));
+        assertFalse(Arrays.stream(beanFactory.getBeanDefinitionNames())
+                .anyMatch(name -> name.endsWith("#0")));
+    }
+
     private SmartMockContextCustomizer customizer(Field field) {
         return new SmartMockContextCustomizer(Collections.singleton(definition(field)));
     }
@@ -230,6 +249,9 @@ class SmartMockPostProcessorTest {
 
         @SmartMock
         private SampleClient scopedClient;
+
+        @SmartMock
+        private SampleMapper sampleMapper;
     }
 
     private static class FirstTest {
@@ -273,6 +295,9 @@ class SmartMockPostProcessorTest {
     }
 
     private static class SampleClient {
+    }
+
+    private interface SampleMapper {
     }
 
     @Qualifier
