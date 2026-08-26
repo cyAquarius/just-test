@@ -22,8 +22,8 @@
 - `@SmartMock` 创建线程作用域 Mockito mock；同类型多 Bean 时，显式 `name` 优先，否则先按 Spring autowire/qualifier 规则过滤，再按 `@Primary`、字段名或 alias、唯一候选确定目标。
 - `@ThreadScopedMock` 将同一 scoped mock 模型用于标注的 `@Bean` 方法。
 - `StaticMockContext` 可在每个 case 线程中替换业务静态 Context/工厂入口，并在 case 结束时自动恢复。
-- H2 数据库按 SmartTest `ApplicationContext` 与活动 case 隔离；case 结束时释放对应数据库，schema 初始化失败可重试。
-- MyBatis 测试 SQL 进行受控的 MySQL→H2 改写：`IF(...)` 改为 `CASEWHEN(...)`；历史双引号字符串仅在已知字符串函数参数和比较运算符右值中兼容。
+- H2 数据库按 SmartTest `ApplicationContext` 与活动 case 隔离；清理后的 DDL 会缓存，默认从模板数据库克隆 schema（可通过 `smarttest.schema.clone=false` 禁用）；case 结束时释放对应数据库，schema 初始化失败可重试。
+- MyBatis 测试 SQL 进行受控的 MySQL→H2 改写：`IF(...)` 改为 `CASEWHEN(...)`，`DATE_FORMAT(...)` 改为 `FORMATDATETIME(...)`；历史双引号字符串仅在已知字符串函数参数和比较运算符右值中兼容。
 
 ## 边界与并发
 
@@ -50,6 +50,30 @@ junit.jupiter.execution.parallel.mode.classes.default=concurrent
 ```
 
 业务 static 状态、外部共享资源和异步线程均已确认安全时，可将 `mode.default` 改为 `concurrent`，允许同一测试类中的 case 并行。正常测试类不需要声明 `@Execution`；仅在个别测试无法满足并发边界时，使用 `@Execution(ExecutionMode.SAME_THREAD)` 局部降级。
+
+### 并行落地反模式
+
+并行失败不一定是 SmartTest 隔离失效；先排查下游项目的替身、静态状态和资源生命周期。以下用法会把使用错误伪装成 framework flake：
+
+1. **用 `ReflectionTestUtils` 覆盖 `@SmartMock` 代理**
+   - **错误：** 在 `beforeExecute` 中使用 `ReflectionTestUtils`，把 raw Mockito mock 写入业务 Bean 字段，覆盖 `@SmartMock` 创建的 `ThreadScope` proxy。业务 Bean 往往是 singleton，这会污染 singleton 字段，让其他线程或 case 看到错误的 stub。
+   - **正确：** 只 stub 测试类上的 `@SmartMock` 字段，让业务 Bean 保持 scoped proxy。静态工厂或 Context 入口使用 `StaticMockContext` / `configureStaticMocks` 按 case 配置。
+
+2. **给 case H2 URL 加数据库保活参数**
+   - **错误：** 为掩盖 `already closed`，在 case URL 上增加 `DB_CLOSE_DELAY=-1`（或类似的 keep-alive 参数）。这只是延后暴露生命周期问题，会造成内存增长、完整测试运行变慢甚至 OOM。
+   - **正确：** 按 [#12（already closed）](https://github.com/cyAquarius/just-test/issues/12) 的资源边界处理：case 切换时先解绑线程上的 JDBC/MyBatis holder，再释放旧 DataSource 并重建当前 case 的 DataSource。模板数据库可为 schema clone 在内部使用 `DB_CLOSE_DELAY=-1`（见 [#16](https://github.com/cyAquarius/just-test/issues/16)），但这不意味着可以把它加到 case URL；默认 case URL 不含 `DB_CLOSE_DELAY`。
+
+3. **期待 SmartTest 自动修复业务 static registry**
+   - **错误：** 将业务 static Context、factory 或 registry 的并发污染归咎于 SmartTest，期待框架自动修复，或默认在上游加入全局 `ContextCreationLock`。SmartTest 不负责这些业务静态入口的所有权和并发治理。
+   - **正确：** 按落地清单排查：
+     - 出现多个 Spring Context 警告时，检查 `StaticMockContext` / `configureStaticMocks` 是否覆盖相关 static Context 或 factory 入口。
+     - Mapper `#0` 双 Bean 等 Bean 装配问题按名称、限定符和启动配置排查，参考 [#11](https://github.com/cyAquarius/just-test/issues/11)，不要用全局锁掩盖。
+     - 无法隔离的测试保持串行：使用 `@Execution(ExecutionMode.SAME_THREAD)`，或将测试类设为串行。
+     - 不要默认在上游加入全局 `ContextCreationLock`；先修正静态入口的隔离方式，无法隔离的测试就保持串行。
+
+4. **未 stub 的外部依赖配合业务 fail-open**
+   - **错误：** 关键外部依赖未 stub，业务又把异常吞掉或将异常当作成功；并行时不同返回值和时序会让它看起来像 framework flake。
+   - **正确：** 在 `beforeExecute` / `@BeforeCase` 中为关键外部协作者设置明确 stub，并显式断言成功与异常路径；不要把未定义的外部返回值交给业务 fail-open 逻辑。
 
 ## 引入依赖
 
@@ -119,6 +143,7 @@ class OrderServiceSmartTest implements SmartTestLifecycle {
 `@SmartTest` 已包含 Spring Boot bootstrapper，并通过 `test` profile 加载 `application-test.yml`，不要再组合 `@SpringBootTest` 或重复声明 `@BootstrapWith`。独立测试包内应只有一个可发现的 `@SpringBootConfiguration`。测试类不在其子包下、存在多个候选启动配置或某个测试需要特殊配置时，再使用 `@ContextConfiguration(classes = SmartTestApplication.class)` 显式选择。
 
 同类型有多个候选 Bean 时，使用 `@SmartMock(name = "beanName")` 或 `@Qualifier("beanName")`。替换 Spring Bean 时优先使用 `@SmartMock`，不要求使用 `@MockBean`。
+不要使用 `ReflectionTestUtils` 将 raw Mockito mock 写入业务 Bean 字段来替换 `@SmartMock` 的 `ThreadScope` proxy；请只 stub 测试类中的 `@SmartMock` 字段。
 
 业务通过静态入口获取 Spring Context 时，可按 case 显式绑定：
 
