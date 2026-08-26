@@ -96,7 +96,7 @@ class MyBatisTransactionLifecycleSmartTest implements SmartTestLifecycle {
         try {
             java.sql.Connection connection = dataSource.getConnection();
             TransactionSynchronizationManager.bindResource(dataSource, new ConnectionHolder(connection));
-            SqlSession sqlSession = sqlSessionFactory.openSession(connection);
+            SqlSession sqlSession = sqlSessionFactory.openSession();
             TransactionSynchronizationManager.bindResource(sqlSessionFactory,
                     new SqlSessionHolder(sqlSession, ExecutorType.SIMPLE, null));
         } catch (Exception e) {
