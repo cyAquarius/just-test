@@ -60,8 +60,7 @@ final class SqlTextRewriter {
                 if (nextIndex > index) {
                     index = nextIndex;
                 } else {
-                    result.append(current);
-                    index++;
+                    index = appendUnchangedDateFormatFunction(sql, index, result);
                 }
             } else {
                 result.append(current);
@@ -166,11 +165,31 @@ final class SqlTextRewriter {
             result.append('\'');
             result.append(rewriteDateFormatPattern(sql.substring(formatStart + 1, formatEnd - 1)));
             result.append('\'');
+        } else if (isQuotedLiteral(sql, formatStart, formatEnd, '"')) {
+            result.append('\'');
+            appendSqlStringLiteral(result, rewriteDateFormatPattern(
+                    unescapeQuotedLiteral(sql, formatStart, formatEnd, '"')));
+            result.append('\'');
         } else {
             result.append(sql, formatStart, formatEnd);
         }
         result.append(sql, formatEnd, closeParenthesis + 1);
         return closeParenthesis + 1;
+    }
+
+    private static int appendUnchangedDateFormatFunction(String sql, int functionIndex,
+                                                         StringBuilder result) {
+        int functionEnd = functionIndex + "DATE_FORMAT".length();
+        int openParenthesis = skipWhitespace(sql, functionEnd, sql.length());
+        if (openParenthesis < sql.length() && sql.charAt(openParenthesis) == '(') {
+            int closeParenthesis = findMatchingParenthesis(sql, openParenthesis);
+            if (closeParenthesis >= 0) {
+                result.append(sql, functionIndex, closeParenthesis + 1);
+                return closeParenthesis + 1;
+            }
+        }
+        result.append(sql, functionIndex, sql.length());
+        return sql.length();
     }
 
     private static int findMatchingParenthesis(String sql, int openParenthesis) {
@@ -243,13 +262,53 @@ final class SqlTextRewriter {
     }
 
     private static boolean isSingleQuotedLiteral(String sql, int start, int end) {
-        return start < end && sql.charAt(start) == '\''
-                && skipQuoted(sql, start, '\'') == end;
+        return isQuotedLiteral(sql, start, end, '\'');
+    }
+
+    private static boolean isQuotedLiteral(String sql, int start, int end, char quote) {
+        return start < end && sql.charAt(start) == quote
+                && skipQuoted(sql, start, quote) == end;
+    }
+
+    private static String unescapeQuotedLiteral(String sql, int start, int end, char quote) {
+        StringBuilder result = new StringBuilder(end - start - 2);
+        int index = start + 1;
+        while (index < end - 1) {
+            char current = sql.charAt(index);
+            if (current == quote && index + 1 < end - 1
+                    && sql.charAt(index + 1) == quote) {
+                result.append(quote);
+                index += 2;
+            } else if (current == '\\' && index + 1 < end - 1
+                    && sql.charAt(index + 1) == quote) {
+                result.append(quote);
+                index += 2;
+            } else {
+                result.append(current);
+                index++;
+            }
+        }
+        return result.toString();
+    }
+
+    private static void appendSqlStringLiteral(StringBuilder result, String value) {
+        for (int index = 0; index < value.length(); index++) {
+            char current = value.charAt(index);
+            if (current == '\'') {
+                result.append("''");
+            } else {
+                result.append(current);
+            }
+        }
     }
 
     private static int skipQuoted(String sql, int index, char quote) {
         index++;
         while (index < sql.length()) {
+            if (sql.charAt(index) == '\\' && index + 1 < sql.length()) {
+                index += 2;
+                continue;
+            }
             if (sql.charAt(index) == quote) {
                 if (index + 1 < sql.length() && sql.charAt(index + 1) == quote) {
                     index += 2;
