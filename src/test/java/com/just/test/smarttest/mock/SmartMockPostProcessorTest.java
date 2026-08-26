@@ -166,6 +166,7 @@ class SmartMockPostProcessorTest {
                 .addPropertyValue("mapperInterface", SampleMapper.class)
                 .getBeanDefinition();
         beanFactory.registerBeanDefinition("sampleMapper", definition);
+        assertEquals(0, beanFactory.getBeanNamesForType(SampleMapper.class, true, false).length);
 
         process(beanFactory, field(TestFields.class, "sampleMapper"));
 
