@@ -22,8 +22,8 @@ It is deliberately a test-scope framework: it supplies repeatable test setup, as
 - `@SmartMock` creates a thread-scoped Mockito mock. When several beans share a type, an explicit `name` wins; otherwise SmartTest applies Spring autowire and qualifier rules, then resolves `@Primary`, field name or alias, and finally a unique candidate.
 - `@ThreadScopedMock` applies the same scoped-mock model to an annotated `@Bean` method.
 - `StaticMockContext` can replace an application static context/factory gateway per case thread and restores it automatically at case end.
-- The H2 test database is isolated per SmartTest `ApplicationContext` and active case; each case database is released at case end, and schema initialization is retried after failure.
-- MyBatis test SQL receives narrowly scoped MySQL-to-H2 rewrites: `IF(...)` becomes `CASEWHEN(...)`; legacy double-quoted string literals are supported inside known string functions and on the right side of comparison operators.
+- The H2 test database is isolated per SmartTest `ApplicationContext` and active case; cleaned DDL is cached, and the schema is cloned from a template database by default (disable with `smarttest.schema.clone=false`); each case database is released at case end, and schema initialization is retried after failure.
+- MyBatis test SQL receives narrowly scoped MySQL-to-H2 rewrites: `IF(...)` becomes `CASEWHEN(...)`, and `DATE_FORMAT(...)` becomes `FORMATDATETIME(...)`; legacy double-quoted string literals are supported inside known string functions and on the right side of comparison operators.
 
 ## Boundaries and concurrency
 
@@ -50,6 +50,30 @@ junit.jupiter.execution.parallel.mode.classes.default=concurrent
 ```
 
 After verifying that application static state, external shared resources, and asynchronous threads are safe, set `mode.default` to `concurrent` to run cases within the same class concurrently. Normal tests do not need `@Execution`; use `@Execution(ExecutionMode.SAME_THREAD)` only to downgrade an exceptional class that cannot satisfy the concurrency boundaries.
+
+### Parallel rollout antipatterns
+
+A parallel failure is not automatically a SmartTest isolation failure; first inspect the downstream project's test doubles, static state, and resource lifecycle. The following patterns can make usage errors look like framework flakes:
+
+1. **Replacing an `@SmartMock` proxy with `ReflectionTestUtils`**
+   - **Wrong:** In `beforeExecute`, use `ReflectionTestUtils` to write a raw Mockito mock into a business bean field, replacing the `ThreadScope` proxy created by `@SmartMock`. Business beans are often singletons, so this pollutes a singleton field and lets other threads or cases see the wrong stub.
+   - **Right:** Stub only the test-class `@SmartMock` field and keep business beans wired to the scoped proxy. Use `StaticMockContext` / `configureStaticMocks` to configure static factory or context gateways per case.
+
+2. **Adding a keep-alive flag to the case H2 URL**
+   - **Wrong:** Add `DB_CLOSE_DELAY=-1` (or a similar keep-alive flag) to the case URL to hide `already closed`. This only defers the lifecycle problem and can cause memory growth, slower full runs, or OOM.
+   - **Right:** Follow the resource boundary described in [#12 (`already closed`)](https://github.com/cyAquarius/just-test/issues/12): when switching cases, unbind thread-bound JDBC/MyBatis holders first, then release the old `DataSource` and rebuild the current case `DataSource`. The template database may use `DB_CLOSE_DELAY=-1` internally for schema cloning (see [#16](https://github.com/cyAquarius/just-test/issues/16)); that is not permission to add it to case URLs. The default case URL contains no `DB_CLOSE_DELAY`.
+
+3. **Expecting SmartTest to repair application static registries**
+   - **Wrong:** Blame SmartTest for concurrency pollution in an application static context, factory, or registry, expect the framework to repair it automatically, or default to adding a global `ContextCreationLock` upstream. SmartTest does not own the isolation or concurrency governance of those application static gateways.
+   - **Right:** Use this rollout checklist:
+     - Multiple Spring Context warning → check whether `StaticMockContext` / `configureStaticMocks` covers the relevant static context or factory gateway.
+     - Diagnose Bean wiring issues such as the Mapper `#0` dual-bean case by name, qualifier, and startup configuration; see [#11](https://github.com/cyAquarius/just-test/issues/11) instead of hiding them with a global lock.
+     - Tests that cannot be isolated stay serial: use `@Execution(ExecutionMode.SAME_THREAD)` or run the test class serially.
+     - Do not default to adding a global `ContextCreationLock` upstream; fix the static gateway isolation first, and keep unisolated tests serial.
+
+4. **Unstubbed external dependencies plus business fail-open**
+   - **Wrong:** Leave critical external dependencies unstubbed while business code swallows an exception or treats it as success; parallel timing and return values can make this look like a framework flake.
+   - **Right:** Stub critical collaborators in `beforeExecute` / `@BeforeCase` and assert success and exception paths explicitly; do not pass undefined external return values into business fail-open logic.
 
 ## Add the dependency
 
@@ -119,6 +143,7 @@ class OrderServiceSmartTest implements SmartTestLifecycle {
 `@SmartTest` already includes the Spring Boot bootstrapper and loads `application-test.yml` through the `test` profile. Do not combine it with `@SpringBootTest` or declare another `@BootstrapWith`. The dedicated test package should expose exactly one `@SpringBootConfiguration`. Use `@ContextConfiguration(classes = SmartTestApplication.class)` only when a test is outside that package hierarchy, several startup configurations are candidates, or that test needs a special configuration.
 
 Use `@SmartMock(name = "beanName")` or `@Qualifier("beanName")` when a type has multiple candidates. Prefer `@SmartMock` when replacing Spring beans; `@MockBean` is not required.
+Do not use `ReflectionTestUtils` to replace an `@SmartMock` `ThreadScope` proxy with a raw Mockito mock in a business bean field; stub only the test-class `@SmartMock` field.
 
 If application code obtains Spring through a static gateway, bind that gateway explicitly per case:
 
