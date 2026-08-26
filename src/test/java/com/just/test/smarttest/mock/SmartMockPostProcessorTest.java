@@ -2,7 +2,7 @@ package com.just.test.smarttest.mock;
 
 import com.just.test.smarttest.annotation.SmartMock;
 import org.junit.jupiter.api.Test;
-import org.mybatis.spring.MapperFactoryBean;
+import org.mybatis.spring.mapper.MapperFactoryBean;
 import org.springframework.aop.scope.ScopedProxyUtils;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.config.BeanDefinitionHolder;

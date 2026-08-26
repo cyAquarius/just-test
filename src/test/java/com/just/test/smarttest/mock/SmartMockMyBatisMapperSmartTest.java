@@ -5,7 +5,7 @@ import com.just.test.smarttest.annotation.SmartMock;
 import com.just.test.smarttest.annotation.SmartTest;
 import com.just.test.smarttest.context.CaseContext;
 import com.just.test.smarttest.lifecycle.SmartTestLifecycle;
-import org.mybatis.spring.MapperFactoryBean;
+import org.mybatis.spring.mapper.MapperFactoryBean;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.ApplicationContext;
 import org.springframework.context.annotation.Bean;
