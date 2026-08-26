@@ -7,6 +7,7 @@ import com.just.test.smarttest.lifecycle.SmartTestLifecycle;
 import org.apache.ibatis.annotations.Insert;
 import org.apache.ibatis.annotations.Param;
 import org.apache.ibatis.annotations.Select;
+import org.apache.ibatis.session.ExecutorType;
 import org.apache.ibatis.session.SqlSession;
 import org.apache.ibatis.session.SqlSessionFactory;
 import org.junit.jupiter.api.AfterAll;
@@ -96,7 +97,8 @@ class MyBatisTransactionLifecycleSmartTest implements SmartTestLifecycle {
             java.sql.Connection connection = dataSource.getConnection();
             TransactionSynchronizationManager.bindResource(dataSource, new ConnectionHolder(connection));
             SqlSession sqlSession = sqlSessionFactory.openSession(connection);
-            TransactionSynchronizationManager.bindResource(sqlSessionFactory, new SqlSessionHolder(sqlSession));
+            TransactionSynchronizationManager.bindResource(sqlSessionFactory,
+                    new SqlSessionHolder(sqlSession, ExecutorType.SIMPLE, null));
         } catch (Exception e) {
             throw new IllegalStateException("Failed to bind test transaction resources", e);
         }
