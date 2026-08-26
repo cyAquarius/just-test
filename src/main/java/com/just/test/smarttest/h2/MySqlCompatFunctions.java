@@ -1,8 +1,5 @@
 package com.just.test.smarttest.h2;
 
-import java.sql.Timestamp;
-import java.text.SimpleDateFormat;
-
 /**
  * H2 自定义函数，兼容 MySQL 特有函数。
  * <p>
@@ -11,7 +8,6 @@ import java.text.SimpleDateFormat;
  * <p>
  * 覆盖的 MySQL 函数：
  * <ul>
- *   <li>{@code DATE_FORMAT(date, format)} — 日期格式化</li>
  *   <li>{@code FIND_IN_SET(str, strList)} — 逗号分隔列表查找</li>
  * </ul>
  *
@@ -24,24 +20,6 @@ import java.text.SimpleDateFormat;
 public final class MySqlCompatFunctions {
 
     private MySqlCompatFunctions() {
-    }
-
-    // ==================== DATE_FORMAT ====================
-
-    /**
-     * MySQL DATE_FORMAT 兼容实现。
-     * 将 MySQL 格式符（%Y, %m, %d, %H, %i, %S 等）转换为 Java SimpleDateFormat 模式。
-     *
-     * @param value  日期值
-     * @param format MySQL 格式字符串，如 '%Y-%m-%d'
-     * @return 格式化后的字符串，value 为 null 时返回 null
-     */
-    public static String dateFormat(Timestamp value, String format) {
-        if (value == null || format == null) {
-            return null;
-        }
-        String javaPattern = mysqlFormatToJava(format);
-        return new SimpleDateFormat(javaPattern).format(value);
     }
 
     // ==================== FIND_IN_SET ====================
@@ -64,22 +42,6 @@ public final class MySqlCompatFunctions {
             }
         }
         return 0;
-    }
-
-    /**
-     * 将 MySQL 日期格式符转换为 Java SimpleDateFormat 模式。
-     */
-    private static String mysqlFormatToJava(String mysqlFormat) {
-        return mysqlFormat
-                .replace("%Y", "yyyy")
-                .replace("%y", "yy")
-                .replace("%m", "MM")
-                .replace("%d", "dd")
-                .replace("%H", "HH")
-                .replace("%h", "hh")
-                .replace("%i", "mm")
-                .replace("%s", "ss")
-                .replace("%S", "ss");
     }
 
 }
