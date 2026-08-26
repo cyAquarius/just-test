@@ -24,6 +24,7 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNotSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class SmartTestRoutingDataSourceTest {
 
@@ -126,6 +127,18 @@ class SmartTestRoutingDataSourceTest {
             CaseExecutionContext.clear();
             dataSource.destroy();
         }
+    }
+
+    @Test
+    void removesTableAutoIncrementOptionsButPreservesColumnAttribute() {
+        String ddl = "CREATE TABLE t_xxx (id INT AUTO_INCREMENT PRIMARY KEY)"
+                + " ENGINE=InnoDB AUTO_INCREMENT=100 auto_increment = 200 AUTO_INCREMENT  =   300"
+                + " DEFAULT CHARSET=utf8mb4;";
+
+        String cleaned = SchemaInitializer.cleanMySqlSyntax(ddl);
+
+        assertTrue(cleaned.contains("id INT AUTO_INCREMENT PRIMARY KEY"));
+        assertFalse(cleaned.matches("(?is).*AUTO_INCREMENT\\s*=\\s*\\d+.*"));
     }
 
     @Test
