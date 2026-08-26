@@ -12,7 +12,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 
 class H2CompatibilityTest {
 
-    private static final String URL = "jdbc:h2:mem:{key};MODE=MySQL;DB_CLOSE_DELAY=-1;"
+    private static final String URL = "jdbc:h2:mem:{key};MODE=MySQL;"
             + "DATABASE_TO_LOWER=TRUE;CASE_INSENSITIVE_IDENTIFIERS=TRUE";
 
     @Test
