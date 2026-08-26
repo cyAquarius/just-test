@@ -5,10 +5,13 @@ import com.just.test.smarttest.context.CaseExecutionContext;
 import com.just.test.smarttest.loader.DataSetLoader;
 import org.junit.jupiter.api.Test;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.jdbc.datasource.SingleConnectionDataSource;
 
+import java.lang.reflect.Field;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.CyclicBarrier;
 import java.util.concurrent.ExecutorService;
@@ -19,6 +22,7 @@ import java.util.concurrent.TimeUnit;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
+import static org.junit.jupiter.api.Assertions.assertNotSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
 class SmartTestRoutingDataSourceTest {
@@ -220,6 +224,40 @@ class SmartTestRoutingDataSourceTest {
             CaseExecutionContext.clear();
             dataSource.destroy();
         }
+    }
+
+    @Test
+    void rebuildsClosedCaseDataSource() throws Exception {
+        SmartTestRoutingDataSource dataSource = new SmartTestRoutingDataSource(URL);
+        try {
+            bindCase("closed");
+            JdbcTemplate jdbcTemplate = new JdbcTemplate(dataSource);
+            jdbcTemplate.execute("CREATE TABLE before_close(id INT)");
+            String databaseKey = dataSource.currentDbKey();
+            SingleConnectionDataSource closedDataSource = getCaseDataSource(dataSource, databaseKey);
+
+            closedDataSource.destroy();
+
+            jdbcTemplate.execute("CREATE TABLE after_rebuild(id INT)");
+            SingleConnectionDataSource rebuiltDataSource = getCaseDataSource(dataSource, databaseKey);
+            assertNotSame(closedDataSource, rebuiltDataSource);
+            assertEquals(0, jdbcTemplate.queryForObject(
+                    "SELECT COUNT(*) FROM INFORMATION_SCHEMA.TABLES WHERE UPPER(TABLE_NAME) = 'BEFORE_CLOSE'",
+                    Integer.class));
+        } finally {
+            CaseExecutionContext.clear();
+            dataSource.destroy();
+        }
+    }
+
+    @SuppressWarnings("unchecked")
+    private static SingleConnectionDataSource getCaseDataSource(
+            SmartTestRoutingDataSource dataSource, String databaseKey) throws Exception {
+        Field field = SmartTestRoutingDataSource.class.getDeclaredField("dataSources");
+        field.setAccessible(true);
+        Map<String, SingleConnectionDataSource> dataSources =
+                (Map<String, SingleConnectionDataSource>) field.get(dataSource);
+        return dataSources.get(databaseKey);
     }
 
     private static void bindCase(String name) {
