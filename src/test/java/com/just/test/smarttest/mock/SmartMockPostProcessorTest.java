@@ -176,6 +176,27 @@ class SmartMockPostProcessorTest {
                 .anyMatch(name -> name.endsWith("#0")));
     }
 
+    @Test
+    void replacesMapperFactoryBeanByDefaultNameWhenObjectTypeIsNotVisible() {
+        DefaultListableBeanFactory beanFactory = beanFactory();
+        AbstractBeanDefinition definition = BeanDefinitionBuilder
+                .genericBeanDefinition(MapperFactoryBean.class)
+                .addPropertyValue("mapperInterface", SampleMapper.class)
+                .getBeanDefinition();
+        beanFactory.registerBeanDefinition("sampleMapper", definition);
+        assertEquals(0, beanFactory.getBeanNamesForType(SampleMapper.class, true, false).length);
+
+        Field field = field(TestFields.class, "mapper");
+        process(beanFactory, field);
+
+        assertTrue(beanFactory.containsBeanDefinition("sampleMapper"));
+        assertTrue(beanFactory.containsBeanDefinition("scopedTarget.sampleMapper"));
+        assertFalse(Arrays.stream(beanFactory.getBeanDefinitionNames())
+                .anyMatch(name -> name.endsWith("#0")));
+        assertEquals("sampleMapper",
+                beanFactory.getBean(SmartMockBindings.class).getBeanName(definition(field)));
+    }
+
     private SmartMockContextCustomizer customizer(Field field) {
         return new SmartMockContextCustomizer(Collections.singleton(definition(field)));
     }
@@ -253,6 +274,9 @@ class SmartMockPostProcessorTest {
 
         @SmartMock
         private SampleMapper sampleMapper;
+
+        @SmartMock
+        private SampleMapper mapper;
     }
 
     private static class FirstTest {
