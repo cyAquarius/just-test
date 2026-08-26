@@ -29,6 +29,24 @@ class SqlTextRewriterTest {
     }
 
     @Test
+    void rewritesDoubleQuotedDateFormatPatternToSingleQuotedJavaPattern() {
+        String sql = "SELECT DATE_FORMAT(create_time, \"%Y-%m-%d\") FROM sample";
+
+        assertEquals(
+                "SELECT FORMATDATETIME(create_time, 'yyyy-MM-dd') FROM sample",
+                SqlTextRewriter.rewriteDateFormatFunctions(sql));
+    }
+
+    @Test
+    void unescapesDoubleQuotedDateFormatPatternQuotes() {
+        String sql = "SELECT DATE_FORMAT(create_time, \"%Y-%m-%d \"\"UTC\"\"\") FROM sample";
+
+        assertEquals(
+                "SELECT FORMATDATETIME(create_time, 'yyyy-MM-dd \"UTC\"') FROM sample",
+                SqlTextRewriter.rewriteDateFormatFunctions(sql));
+    }
+
+    @Test
     void doesNotRewriteDateFormatTextInsideQuotesOrComments() {
         String sql = "SELECT 'DATE_FORMAT(create_time, ''%Y-%m-%d'')', "
                 + "\"DATE_FORMAT(identifier, '%Y-%m-%d')\", `DATE_FORMAT(column, '%Y-%m-%d')` "
@@ -47,6 +65,13 @@ class SqlTextRewriterTest {
                 "SELECT FORMATDATETIME(COALESCE(create_time, fallback_time), 'yyyy-MM-dd') "
                         + "FROM sample",
                 SqlTextRewriter.rewriteDateFormatFunctions(sql));
+    }
+
+    @Test
+    void preservesDateFormatCallWithoutTopLevelComma() {
+        String sql = "SELECT DATE_FORMAT(expr) FROM sample";
+
+        assertEquals(sql, SqlTextRewriter.rewriteDateFormatFunctions(sql));
     }
 
     @Test

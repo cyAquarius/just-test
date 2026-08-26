@@ -23,7 +23,7 @@ It is deliberately a test-scope framework: it supplies repeatable test setup, as
 - `@ThreadScopedMock` applies the same scoped-mock model to an annotated `@Bean` method.
 - `StaticMockContext` can replace an application static context/factory gateway per case thread and restores it automatically at case end.
 - The H2 test database is isolated per SmartTest `ApplicationContext` and active case; cleaned DDL is cached, and the schema is cloned from a template database by default (disable with `smarttest.schema.clone=false`); each case database is released at case end, and schema initialization is retried after failure.
-- MyBatis test SQL receives narrowly scoped MySQL-to-H2 rewrites: `IF(...)` becomes `CASEWHEN(...)`, and `DATE_FORMAT(...)` becomes `FORMATDATETIME(...)`; legacy double-quoted string literals are supported inside known string functions and on the right side of comparison operators.
+- MyBatis test SQL receives narrowly scoped MySQL-to-H2 rewrites: `IF(...)` becomes `CASEWHEN(...)`, and `DATE_FORMAT(...)` becomes `FORMATDATETIME(...)`; the `DATE_FORMAT` rewrite runs through the MyBatis `StatementHandler` interceptor path (the same path as `IF(...)` → `CASEWHEN(...)`), so plain `JdbcTemplate` SQL is not rewritten unless it goes through that interceptor. Legacy double-quoted string literals are supported inside known string functions and on the right side of comparison operators.
 
 ## Boundaries and concurrency
 
