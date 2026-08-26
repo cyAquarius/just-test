@@ -25,14 +25,14 @@ class H2CompatibilityTest {
 
             jdbcTemplate.update("INSERT INTO mysql_compat(name) VALUES ('sample')");
 
-            assertEquals(10L, jdbcTemplate.queryForObject(
+            assertEquals(1L, jdbcTemplate.queryForObject(
                     "SELECT id FROM mysql_compat", Long.class));
 
             jdbcTemplate.update("DELETE FROM mysql_compat");
             DataSetLoader.cleanTables(jdbcTemplate);
             jdbcTemplate.update("INSERT INTO mysql_compat(name) VALUES ('after-delete')");
 
-            assertEquals(10L, jdbcTemplate.queryForObject(
+            assertEquals(1L, jdbcTemplate.queryForObject(
                     "SELECT id FROM mysql_compat", Long.class));
             assertEquals(false, jdbcTemplate.queryForObject(
                     "SELECT enabled FROM mysql_compat", Boolean.class));
@@ -40,7 +40,7 @@ class H2CompatibilityTest {
             DataSetLoader.cleanTables(jdbcTemplate);
             jdbcTemplate.update("INSERT INTO mysql_compat(name) VALUES ('after-clean')");
 
-            assertEquals(10L, jdbcTemplate.queryForObject(
+            assertEquals(1L, jdbcTemplate.queryForObject(
                     "SELECT id FROM mysql_compat", Long.class));
         } finally {
             CaseExecutionContext.clear();
