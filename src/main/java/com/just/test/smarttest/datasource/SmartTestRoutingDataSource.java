@@ -246,17 +246,17 @@ public class SmartTestRoutingDataSource extends AbstractDataSource implements Di
             templateSchema = Collections.unmodifiableList(new ArrayList<>(cleanedDdls));
             log.info("[SmartTest] Initialized schema template for data source [{}]", instanceKey);
         } catch (RuntimeException failure) {
-            clearFailedTemplate(candidate);
+            clearTemplateObjects(candidate);
             candidate.destroy();
             throw failure;
         }
     }
 
-    private void clearFailedTemplate(SingleConnectionDataSource candidate) {
+    private void clearTemplateObjects(SingleConnectionDataSource dataSource) {
         try {
-            new JdbcTemplate(candidate).execute("DROP ALL OBJECTS");
+            new JdbcTemplate(dataSource).execute("DROP ALL OBJECTS");
         } catch (Exception cleanupFailure) {
-            log.debug("[SmartTest] Failed to clear incomplete schema template", cleanupFailure);
+            log.debug("[SmartTest] Failed to clear schema template", cleanupFailure);
         }
     }
 
@@ -307,8 +307,10 @@ public class SmartTestRoutingDataSource extends AbstractDataSource implements Di
 
     private void destroyTemplate() {
         if (templateDataSource != null) {
-            templateDataSource.destroy();
+            SingleConnectionDataSource dataSource = templateDataSource;
             templateDataSource = null;
+            clearTemplateObjects(dataSource);
+            dataSource.destroy();
         }
         templateSchema = null;
     }
