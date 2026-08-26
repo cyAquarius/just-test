@@ -180,14 +180,14 @@ public class SmartTestRoutingDataSource extends AbstractDataSource implements Di
         try {
             connection = dataSource.getConnection();
             return connection != null && !connection.isClosed() && connection.isValid(1);
-        } catch (SQLException e) {
+        } catch (Exception e) {
             log.warn("[SmartTest] Replacing unusable H2 database for case", e);
             return false;
         } finally {
             if (connection != null) {
                 try {
                     connection.close();
-                } catch (SQLException e) {
+                } catch (Exception e) {
                     log.debug("[SmartTest] Failed to close H2 connection health-check handle", e);
                 }
             }
