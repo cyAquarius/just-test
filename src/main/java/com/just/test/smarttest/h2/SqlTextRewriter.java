@@ -41,6 +41,36 @@ final class SqlTextRewriter {
         return result.toString();
     }
 
+    static String rewriteDateFormatFunctions(String sql) {
+        if (sql == null || sql.isEmpty()) {
+            return sql;
+        }
+        StringBuilder result = new StringBuilder(sql.length());
+        int index = 0;
+        while (index < sql.length()) {
+            char current = sql.charAt(index);
+            if (current == '\'' || current == '"' || current == '`') {
+                index = appendQuoted(sql, index, current, result, false);
+            } else if (startsLineComment(sql, index)) {
+                index = appendLineComment(sql, index, result);
+            } else if (startsBlockComment(sql, index)) {
+                index = appendBlockComment(sql, index, result);
+            } else if (matchesFunction(sql, index, "DATE_FORMAT")) {
+                int nextIndex = appendDateFormatFunction(sql, index, result);
+                if (nextIndex > index) {
+                    index = nextIndex;
+                } else {
+                    result.append(current);
+                    index++;
+                }
+            } else {
+                result.append(current);
+                index++;
+            }
+        }
+        return result.toString();
+    }
+
     static String rewriteDoubleQuotedLiterals(String sql) {
         if (sql == null || sql.isEmpty()) {
             return sql;
@@ -93,6 +123,206 @@ final class SqlTextRewriter {
                 if (!Character.isWhitespace(current)) {
                     pendingStringFunction = false;
                 }
+                index++;
+            }
+        }
+        return result.toString();
+    }
+
+    private static int appendDateFormatFunction(String sql, int functionIndex, StringBuilder result) {
+        int functionEnd = functionIndex + "DATE_FORMAT".length();
+        int openParenthesis = skipWhitespace(sql, functionEnd, sql.length());
+        if (openParenthesis >= sql.length() || sql.charAt(openParenthesis) != '(') {
+            return -1;
+        }
+
+        int closeParenthesis = findMatchingParenthesis(sql, openParenthesis);
+        if (closeParenthesis < 0) {
+            return -1;
+        }
+        int comma = findTopLevelComma(sql, openParenthesis + 1, closeParenthesis);
+        if (comma < 0) {
+            return -1;
+        }
+
+        int firstArgumentStart = skipWhitespace(sql, openParenthesis + 1, comma);
+        int firstArgumentEnd = trimWhitespace(sql, firstArgumentStart, comma);
+        int formatStart = skipWhitespace(sql, comma + 1, closeParenthesis);
+        int formatEnd = trimWhitespace(sql, formatStart, closeParenthesis);
+
+        result.append("FORMATDATETIME");
+        result.append(sql, functionEnd, openParenthesis + 1);
+        if (isSingleQuotedLiteral(sql, firstArgumentStart, firstArgumentEnd)) {
+            result.append(sql, openParenthesis + 1, firstArgumentStart);
+            result.append("CAST(");
+            result.append(sql, firstArgumentStart, firstArgumentEnd);
+            result.append(" AS TIMESTAMP)");
+            result.append(sql, firstArgumentEnd, comma);
+        } else {
+            result.append(sql, openParenthesis + 1, comma);
+        }
+        result.append(sql, comma, formatStart);
+        if (isSingleQuotedLiteral(sql, formatStart, formatEnd)) {
+            result.append('\'');
+            result.append(rewriteDateFormatPattern(sql.substring(formatStart + 1, formatEnd - 1)));
+            result.append('\'');
+        } else {
+            result.append(sql, formatStart, formatEnd);
+        }
+        result.append(sql, formatEnd, closeParenthesis + 1);
+        return closeParenthesis + 1;
+    }
+
+    private static int findMatchingParenthesis(String sql, int openParenthesis) {
+        int depth = 1;
+        int index = openParenthesis + 1;
+        while (index < sql.length()) {
+            char current = sql.charAt(index);
+            if (current == '\'' || current == '"' || current == '`') {
+                index = skipQuoted(sql, index, current);
+            } else if (startsLineComment(sql, index)) {
+                index = skipLineComment(sql, index);
+            } else if (startsBlockComment(sql, index)) {
+                index = skipBlockComment(sql, index);
+            } else if (current == '(') {
+                depth++;
+                index++;
+            } else if (current == ')') {
+                depth--;
+                if (depth == 0) {
+                    return index;
+                }
+                index++;
+            } else {
+                index++;
+            }
+        }
+        return -1;
+    }
+
+    private static int findTopLevelComma(String sql, int start, int end) {
+        int depth = 0;
+        int index = start;
+        while (index < end) {
+            char current = sql.charAt(index);
+            if (current == '\'' || current == '"' || current == '`') {
+                index = skipQuoted(sql, index, current);
+            } else if (startsLineComment(sql, index)) {
+                index = skipLineComment(sql, index);
+            } else if (startsBlockComment(sql, index)) {
+                index = skipBlockComment(sql, index);
+            } else if (current == '(') {
+                depth++;
+                index++;
+            } else if (current == ')') {
+                depth--;
+                index++;
+            } else if (current == ',' && depth == 0) {
+                return index;
+            } else {
+                index++;
+            }
+        }
+        return -1;
+    }
+
+    private static int skipWhitespace(String sql, int start, int end) {
+        int index = start;
+        while (index < end && Character.isWhitespace(sql.charAt(index))) {
+            index++;
+        }
+        return index;
+    }
+
+    private static int trimWhitespace(String sql, int start, int end) {
+        int index = end;
+        while (index > start && Character.isWhitespace(sql.charAt(index - 1))) {
+            index--;
+        }
+        return index;
+    }
+
+    private static boolean isSingleQuotedLiteral(String sql, int start, int end) {
+        return start < end && sql.charAt(start) == '\''
+                && skipQuoted(sql, start, '\'') == end;
+    }
+
+    private static int skipQuoted(String sql, int index, char quote) {
+        index++;
+        while (index < sql.length()) {
+            if (sql.charAt(index) == quote) {
+                if (index + 1 < sql.length() && sql.charAt(index + 1) == quote) {
+                    index += 2;
+                    continue;
+                }
+                return index + 1;
+            }
+            index++;
+        }
+        return index;
+    }
+
+    private static int skipLineComment(String sql, int index) {
+        while (index < sql.length()) {
+            char current = sql.charAt(index++);
+            if (current == '\n' || current == '\r') {
+                break;
+            }
+        }
+        return index;
+    }
+
+    private static int skipBlockComment(String sql, int index) {
+        index += 2;
+        while (index < sql.length()) {
+            if (index + 1 < sql.length() && sql.charAt(index) == '*' && sql.charAt(index + 1) == '/') {
+                return index + 2;
+            }
+            index++;
+        }
+        return index;
+    }
+
+    private static String rewriteDateFormatPattern(String pattern) {
+        StringBuilder result = new StringBuilder(pattern.length());
+        int index = 0;
+        while (index < pattern.length()) {
+            char current = pattern.charAt(index);
+            if (current == '%' && index + 1 < pattern.length()) {
+                char specifier = pattern.charAt(index + 1);
+                switch (specifier) {
+                    case 'Y':
+                        result.append("yyyy");
+                        break;
+                    case 'y':
+                        result.append("yy");
+                        break;
+                    case 'm':
+                        result.append("MM");
+                        break;
+                    case 'd':
+                        result.append("dd");
+                        break;
+                    case 'H':
+                        result.append("HH");
+                        break;
+                    case 'h':
+                        result.append("hh");
+                        break;
+                    case 'i':
+                        result.append("mm");
+                        break;
+                    case 's':
+                    case 'S':
+                        result.append("ss");
+                        break;
+                    default:
+                        result.append(current).append(specifier);
+                        break;
+                }
+                index += 2;
+            } else {
+                result.append(current);
                 index++;
             }
         }

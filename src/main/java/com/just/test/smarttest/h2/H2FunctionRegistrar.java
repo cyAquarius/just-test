@@ -20,7 +20,6 @@ public final class H2FunctionRegistrar {
 
     /** 需要注册的函数映射：SQL函数名 → Java方法名 */
     private static final String[][] FUNCTION_MAPPINGS = {
-            {"DATE_FORMAT", "dateFormat"},
             {"FIND_IN_SET", "findInSet"},
     };
 

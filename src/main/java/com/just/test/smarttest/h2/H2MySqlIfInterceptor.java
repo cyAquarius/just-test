@@ -10,7 +10,8 @@ import java.util.Properties;
 
 /**
  * MyBatis 拦截器：将 MySQL {@code IF(condition, trueVal, falseVal)} 改写为
- * H2 内置的 {@code CASEWHEN(condition, trueVal, falseVal)}。
+ * H2 内置的 {@code CASEWHEN(condition, trueVal, falseVal)}，并将
+ * {@code DATE_FORMAT(date, format)} 改写为 H2 的 {@code FORMATDATETIME(date, format)}。
  * <p>
  * H2 1.4.200 中 {@code IF} 是 SQL 保留字（过程式 IF...THEN...ELSE），
  * 即使通过 {@code CREATE ALIAS "IF"} 注册函数别名，裸写 {@code if(...)}
@@ -43,7 +44,8 @@ public class H2MySqlIfInterceptor implements Interceptor {
         MetaObject metaObject = SystemMetaObject.forObject(MyBatisPluginTargetResolver.unwrap(handler));
         String originalSql = (String) metaObject.getValue("delegate.boundSql.sql");
 
-        String rewrittenSql = SqlTextRewriter.rewriteIfFunctions(originalSql);
+        String rewrittenSql = SqlTextRewriter.rewriteDateFormatFunctions(
+                SqlTextRewriter.rewriteIfFunctions(originalSql));
         if (originalSql != null && !originalSql.equals(rewrittenSql)) {
             metaObject.setValue("delegate.boundSql.sql", rewrittenSql);
         }
