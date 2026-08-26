@@ -299,11 +299,9 @@ public final class SmartTestExtension implements BeforeEachCallback, AfterEachCa
                         .unbindResourceIfPossible(entry.getValue());
                 if (resource instanceof ConnectionHolder) {
                     ConnectionHolder connectionHolder = (ConnectionHolder) resource;
-                    if (connectionHolder.hasConnection()) {
-                        Connection connection = connectionHolder.getConnection();
-                        if (connection != null) {
-                            connection.close();
-                        }
+                    Connection connection = connectionHolder.getConnection();
+                    if (connection != null) {
+                        connection.close();
                     }
                 }
             } catch (Throwable cleanupFailure) {
