@@ -8,6 +8,9 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.datasource.SingleConnectionDataSource;
 
 import java.lang.reflect.Field;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
@@ -130,28 +133,31 @@ class SmartTestRoutingDataSourceTest {
     }
 
     @Test
-    void clonesCachedSchemaWithoutSharingRowsBetweenCases() {
-        SchemaInitializer.clearCacheForTests();
+    void clonesCachedSchemaWithoutSharingRowsBetweenCases() throws Exception {
+        Path schemaFile = Files.createTempFile("smarttest-schema-cache-", ".sql");
+        Files.write(schemaFile, "CREATE TABLE clone_cache_record (id BIGINT PRIMARY KEY);\n"
+                .getBytes(StandardCharsets.UTF_8));
+        String schemaLocation = schemaFile.toUri().toString();
         SmartTestRoutingDataSource dataSource = new SmartTestRoutingDataSource(URL);
         JdbcTemplate jdbcTemplate = new JdbcTemplate(dataSource);
         try {
             bindCase("clone-first");
-            SchemaInitializer.initialize(jdbcTemplate, "classpath:sql/schema-part-one.sql");
-            jdbcTemplate.update("INSERT INTO first_table(id) VALUES (1)");
+            SchemaInitializer.initialize(jdbcTemplate, schemaLocation);
+            jdbcTemplate.update("INSERT INTO clone_cache_record(id) VALUES (1)");
             assertEquals(1, jdbcTemplate.queryForObject(
-                    "SELECT COUNT(*) FROM first_table", Integer.class));
+                    "SELECT COUNT(*) FROM clone_cache_record", Integer.class));
             dataSource.releaseCurrentCase();
             CaseExecutionContext.clear();
+            Files.delete(schemaFile);
 
             bindCase("clone-second");
-            SchemaInitializer.initialize(jdbcTemplate, "classpath:sql/schema-part-one.sql");
+            SchemaInitializer.initialize(jdbcTemplate, schemaLocation);
 
             assertEquals(0, jdbcTemplate.queryForObject(
-                    "SELECT COUNT(*) FROM first_table", Integer.class));
-            assertEquals(1, SchemaInitializer.resourceReadCountForTests());
-            assertEquals(1, SchemaInitializer.cleanCountForTests());
+                    "SELECT COUNT(*) FROM clone_cache_record", Integer.class));
             assertEquals(2, dataSource.schemaCloneCountForTests());
         } finally {
+            Files.deleteIfExists(schemaFile);
             CaseExecutionContext.clear();
             dataSource.destroy();
         }
@@ -159,7 +165,6 @@ class SmartTestRoutingDataSourceTest {
 
     @Test
     void fallsBackToCachedDdlWhenSchemaCloneFails() {
-        SchemaInitializer.clearCacheForTests();
         SmartTestRoutingDataSource dataSource = new SmartTestRoutingDataSource(URL);
         try {
             bindCase("clone-fallback");
@@ -182,7 +187,6 @@ class SmartTestRoutingDataSourceTest {
 
     @Test
     void canDisableSchemaCloneWithSystemProperty() {
-        SchemaInitializer.clearCacheForTests();
         SmartTestRoutingDataSource dataSource = new SmartTestRoutingDataSource(URL);
         String original = System.getProperty("smarttest.schema.clone");
         try {

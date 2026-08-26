@@ -22,7 +22,6 @@ import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
-import java.util.concurrent.atomic.AtomicLong;
 
 /**
  * Schema 初始化器。加载 DDL 文件并自动清理 MySQL 特有语法后在 H2 上执行建表。
@@ -38,8 +37,6 @@ public class SchemaInitializer {
     private static final Logger log = LoggerFactory.getLogger(SchemaInitializer.class);
     private static final ConcurrentMap<SchemaCacheKey, List<String>> CLEANED_SCHEMA_CACHE =
             new ConcurrentHashMap<>();
-    private static final AtomicLong RESOURCE_READ_COUNT = new AtomicLong();
-    private static final AtomicLong CLEAN_COUNT = new AtomicLong();
     // MySQL 特有语法的清理正则
     private static final Pattern ENGINE_PATTERN = Pattern.compile("\\s*ENGINE\\s*=\\s*\\w+", Pattern.CASE_INSENSITIVE);
     private static final Pattern AUTO_INCREMENT_PATTERN = Pattern.compile("\\s*AUTO_INCREMENT\\s*=\\s*\\d+", Pattern.CASE_INSENSITIVE);
@@ -120,7 +117,6 @@ public class SchemaInitializer {
      * 清理 MySQL 特有语法，使 DDL 兼容 H2。
      */
     static String cleanMySqlSyntax(String ddl) {
-        CLEAN_COUNT.incrementAndGet();
         String result = ddl;
         result = ENGINE_PATTERN.matcher(result).replaceAll("");
         result = AUTO_INCREMENT_PATTERN.matcher(result).replaceAll("");
@@ -157,25 +153,10 @@ public class SchemaInitializer {
     }
 
     private static String readResource(Resource resource) throws Exception {
-        RESOURCE_READ_COUNT.incrementAndGet();
         try (BufferedReader reader = new BufferedReader(
                 new InputStreamReader(resource.getInputStream(), StandardCharsets.UTF_8))) {
             return reader.lines().collect(Collectors.joining("\n"));
         }
-    }
-
-    static void clearCacheForTests() {
-        CLEANED_SCHEMA_CACHE.clear();
-        RESOURCE_READ_COUNT.set(0);
-        CLEAN_COUNT.set(0);
-    }
-
-    static long resourceReadCountForTests() {
-        return RESOURCE_READ_COUNT.get();
-    }
-
-    static long cleanCountForTests() {
-        return CLEAN_COUNT.get();
     }
 
     private static final class SchemaCacheKey {
