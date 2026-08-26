@@ -7,15 +7,18 @@ import com.just.test.smarttest.lifecycle.SmartTestLifecycle;
 import org.apache.ibatis.annotations.Insert;
 import org.apache.ibatis.annotations.Param;
 import org.apache.ibatis.annotations.Select;
+import org.apache.ibatis.session.SqlSession;
 import org.apache.ibatis.session.SqlSessionFactory;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.parallel.Execution;
 import org.junit.jupiter.api.parallel.ExecutionMode;
 import org.mybatis.spring.SqlSessionFactoryBean;
+import org.mybatis.spring.SqlSessionHolder;
 import org.mybatis.spring.SqlSessionTemplate;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.jdbc.datasource.ConnectionHolder;
 import org.springframework.test.context.ContextConfiguration;
 import org.springframework.transaction.annotation.EnableTransactionManagement;
 import org.springframework.transaction.annotation.Transactional;
@@ -55,6 +58,9 @@ class MyBatisTransactionLifecycleSmartTest implements SmartTestLifecycle {
         assertEquals(marker, recordService.insertAndFind(marker));
         assertFalse(TransactionSynchronizationManager.hasResource(dataSource));
         assertFalse(TransactionSynchronizationManager.hasResource(sqlSessionFactory));
+        if ("first".equals(marker)) {
+            leaveResourcesBoundForNextCase();
+        }
     }
 
     @AfterAll
@@ -82,6 +88,17 @@ class MyBatisTransactionLifecycleSmartTest implements SmartTestLifecycle {
         public String insertAndFind(String marker) {
             recordMapper.insert(marker);
             return recordMapper.findMarker();
+        }
+    }
+
+    private void leaveResourcesBoundForNextCase() {
+        try {
+            java.sql.Connection connection = dataSource.getConnection();
+            TransactionSynchronizationManager.bindResource(dataSource, new ConnectionHolder(connection));
+            SqlSession sqlSession = sqlSessionFactory.openSession(connection);
+            TransactionSynchronizationManager.bindResource(sqlSessionFactory, new SqlSessionHolder(sqlSession));
+        } catch (Exception e) {
+            throw new IllegalStateException("Failed to bind test transaction resources", e);
         }
     }
 

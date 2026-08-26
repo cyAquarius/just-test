@@ -133,6 +133,9 @@ class SmartTestRoutingDataSourceTest {
             assertThrows(RuntimeException.class, () -> SchemaInitializer.initialize(
                     jdbcTemplate, "classpath:sql/schema-invalid.sql"));
 
+            assertEquals(0, jdbcTemplate.queryForObject(
+                    "SELECT COUNT(*) FROM INFORMATION_SCHEMA.TABLES WHERE UPPER(TABLE_NAME) = 'RETRY_TABLE'",
+                    Integer.class));
             SchemaInitializer.initialize(jdbcTemplate, "classpath:sql/schema-retry.sql");
 
             assertEquals(1, jdbcTemplate.queryForObject(

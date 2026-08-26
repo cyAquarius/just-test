@@ -70,17 +70,17 @@ public class SmartTestRoutingDataSource extends AbstractDataSource implements Di
         lifecycleLock.readLock().lock();
         try {
             String key = currentDbKey();
-            return dataSources.computeIfAbsent(key, k -> {
-                String url = urlTemplate.replace("{key}", k);
-                SingleConnectionDataSource ds = new SingleConnectionDataSource();
-                ds.setDriverClassName("org.h2.Driver");
-                ds.setUrl(url);
-                ds.setUsername("sa");
-                ds.setPassword("");
-                ds.setSuppressClose(true);
-                log.info("[SmartTest] Created H2 database for case [{}]: {}", k, url);
-                return ds;
-            });
+            SingleConnectionDataSource dataSource = dataSources.get(key);
+            if (dataSource != null && isUsable(dataSource)) {
+                return dataSource;
+            }
+            if (dataSource != null) {
+                initializedSchemas.remove(key);
+                if (dataSources.remove(key, dataSource)) {
+                    dataSource.destroy();
+                }
+            }
+            return dataSources.computeIfAbsent(key, this::createDataSource);
         } finally {
             lifecycleLock.readLock().unlock();
         }
@@ -109,7 +109,17 @@ public class SmartTestRoutingDataSource extends AbstractDataSource implements Di
     }
 
     void schemaInitializationFailed() {
-        initializedSchemas.remove(currentDbKey());
+        lifecycleLock.readLock().lock();
+        try {
+            String key = currentDbKey();
+            initializedSchemas.remove(key);
+            SingleConnectionDataSource dataSource = dataSources.remove(key);
+            if (dataSource != null) {
+                dataSource.destroy();
+            }
+        } finally {
+            lifecycleLock.readLock().unlock();
+        }
     }
 
     public void releaseCurrentCase() {
@@ -150,6 +160,37 @@ public class SmartTestRoutingDataSource extends AbstractDataSource implements Di
     private void assertNotDestroyed() {
         if (destroyed.get()) {
             throw new IllegalStateException("[SmartTest] Database access attempted after its ApplicationContext was destroyed.");
+        }
+    }
+
+    private SingleConnectionDataSource createDataSource(String key) {
+        String url = urlTemplate.replace("{key}", key);
+        SingleConnectionDataSource dataSource = new SingleConnectionDataSource();
+        dataSource.setDriverClassName("org.h2.Driver");
+        dataSource.setUrl(url);
+        dataSource.setUsername("sa");
+        dataSource.setPassword("");
+        dataSource.setSuppressClose(true);
+        log.info("[SmartTest] Created H2 database for case [{}]: {}", key, url);
+        return dataSource;
+    }
+
+    private boolean isUsable(SingleConnectionDataSource dataSource) {
+        Connection connection = null;
+        try {
+            connection = dataSource.getConnection();
+            return connection != null && !connection.isClosed() && connection.isValid(1);
+        } catch (SQLException e) {
+            log.warn("[SmartTest] Replacing unusable H2 database for case", e);
+            return false;
+        } finally {
+            if (connection != null) {
+                try {
+                    connection.close();
+                } catch (SQLException e) {
+                    log.debug("[SmartTest] Failed to close H2 connection health-check handle", e);
+                }
+            }
         }
     }
 
