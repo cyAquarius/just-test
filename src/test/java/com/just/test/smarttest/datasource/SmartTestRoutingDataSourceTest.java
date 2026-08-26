@@ -130,6 +130,86 @@ class SmartTestRoutingDataSourceTest {
     }
 
     @Test
+    void clonesCachedSchemaWithoutSharingRowsBetweenCases() {
+        SchemaInitializer.clearCacheForTests();
+        SmartTestRoutingDataSource dataSource = new SmartTestRoutingDataSource(URL);
+        JdbcTemplate jdbcTemplate = new JdbcTemplate(dataSource);
+        try {
+            bindCase("clone-first");
+            SchemaInitializer.initialize(jdbcTemplate, "classpath:sql/schema-part-one.sql");
+            jdbcTemplate.update("INSERT INTO first_table(id) VALUES (1)");
+            assertEquals(1, jdbcTemplate.queryForObject(
+                    "SELECT COUNT(*) FROM first_table", Integer.class));
+            dataSource.releaseCurrentCase();
+            CaseExecutionContext.clear();
+
+            bindCase("clone-second");
+            SchemaInitializer.initialize(jdbcTemplate, "classpath:sql/schema-part-one.sql");
+
+            assertEquals(0, jdbcTemplate.queryForObject(
+                    "SELECT COUNT(*) FROM first_table", Integer.class));
+            assertEquals(1, SchemaInitializer.resourceReadCountForTests());
+            assertEquals(1, SchemaInitializer.cleanCountForTests());
+            assertEquals(2, dataSource.schemaCloneCountForTests());
+        } finally {
+            CaseExecutionContext.clear();
+            dataSource.destroy();
+        }
+    }
+
+    @Test
+    void fallsBackToCachedDdlWhenSchemaCloneFails() {
+        SchemaInitializer.clearCacheForTests();
+        SmartTestRoutingDataSource dataSource = new SmartTestRoutingDataSource(URL);
+        try {
+            bindCase("clone-fallback");
+            dataSource.failNextSchemaCloneForTests();
+
+            JdbcTemplate jdbcTemplate = new JdbcTemplate(dataSource);
+            SchemaInitializer.initialize(jdbcTemplate, "classpath:sql/schema-part-one.sql");
+
+            assertEquals(1, jdbcTemplate.queryForObject(
+                    "SELECT COUNT(*) FROM INFORMATION_SCHEMA.TABLES "
+                            + "WHERE UPPER(TABLE_NAME) = 'FIRST_TABLE'",
+                    Integer.class));
+            assertEquals(0, dataSource.schemaCloneCountForTests());
+            assertEquals(1, dataSource.schemaFallbackCountForTests());
+        } finally {
+            CaseExecutionContext.clear();
+            dataSource.destroy();
+        }
+    }
+
+    @Test
+    void canDisableSchemaCloneWithSystemProperty() {
+        SchemaInitializer.clearCacheForTests();
+        SmartTestRoutingDataSource dataSource = new SmartTestRoutingDataSource(URL);
+        String original = System.getProperty("smarttest.schema.clone");
+        try {
+            System.setProperty("smarttest.schema.clone", "false");
+            bindCase("clone-disabled");
+            JdbcTemplate jdbcTemplate = new JdbcTemplate(dataSource);
+
+            SchemaInitializer.initialize(jdbcTemplate, "classpath:sql/schema-part-one.sql");
+
+            assertEquals(1, jdbcTemplate.queryForObject(
+                    "SELECT COUNT(*) FROM INFORMATION_SCHEMA.TABLES "
+                            + "WHERE UPPER(TABLE_NAME) = 'FIRST_TABLE'",
+                    Integer.class));
+            assertEquals(0, dataSource.schemaCloneCountForTests());
+            assertEquals(0, dataSource.schemaFallbackCountForTests());
+        } finally {
+            if (original == null) {
+                System.clearProperty("smarttest.schema.clone");
+            } else {
+                System.setProperty("smarttest.schema.clone", original);
+            }
+            CaseExecutionContext.clear();
+            dataSource.destroy();
+        }
+    }
+
+    @Test
     void removesTableAutoIncrementOptionsButPreservesColumnAttribute() {
         String ddl = "CREATE TABLE t_xxx (id INT AUTO_INCREMENT PRIMARY KEY)"
                 + " ENGINE=InnoDB AUTO_INCREMENT=100 auto_increment = 200 AUTO_INCREMENT  =   300"

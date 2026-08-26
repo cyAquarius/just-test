@@ -1,14 +1,23 @@
 package com.just.test.smarttest.datasource;
 
 import com.just.test.smarttest.context.CaseExecutionContext;
+import com.just.test.smarttest.h2.H2FunctionRegistrar;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.DisposableBean;
+import org.springframework.jdbc.core.ConnectionCallback;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.datasource.AbstractDataSource;
 import org.springframework.jdbc.datasource.SingleConnectionDataSource;
 
 import java.sql.Connection;
+import java.sql.ResultSet;
 import java.sql.SQLException;
+import java.sql.Statement;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.List;
+import java.util.Locale;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -26,6 +35,7 @@ public class SmartTestRoutingDataSource extends AbstractDataSource implements Di
     private static final Logger log = LoggerFactory.getLogger(SmartTestRoutingDataSource.class);
 
     private static final AtomicLong INSTANCE_SEQUENCE = new AtomicLong();
+    private static final String SCHEMA_CLONE_PROPERTY = "smarttest.schema.clone";
 
     private final String urlTemplate;
     private final String instanceKey = "smarttest_" + INSTANCE_SEQUENCE.incrementAndGet();
@@ -34,10 +44,16 @@ public class SmartTestRoutingDataSource extends AbstractDataSource implements Di
     private final AtomicBoolean destroyed = new AtomicBoolean();
     private final ReentrantReadWriteLock lifecycleLock = new ReentrantReadWriteLock();
     private final ThreadLocal<Boolean> caseLease = new ThreadLocal<>();
+    private final Object templateLock = new Object();
+    private final AtomicBoolean forceCloneFailureForTests = new AtomicBoolean();
+    private final AtomicLong cloneCount = new AtomicLong();
+    private final AtomicLong fallbackCount = new AtomicLong();
+    private SingleConnectionDataSource templateDataSource;
+    private List<String> templateSchema;
 
     /**
      * @param urlTemplate H2 URL 模板，{key} 占位符在运行时替换为 case 标识。
-     *                    示例：jdbc:h2:mem:{key};MODE=MySQL;DB_CLOSE_DELAY=-1
+     *                    示例：jdbc:h2:mem:{key};MODE=MySQL
      */
     public SmartTestRoutingDataSource(String urlTemplate) {
         this.urlTemplate = urlTemplate;
@@ -108,6 +124,37 @@ public class SmartTestRoutingDataSource extends AbstractDataSource implements Di
         return initializedSchemas.add(currentDbKey());
     }
 
+    void initializeCaseSchema(JdbcTemplate jdbcTemplate, List<String> cleanedDdls) {
+        lifecycleLock.readLock().lock();
+        try {
+            assertNotDestroyed();
+            if (!isSchemaCloneEnabled()) {
+                SchemaInitializer.executeCachedDdl(jdbcTemplate, cleanedDdls);
+                H2FunctionRegistrar.register(jdbcTemplate);
+                return;
+            }
+
+            synchronized (templateLock) {
+                ensureTemplate(cleanedDdls);
+                try {
+                    cloneTemplate(jdbcTemplate);
+                    H2FunctionRegistrar.register(jdbcTemplate);
+                    cloneCount.incrementAndGet();
+                } catch (Exception cloneFailure) {
+                    log.warn("[SmartTest] Failed to clone schema for case [{}], "
+                                    + "falling back to cached DDL replay",
+                            currentDbKey(), cloneFailure);
+                    recreateCurrentCaseDataSource();
+                    SchemaInitializer.executeCachedDdl(jdbcTemplate, cleanedDdls);
+                    H2FunctionRegistrar.register(jdbcTemplate);
+                    fallbackCount.incrementAndGet();
+                }
+            }
+        } finally {
+            lifecycleLock.readLock().unlock();
+        }
+    }
+
     void schemaInitializationFailed() {
         lifecycleLock.readLock().lock();
         try {
@@ -152,6 +199,9 @@ public class SmartTestRoutingDataSource extends AbstractDataSource implements Di
             dataSources.values().forEach(SingleConnectionDataSource::destroy);
             dataSources.clear();
             initializedSchemas.clear();
+            synchronized (templateLock) {
+                destroyTemplate();
+            }
         } finally {
             lifecycleLock.writeLock().unlock();
         }
@@ -164,7 +214,10 @@ public class SmartTestRoutingDataSource extends AbstractDataSource implements Di
     }
 
     private SingleConnectionDataSource createDataSource(String key) {
-        String url = urlTemplate.replace("{key}", key);
+        return createDataSource(key, urlTemplate.replace("{key}", key));
+    }
+
+    private SingleConnectionDataSource createDataSource(String key, String url) {
         SingleConnectionDataSource dataSource = new SingleConnectionDataSource();
         dataSource.setDriverClassName("org.h2.Driver");
         dataSource.setUrl(url);
@@ -173,6 +226,107 @@ public class SmartTestRoutingDataSource extends AbstractDataSource implements Di
         dataSource.setSuppressClose(true);
         log.info("[SmartTest] Created H2 database for case [{}]: {}", key, url);
         return dataSource;
+    }
+
+    private void ensureTemplate(List<String> cleanedDdls) {
+        if (templateDataSource != null
+                && templateSchema.equals(cleanedDdls)
+                && isUsable(templateDataSource)) {
+            return;
+        }
+
+        destroyTemplate();
+        SingleConnectionDataSource candidate = createDataSource(
+                instanceKey + "_template", templateUrl());
+        try {
+            JdbcTemplate templateJdbcTemplate = new JdbcTemplate(candidate);
+            SchemaInitializer.executeCachedDdl(templateJdbcTemplate, cleanedDdls);
+            H2FunctionRegistrar.register(templateJdbcTemplate);
+            templateDataSource = candidate;
+            templateSchema = Collections.unmodifiableList(new ArrayList<>(cleanedDdls));
+            log.info("[SmartTest] Initialized schema template for data source [{}]", instanceKey);
+        } catch (RuntimeException failure) {
+            candidate.destroy();
+            throw failure;
+        }
+    }
+
+    private void cloneTemplate(JdbcTemplate caseJdbcTemplate) {
+        if (forceCloneFailureForTests.compareAndSet(true, false)) {
+            throw new IllegalStateException("Forced schema clone failure");
+        }
+        if (templateDataSource == null) {
+            throw new IllegalStateException("Schema template is not available");
+        }
+
+        JdbcTemplate templateJdbcTemplate = new JdbcTemplate(templateDataSource);
+        List<String> script = templateJdbcTemplate.execute(
+                (ConnectionCallback<List<String>>) connection -> {
+                    List<String> statements = new ArrayList<>();
+                    try (Statement statement = connection.createStatement();
+                         ResultSet resultSet = statement.executeQuery("SCRIPT SIMPLE NOSETTINGS")) {
+                        while (resultSet.next()) {
+                            String sql = resultSet.getString(1);
+                            if (sql != null && !sql.trim().isEmpty()) {
+                                statements.add(sql);
+                            }
+                        }
+                    }
+                    return statements;
+                });
+        if (script == null || script.isEmpty()) {
+            throw new IllegalStateException("Schema template produced an empty clone script");
+        }
+
+        caseJdbcTemplate.execute((ConnectionCallback<Void>) connection -> {
+            try (Statement statement = connection.createStatement()) {
+                for (String sql : script) {
+                    statement.execute(sql);
+                }
+            }
+            return null;
+        });
+    }
+
+    private void recreateCurrentCaseDataSource() {
+        String key = currentDbKey();
+        SingleConnectionDataSource dataSource = dataSources.remove(key);
+        if (dataSource != null) {
+            dataSource.destroy();
+        }
+    }
+
+    private void destroyTemplate() {
+        if (templateDataSource != null) {
+            templateDataSource.destroy();
+            templateDataSource = null;
+        }
+        templateSchema = null;
+    }
+
+    private String templateUrl() {
+        String url = urlTemplate.replace("{key}", instanceKey + "_template");
+        String upperCaseUrl = url.toUpperCase(Locale.ROOT);
+        if (upperCaseUrl.contains("DB_CLOSE_DELAY")) {
+            return url;
+        }
+        return url + (url.endsWith(";") ? "" : ";") + "DB_CLOSE_DELAY=-1";
+    }
+
+    private boolean isSchemaCloneEnabled() {
+        return !"false".equalsIgnoreCase(System.getProperty(SCHEMA_CLONE_PROPERTY, "true"));
+    }
+
+    void failNextSchemaCloneForTests() {
+        forceCloneFailureForTests.set(true);
+    }
+
+    long schemaCloneCountForTests() {
+        return cloneCount.get();
+    }
+
+    long schemaFallbackCountForTests() {
+        return fallbackCount.get();
     }
 
     private boolean isUsable(SingleConnectionDataSource dataSource) {
