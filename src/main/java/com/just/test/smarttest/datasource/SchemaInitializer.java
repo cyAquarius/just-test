@@ -26,6 +26,7 @@ public class SchemaInitializer {
     private static final Logger log = LoggerFactory.getLogger(SchemaInitializer.class);
     // MySQL 特有语法的清理正则
     private static final Pattern ENGINE_PATTERN = Pattern.compile("\\s*ENGINE\\s*=\\s*\\w+", Pattern.CASE_INSENSITIVE);
+    private static final Pattern AUTO_INCREMENT_PATTERN = Pattern.compile("\\s*AUTO_INCREMENT\\s*=\\s*\\d+", Pattern.CASE_INSENSITIVE);
     private static final Pattern CHARSET_PATTERN = Pattern.compile("\\s*(DEFAULT\\s+)?CHARSET\\s*=\\s*\\w+", Pattern.CASE_INSENSITIVE);
     private static final Pattern COLLATE_PATTERN = Pattern.compile("\\s*COLLATE\\s*=?\\s*\\w+", Pattern.CASE_INSENSITIVE);
     private static final Pattern COMMENT_TABLE_PATTERN = Pattern.compile("\\s*COMMENT\\s*=\\s*'[^']*'", Pattern.CASE_INSENSITIVE);
@@ -79,6 +80,7 @@ public class SchemaInitializer {
     static String cleanMySqlSyntax(String ddl) {
         String result = ddl;
         result = ENGINE_PATTERN.matcher(result).replaceAll("");
+        result = AUTO_INCREMENT_PATTERN.matcher(result).replaceAll("");
         result = CHARSET_PATTERN.matcher(result).replaceAll("");
         result = COLLATE_PATTERN.matcher(result).replaceAll("");
         result = COMMENT_TABLE_PATTERN.matcher(result).replaceAll("");
