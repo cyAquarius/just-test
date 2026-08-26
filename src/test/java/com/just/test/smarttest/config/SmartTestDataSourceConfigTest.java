@@ -12,8 +12,14 @@ import org.springframework.jdbc.datasource.DriverManagerDataSource;
 import javax.sql.DataSource;
 
 import static org.junit.jupiter.api.Assertions.assertSame;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 
 class SmartTestDataSourceConfigTest {
+
+    @Test
+    void defaultCaseUrlDoesNotKeepMemoryDatabaseAlive() {
+        assertFalse(SmartTestDataSourceConfig.DEFAULT_H2_URL.contains("DB_CLOSE_DELAY=-1"));
+    }
 
     @Test
     void internalInfrastructureUsesSmartTestDataSourceWhenAnotherPrimaryExists() {

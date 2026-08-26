@@ -8,6 +8,9 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.datasource.SingleConnectionDataSource;
 
 import java.lang.reflect.Field;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
@@ -124,6 +127,87 @@ class SmartTestRoutingDataSourceTest {
             assertEquals(0, jdbcTemplate.queryForObject("SELECT COUNT(*) FROM second_table", Integer.class));
             assertEquals(0, jdbcTemplate.queryForObject("SELECT COUNT(*) FROM unexpected_audit", Integer.class));
         } finally {
+            CaseExecutionContext.clear();
+            dataSource.destroy();
+        }
+    }
+
+    @Test
+    void clonesCachedSchemaWithoutSharingRowsBetweenCases() throws Exception {
+        Path schemaFile = Files.createTempFile("smarttest-schema-cache-", ".sql");
+        Files.write(schemaFile, "CREATE TABLE clone_cache_record (id BIGINT PRIMARY KEY);\n"
+                .getBytes(StandardCharsets.UTF_8));
+        String schemaLocation = schemaFile.toUri().toString();
+        SmartTestRoutingDataSource dataSource = new SmartTestRoutingDataSource(URL);
+        JdbcTemplate jdbcTemplate = new JdbcTemplate(dataSource);
+        try {
+            bindCase("clone-first");
+            SchemaInitializer.initialize(jdbcTemplate, schemaLocation);
+            jdbcTemplate.update("INSERT INTO clone_cache_record(id) VALUES (1)");
+            assertEquals(1, jdbcTemplate.queryForObject(
+                    "SELECT COUNT(*) FROM clone_cache_record", Integer.class));
+            dataSource.releaseCurrentCase();
+            CaseExecutionContext.clear();
+            Files.delete(schemaFile);
+
+            bindCase("clone-second");
+            SchemaInitializer.initialize(jdbcTemplate, schemaLocation);
+
+            assertEquals(0, jdbcTemplate.queryForObject(
+                    "SELECT COUNT(*) FROM clone_cache_record", Integer.class));
+            assertEquals(2, dataSource.schemaCloneCountForTests());
+        } finally {
+            Files.deleteIfExists(schemaFile);
+            CaseExecutionContext.clear();
+            dataSource.destroy();
+        }
+    }
+
+    @Test
+    void fallsBackToCachedDdlWhenSchemaCloneFails() {
+        SmartTestRoutingDataSource dataSource = new SmartTestRoutingDataSource(URL);
+        try {
+            bindCase("clone-fallback");
+            dataSource.failNextSchemaCloneForTests();
+
+            JdbcTemplate jdbcTemplate = new JdbcTemplate(dataSource);
+            SchemaInitializer.initialize(jdbcTemplate, "classpath:sql/schema-part-one.sql");
+
+            assertEquals(1, jdbcTemplate.queryForObject(
+                    "SELECT COUNT(*) FROM INFORMATION_SCHEMA.TABLES "
+                            + "WHERE UPPER(TABLE_NAME) = 'FIRST_TABLE'",
+                    Integer.class));
+            assertEquals(0, dataSource.schemaCloneCountForTests());
+            assertEquals(1, dataSource.schemaFallbackCountForTests());
+        } finally {
+            CaseExecutionContext.clear();
+            dataSource.destroy();
+        }
+    }
+
+    @Test
+    void canDisableSchemaCloneWithSystemProperty() {
+        SmartTestRoutingDataSource dataSource = new SmartTestRoutingDataSource(URL);
+        String original = System.getProperty("smarttest.schema.clone");
+        try {
+            System.setProperty("smarttest.schema.clone", "false");
+            bindCase("clone-disabled");
+            JdbcTemplate jdbcTemplate = new JdbcTemplate(dataSource);
+
+            SchemaInitializer.initialize(jdbcTemplate, "classpath:sql/schema-part-one.sql");
+
+            assertEquals(1, jdbcTemplate.queryForObject(
+                    "SELECT COUNT(*) FROM INFORMATION_SCHEMA.TABLES "
+                            + "WHERE UPPER(TABLE_NAME) = 'FIRST_TABLE'",
+                    Integer.class));
+            assertEquals(0, dataSource.schemaCloneCountForTests());
+            assertEquals(0, dataSource.schemaFallbackCountForTests());
+        } finally {
+            if (original == null) {
+                System.clearProperty("smarttest.schema.clone");
+            } else {
+                System.setProperty("smarttest.schema.clone", original);
+            }
             CaseExecutionContext.clear();
             dataSource.destroy();
         }
