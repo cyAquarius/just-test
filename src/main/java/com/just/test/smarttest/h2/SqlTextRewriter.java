@@ -20,7 +20,7 @@ final class SqlTextRewriter {
         if (sql == null || sql.isEmpty()) {
             return sql;
         }
-        if (!containsIgnoreCase(sql, "IF(")) {
+        if (!containsFunctionIgnoreCase(sql, "IF")) {
             return sql;
         }
         StringBuilder result = new StringBuilder(sql.length());
@@ -401,6 +401,16 @@ final class SqlTextRewriter {
         int limit = text.length() - token.length();
         for (int index = 0; index <= limit; index++) {
             if (text.regionMatches(true, index, token, 0, token.length())) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static boolean containsFunctionIgnoreCase(String text, String functionName) {
+        int limit = text.length() - functionName.length();
+        for (int index = 0; index <= limit; index++) {
+            if (matchesFunction(text, index, functionName)) {
                 return true;
             }
         }

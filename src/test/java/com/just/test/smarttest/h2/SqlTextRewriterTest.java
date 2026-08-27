@@ -30,6 +30,15 @@ class SqlTextRewriterTest {
     }
 
     @Test
+    void rewritesSpacedIfFunctionAndPreservesWhitespace() {
+        String sql = "SELECT IF (enabled, 'yes', 'no') FROM sample";
+
+        assertEquals(
+                "SELECT CASEWHEN (enabled, 'yes', 'no') FROM sample",
+                SqlTextRewriter.rewriteIfFunctions(sql));
+    }
+
+    @Test
     void rewritesDateFormatFunctionCaseInsensitivelyAndPreservesWhitespace() {
         String sql = "SELECT DATE_FORMAT(create_time, '%Y-%m-%d %H:%i:%s'), "
                 + "date_format (updated_at, '%y/%m/%d %h:%i:%S') FROM sample";

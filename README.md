@@ -16,13 +16,13 @@ It is deliberately a test-scope framework: it supplies repeatable test setup, as
 
 ## What SmartTest provides
 
-- `@SmartTest` configures Spring Test, H2, `JdbcTemplate`, and a transaction manager so application services can exercise their normal transaction behavior.
+- `@SmartTest` configures Spring Test, H2, `JdbcTemplate`, and a transaction manager so application services can exercise their normal transaction behavior; it registers a `refresh` scope stand-in when none exists, so business beans using `@RefreshScope` or `@Scope("refresh")` can load without Spring Cloud refresh infrastructure, but tests do not get real refresh semantics.
 - `@CaseSource` discovers YAML cases and creates one full JUnit test-template invocation per case, with `CaseContext` available to the test and standard per-test lifecycle methods.
 - `prepare.yaml`, `response.yaml`, `expect.yaml`, and `expect_exception.yaml` cover data setup and result, database, and exception verification.
-- `@SmartMock` creates a thread-scoped Mockito mock. When several beans share a type, an explicit `name` wins; otherwise SmartTest applies Spring autowire and qualifier rules, then resolves `@Primary`, field name or alias, and finally a unique candidate.
+- `@SmartMock` creates a thread-scoped Mockito mock. When several beans share a type, an explicit `name` wins only for a type-compatible bean; if an existing bean's type cannot be resolved (for example, a `FactoryBean` hides its object type), name fallback still applies. A same-named bean of an unrelated type is not replaced, and a wrong explicit name fails with a missing-candidate error.
 - `@ThreadScopedMock` applies the same scoped-mock model to an annotated `@Bean` method.
 - `StaticMockContext` can replace an application static context/factory gateway per case thread and restores it automatically at case end.
-- The H2 test database is isolated per SmartTest `ApplicationContext` and active case; cleaned DDL is cached, and the schema is cloned from a template database by default (disable with `smarttest.schema.clone=false`); each case database is released at case end, and schema initialization is retried after failure.
+- The H2 test database is isolated per SmartTest `ApplicationContext` and active case; cleaned DDL is cached, and the schema is cloned from a template database by default (disable with `smarttest.schema.clone=false`); each case database is released at case end, and schema initialization is retried after failure. For MySQL `schema.sql` dumps, the cleaner strips common `SHOW CREATE TABLE` extras such as table `ROW_FORMAT`, `UNSIGNED`, `ON UPDATE CURRENT_TIMESTAMP`, column `CHARACTER SET`, and `DEFAULT b'0'`; it does not cover every MySQL dialect.
 - MyBatis test SQL receives narrowly scoped MySQL-to-H2 rewrites: `IF(...)` becomes `CASEWHEN(...)`, and `DATE_FORMAT(...)` becomes `FORMATDATETIME(...)`; the `DATE_FORMAT` rewrite runs through the MyBatis `StatementHandler` interceptor path (the same path as `IF(...)` → `CASEWHEN(...)`), so plain `JdbcTemplate` SQL is not rewritten unless it goes through that interceptor. Legacy double-quoted string literals are supported inside known string functions and on the right side of comparison operators.
 
 ## Boundaries and concurrency
