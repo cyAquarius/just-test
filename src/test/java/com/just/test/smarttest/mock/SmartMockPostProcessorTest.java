@@ -62,6 +62,49 @@ class SmartMockPostProcessorTest {
     }
 
     @Test
+    void doesNotReplaceUnrelatedBeanForExplicitName() {
+        DefaultListableBeanFactory beanFactory = beanFactory();
+        registerCandidate(beanFactory, "explicitMapper", false, true, null);
+        Field field = field(TestFields.class, "explicitMapper");
+
+        IllegalStateException failure = assertThrows(IllegalStateException.class,
+                () -> process(beanFactory, field));
+
+        assertTrue(failure.getMessage().contains("No bean named 'explicitMapper'"));
+        assertTrue(failure.getMessage().contains("Candidates:"));
+        assertEquals(SampleClient.class, beanFactory.getType("explicitMapper"));
+        assertFalse(beanFactory.containsBeanDefinition("scopedTarget.explicitMapper"));
+    }
+
+    @Test
+    void doesNotReplaceUnrelatedBeanForFieldNameFallback() {
+        DefaultListableBeanFactory beanFactory = beanFactory();
+        registerCandidate(beanFactory, "fieldMapper", false, true, null);
+        Field field = field(TestFields.class, "fieldMapper");
+
+        process(beanFactory, field);
+
+        assertEquals(SampleClient.class, beanFactory.getType("fieldMapper"));
+        String mockBeanName = beanFactory.getBean(SmartMockBindings.class).getBeanName(definition(field));
+        assertNotEquals("fieldMapper", mockBeanName);
+        assertTrue(beanFactory.containsBeanDefinition("scopedTarget." + mockBeanName));
+    }
+
+    @Test
+    void doesNotReplaceUnrelatedBeanForDefaultNameFallback() {
+        DefaultListableBeanFactory beanFactory = beanFactory();
+        registerCandidate(beanFactory, "sampleMapper", false, true, null);
+        Field field = field(TestFields.class, "mapper");
+
+        process(beanFactory, field);
+
+        assertEquals(SampleClient.class, beanFactory.getType("sampleMapper"));
+        String mockBeanName = beanFactory.getBean(SmartMockBindings.class).getBeanName(definition(field));
+        assertNotEquals("sampleMapper", mockBeanName);
+        assertTrue(beanFactory.containsBeanDefinition("scopedTarget." + mockBeanName));
+    }
+
+    @Test
     void filtersCandidatesWithSpringQualifierRulesAndPreservesQualifier() {
         DefaultListableBeanFactory beanFactory = beanFactory();
         registerCandidate(beanFactory, "firstClient", false, true, "red");
@@ -277,6 +320,12 @@ class SmartMockPostProcessorTest {
 
         @SmartMock
         private SampleMapper mapper;
+
+        @SmartMock(name = "explicitMapper")
+        private SampleMapper explicitMapper;
+
+        @SmartMock
+        private SampleMapper fieldMapper;
     }
 
     private static class FirstTest {

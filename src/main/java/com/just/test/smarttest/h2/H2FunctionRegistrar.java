@@ -10,7 +10,7 @@ import org.springframework.jdbc.core.JdbcTemplate;
  * 在 SchemaInitializer 完成建表后调用 {@link #register(JdbcTemplate)}，
  * 使 mapper XML 中的 MySQL 特有函数在 H2 上可用。
  * <p>
- * 注册采用 {@code CREATE ALIAS IF NOT EXISTS}，重复调用安全。
+ * 注册采用 {@code DROP ALIAS IF EXISTS} 后再 {@code CREATE ALIAS}，重复调用安全。
  */
 public final class H2FunctionRegistrar {
 
@@ -39,10 +39,10 @@ public final class H2FunctionRegistrar {
         int count = 0;
 
         for (String[] mapping : FUNCTION_MAPPINGS) {
-            String sql = "CREATE ALIAS IF NOT EXISTS " + mapping[0]
-                    + " FOR \"" + FUNC_CLASS + "." + mapping[1] + "\"";
             try {
-                jdbcTemplate.execute(sql);
+                jdbcTemplate.execute("DROP ALIAS IF EXISTS " + mapping[0]);
+                jdbcTemplate.execute("CREATE ALIAS " + mapping[0]
+                        + " FOR \"" + FUNC_CLASS + "." + mapping[1] + "\"");
                 count++;
             } catch (Exception e) {
                 log.warn("[SmartTest] Failed to register H2 function {}: {}", mapping[0], e.getMessage());
