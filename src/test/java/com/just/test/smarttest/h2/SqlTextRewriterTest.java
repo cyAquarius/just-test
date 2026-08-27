@@ -3,8 +3,20 @@ package com.just.test.smarttest.h2;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertSame;
 
 class SqlTextRewriterTest {
+
+    @Test
+    void returnsOriginalSqlWhenRewriteTokenIsAbsent() {
+        String withoutIf = "SELECT enabled FROM sample";
+        String withoutDateFormat = "SELECT create_time FROM sample";
+        String withoutDoubleQuote = "SELECT name FROM sample";
+
+        assertSame(withoutIf, SqlTextRewriter.rewriteIfFunctions(withoutIf));
+        assertSame(withoutDateFormat, SqlTextRewriter.rewriteDateFormatFunctions(withoutDateFormat));
+        assertSame(withoutDoubleQuote, SqlTextRewriter.rewriteDoubleQuotedLiterals(withoutDoubleQuote));
+    }
 
     @Test
     void rewritesIfFunctionOnlyInExecutableSql() {

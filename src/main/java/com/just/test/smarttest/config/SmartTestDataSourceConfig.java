@@ -3,6 +3,7 @@ package com.just.test.smarttest.config;
 import com.just.test.smarttest.datasource.SmartTestRoutingDataSource;
 import com.just.test.smarttest.h2.SmartTestMyBatisInterceptorConfigurer;
 import com.just.test.smarttest.scope.ThreadScope;
+import org.springframework.beans.factory.config.BeanFactoryPostProcessor;
 import org.springframework.beans.factory.config.BeanPostProcessor;
 import org.springframework.beans.factory.config.CustomScopeConfigurer;
 import org.springframework.beans.factory.annotation.Qualifier;
@@ -25,6 +26,15 @@ public class SmartTestDataSourceConfig {
         CustomScopeConfigurer configurer = new CustomScopeConfigurer();
         configurer.addScope("thread", new ThreadScope());
         return configurer;
+    }
+
+    @Bean
+    public static BeanFactoryPostProcessor smartTestRefreshScopeConfigurer() {
+        return beanFactory -> {
+            if (beanFactory.getRegisteredScope("refresh") == null) {
+                beanFactory.registerScope("refresh", new ThreadScope());
+            }
+        };
     }
 
     @Bean
