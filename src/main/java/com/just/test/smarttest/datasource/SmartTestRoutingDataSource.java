@@ -86,17 +86,20 @@ public class SmartTestRoutingDataSource extends AbstractDataSource implements Di
         lifecycleLock.readLock().lock();
         try {
             String key = currentDbKey();
-            SingleConnectionDataSource dataSource = dataSources.get(key);
-            if (dataSource != null && isUsable(dataSource)) {
-                return dataSource;
-            }
-            if (dataSource != null) {
-                initializedSchemas.remove(key);
-                if (dataSources.remove(key, dataSource)) {
-                    dataSource.destroy();
+            return dataSources.compute(key, (k, existing) -> {
+                if (existing != null && isUsable(existing)) {
+                    return existing;
                 }
-            }
-            return dataSources.computeIfAbsent(key, this::createDataSource);
+                if (existing != null) {
+                    initializedSchemas.remove(k);
+                    try {
+                        existing.destroy();
+                    } catch (Exception e) {
+                        log.debug("[SmartTest] Failed to destroy unusable H2 database for case [{}]", k, e);
+                    }
+                }
+                return createDataSource(k);
+            });
         } finally {
             lifecycleLock.readLock().unlock();
         }

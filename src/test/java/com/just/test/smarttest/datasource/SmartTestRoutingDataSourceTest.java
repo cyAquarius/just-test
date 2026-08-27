@@ -11,6 +11,7 @@ import java.lang.reflect.Field;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.sql.Connection;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
@@ -338,6 +339,9 @@ class SmartTestRoutingDataSourceTest {
             jdbcTemplate.execute("CREATE TABLE after_rebuild(id INT)");
             SingleConnectionDataSource rebuiltDataSource = getCaseDataSource(dataSource, databaseKey);
             assertNotSame(closedDataSource, rebuiltDataSource);
+            try (Connection connection = rebuiltDataSource.getConnection()) {
+                assertTrue(connection.isValid(1));
+            }
             assertEquals(0, jdbcTemplate.queryForObject(
                     "SELECT COUNT(*) FROM INFORMATION_SCHEMA.TABLES WHERE UPPER(TABLE_NAME) = 'BEFORE_CLOSE'",
                     Integer.class));
