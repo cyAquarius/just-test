@@ -16,13 +16,13 @@
 
 ## SmartTest 提供的能力
 
-- `@SmartTest` 配置 Spring Test、H2、`JdbcTemplate` 与事务管理器，使被测服务可以按正常事务行为执行。
+- `@SmartTest` 配置 Spring Test、H2、`JdbcTemplate` 与事务管理器，使被测服务可以按正常事务行为执行；不存在 `refresh` scope 时会注册一个替代实现，使使用 `@RefreshScope` 或 `@Scope("refresh")` 的业务 Bean 无需 Spring Cloud refresh 基础设施即可加载，但测试不提供真实的 refresh 语义。
 - `@CaseSource` 发现 YAML 用例，并为每个 case 创建完整的 JUnit test-template invocation；测试方法和标准单测生命周期方法均可注入 `CaseContext`。
 - 通过 `prepare.yaml`、`response.yaml`、`expect.yaml`、`expect_exception.yaml` 完成数据准备以及结果、数据库和异常验证。
-- `@SmartMock` 创建线程作用域 Mockito mock；同类型多 Bean 时，显式 `name` 优先，否则先按 Spring autowire/qualifier 规则过滤，再按 `@Primary`、字段名或 alias、唯一候选确定目标。
+- `@SmartMock` 创建线程作用域 Mockito mock；同类型多 Bean 时，显式 `name` 只命中类型兼容的 Bean；如果现有 Bean 类型无法解析（例如 `FactoryBean` 隐藏了对象类型），仍会使用名称回退。名称相同但类型无关的 Bean 不会被替换，错误的显式名称仍会以缺少候选 Bean 的错误失败。
 - `@ThreadScopedMock` 将同一 scoped mock 模型用于标注的 `@Bean` 方法。
 - `StaticMockContext` 可在每个 case 线程中替换业务静态 Context/工厂入口，并在 case 结束时自动恢复。
-- H2 数据库按 SmartTest `ApplicationContext` 与活动 case 隔离；清理后的 DDL 会缓存，默认从模板数据库克隆 schema（可通过 `smarttest.schema.clone=false` 禁用）；case 结束时释放对应数据库，schema 初始化失败可重试。
+- H2 数据库按 SmartTest `ApplicationContext` 与活动 case 隔离；清理后的 DDL 会缓存，默认从模板数据库克隆 schema（可通过 `smarttest.schema.clone=false` 禁用）；case 结束时释放对应数据库，schema 初始化失败可重试。对于 MySQL 的 `schema.sql` dump，清理器会剥离常见的 `SHOW CREATE TABLE` 附加语法，例如表级 `ROW_FORMAT`、`UNSIGNED`、`ON UPDATE CURRENT_TIMESTAMP`、列级 `CHARACTER SET` 和 `DEFAULT b'0'`；不宣称覆盖所有 MySQL 方言。
 - MyBatis 测试 SQL 进行受控的 MySQL→H2 改写：`IF(...)` 改为 `CASEWHEN(...)`，`DATE_FORMAT(...)` 改为 `FORMATDATETIME(...)`；`DATE_FORMAT` 改写通过 MyBatis `StatementHandler` 拦截器链执行（与 `IF(...)` → `CASEWHEN(...)` 使用相同路径），因此纯 `JdbcTemplate` SQL 若未经过该拦截器则不会改写。历史双引号字符串仅在已知字符串函数参数和比较运算符右值中兼容。
 
 ## 边界与并发
