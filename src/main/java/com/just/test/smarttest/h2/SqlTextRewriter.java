@@ -20,6 +20,9 @@ final class SqlTextRewriter {
         if (sql == null || sql.isEmpty()) {
             return sql;
         }
+        if (!containsIgnoreCase(sql, "IF(")) {
+            return sql;
+        }
         StringBuilder result = new StringBuilder(sql.length());
         int index = 0;
         while (index < sql.length()) {
@@ -43,6 +46,9 @@ final class SqlTextRewriter {
 
     static String rewriteDateFormatFunctions(String sql) {
         if (sql == null || sql.isEmpty()) {
+            return sql;
+        }
+        if (!containsIgnoreCase(sql, "DATE_FORMAT")) {
             return sql;
         }
         StringBuilder result = new StringBuilder(sql.length());
@@ -72,6 +78,9 @@ final class SqlTextRewriter {
 
     static String rewriteDoubleQuotedLiterals(String sql) {
         if (sql == null || sql.isEmpty()) {
+            return sql;
+        }
+        if (!containsIgnoreCase(sql, "\"")) {
             return sql;
         }
         StringBuilder result = new StringBuilder(sql.length());
@@ -386,6 +395,16 @@ final class SqlTextRewriter {
             }
         }
         return result.toString();
+    }
+
+    private static boolean containsIgnoreCase(String text, String token) {
+        int limit = text.length() - token.length();
+        for (int index = 0; index <= limit; index++) {
+            if (text.regionMatches(true, index, token, 0, token.length())) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private static boolean matchesFunction(String sql, int index, String functionName) {

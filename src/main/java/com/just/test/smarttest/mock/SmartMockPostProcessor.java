@@ -178,7 +178,8 @@ class SmartMockPostProcessor implements BeanFactoryPostProcessor {
         if (!definition.getExplicitBeanName().isEmpty()) {
             String existingBeanName = findExistingBeanDefinition(
                     registry, beanFactory, definition.getExplicitBeanName());
-            if (existingBeanName != null) {
+            if (existingBeanName != null
+                    && isTypeCompatible(beanFactory, existingBeanName, definition)) {
                 return existingBeanName;
             }
             if (logicalCandidates.isEmpty()) {
@@ -274,7 +275,9 @@ class SmartMockPostProcessor implements BeanFactoryPostProcessor {
                                         DependencyDescriptor descriptor) {
         String fieldName = definition.getFieldName();
         String fieldBeanName = findExistingBeanDefinition(registry, beanFactory, fieldName);
-        if (fieldBeanName != null && beanFactory.isAutowireCandidate(fieldBeanName, descriptor)) {
+        if (fieldBeanName != null
+                && beanFactory.isAutowireCandidate(fieldBeanName, descriptor)
+                && isTypeCompatible(beanFactory, fieldBeanName, definition)) {
             log.warn("[SmartMock] Type scan did not find a candidate for {}; "
                             + "using field-name fallback '{}' (resolved bean '{}')",
                     definition.describe(), fieldName, fieldBeanName);
@@ -284,7 +287,9 @@ class SmartMockPostProcessor implements BeanFactoryPostProcessor {
         String defaultBeanName = generateBeanName(definition.getType());
         if (!defaultBeanName.equals(fieldName)) {
             String defaultBean = findExistingBeanDefinition(registry, beanFactory, defaultBeanName);
-            if (defaultBean != null && beanFactory.isAutowireCandidate(defaultBean, descriptor)) {
+            if (defaultBean != null
+                    && beanFactory.isAutowireCandidate(defaultBean, descriptor)
+                    && isTypeCompatible(beanFactory, defaultBean, definition)) {
                 log.warn("[SmartMock] Type scan did not find a candidate for {}; "
                                 + "using default bean-name fallback '{}' (resolved bean '{}')",
                         definition.describe(), defaultBeanName, defaultBean);
@@ -292,6 +297,12 @@ class SmartMockPostProcessor implements BeanFactoryPostProcessor {
             }
         }
         return null;
+    }
+
+    private boolean isTypeCompatible(ConfigurableListableBeanFactory beanFactory,
+                                     String beanName, SmartMockDefinition definition) {
+        Class<?> beanType = beanFactory.getType(beanName, false);
+        return beanType == null || definition.getType().isAssignableFrom(beanType);
     }
 
     private String findExistingBeanDefinition(BeanDefinitionRegistry registry,
