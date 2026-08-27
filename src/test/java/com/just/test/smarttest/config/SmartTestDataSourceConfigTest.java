@@ -1,5 +1,7 @@
 package com.just.test.smarttest.config;
 
+import com.just.test.smarttest.context.CaseContext;
+import com.just.test.smarttest.context.CaseExecutionContext;
 import org.junit.jupiter.api.Test;
 import org.springframework.context.annotation.AnnotationConfigApplicationContext;
 import org.springframework.context.annotation.Bean;
@@ -28,7 +30,12 @@ class SmartTestDataSourceConfigTest {
         AnnotationConfigApplicationContext context = new AnnotationConfigApplicationContext(
                 SmartTestDataSourceConfig.class, RefreshScopedBeanConfig.class);
         try {
-            assertNotNull(context.getBean(RefreshScopedBean.class));
+            CaseExecutionContext.bind(new CaseContext("refresh-scope", "test/refresh-scope"));
+            try {
+                assertNotNull(context.getBean(RefreshScopedBean.class));
+            } finally {
+                CaseExecutionContext.clear();
+            }
         } finally {
             context.close();
         }
