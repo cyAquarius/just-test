@@ -2,17 +2,28 @@
 
 [中文文档](README.zh-CN.md)
 
-`just-test` is a reusable Java test toolkit. Its current module, SmartTest, provides YAML-driven Spring Boot integration tests backed by JUnit 5 and an isolated in-memory H2 database.
+`just-test` is a reusable Java test toolkit. SmartTest provides the same public packages and core semantics for Spring Boot 2 and Spring Boot 3 through two independent product lines.
 
 It is deliberately a test-scope framework: it supplies repeatable test setup, assertions, and test doubles, but it does not replace application design, production database compatibility testing, or concurrency control in application code.
 
-## Compatibility
+## Compatibility and version matrix
 
-- Java 8
-- Spring Boot 2.7.18
-- JUnit 5.9.3
-- H2 2.x
-- Maven
+| Component | `just-test-boot2` | `just-test-boot3` |
+| --- | --- | --- |
+| Java | 8 | 17 |
+| Spring Boot | 2.7.18 | 3.5.16 |
+| Spring Framework | 5.3.31 | 6.2.19 |
+| JUnit Jupiter | 5.14.4 | 5.12.2 |
+| Mockito | 4.11.0 | 5.17.0 |
+| MyBatis / mybatis-spring | 3.5.19 / 2.1.2 | 3.5.19 / 3.0.6 |
+| H2 | 2.1.214 | 2.3.232 |
+| SnakeYAML | 1.33 | 2.4 |
+| fastjson2 | 2.0.64 | 2.0.64 |
+| SLF4J | 1.7.36 | 2.0.18 |
+
+The Boot 2 line retains the final 2.7.18 release and a real Java 8 baseline. The Boot 3 line uses stable Boot 3.5.16 on Java 17 and does not move to Boot 4. Versions come from the corresponding Spring Boot BOM except for MyBatis, mybatis-spring, fastjson2, Boot 2 Mockito/SnakeYAML, and build plugins. Builds use Maven Compiler Plugin 3.15.0 and Surefire 3.5.6; CI uses `actions/checkout@v7` and `actions/setup-java@v6`.
+
+The matrix is the standalone artifact build and validation baseline. As with normal Maven libraries, a consumer's parent or dependency management can override transitive versions; CI additionally consumes each installed artifact under the matching Spring Boot parent/BOM to verify that common application layout.
 
 ## What SmartTest provides
 
@@ -77,7 +88,7 @@ A parallel failure is not automatically a SmartTest isolation failure; first ins
 
 ## Add the dependency
 
-Use this library only in test scope:
+Add exactly one top-level dependency in test scope. For Java 8 / Boot 2 use:
 
 ```xml
 <repositories>
@@ -90,7 +101,18 @@ Use this library only in test scope:
 
 <dependency>
     <groupId>com.just.test</groupId>
-    <artifactId>just-test</artifactId>
+    <artifactId>just-test-boot2</artifactId>
+    <version>1.0.0-SNAPSHOT</version>
+    <scope>test</scope>
+</dependency>
+```
+
+For Java 17 / Boot 3 use:
+
+```xml
+<dependency>
+    <groupId>com.just.test</groupId>
+    <artifactId>just-test-boot3</artifactId>
     <version>1.0.0-SNAPSHOT</version>
     <scope>test</scope>
 </dependency>
@@ -98,7 +120,9 @@ Use this library only in test scope:
 
 GitHub Packages requires credentials in the consumer's `~/.m2/settings.xml`. Keep the token outside the project, for example `${env.GITHUB_PACKAGES_TOKEN}`. A classic PAT needs `read:packages`; private-repository consumers also need `repo`.
 
-The artifact transitively provides the Spring Boot TestContext and auto-configuration APIs required by `@SmartTest` and the recommended configuration below. The consumer still selects and manages its own Spring Boot 2.x version.
+Each artifact transitively provides shared `just-test-core` plus the matching platform TestContext, auto-configuration, and test dependencies; consumers do not declare core themselves. Do not depend on both top-level artifacts. The Boot 2 artifact does not bring Spring 6/Boot 3, and the Boot 3 artifact does not bring Spring 5/Boot 2. The former `com.just.test:just-test` coordinate only had SNAPSHOT builds and no stable release, so it migrates directly to `just-test-boot2` without a permanent compatibility shell.
+
+Public packages remain under `com.just.test.smarttest`, so application tests normally change only the artifactId. When moving an application to Boot 3, migrate its Java EE types to Jakarta as required by Spring Boot 3; Java SE `javax.sql.DataSource` is not part of that migration.
 
 ## Write a test
 
@@ -158,7 +182,7 @@ public void configureStaticMocks(CaseContext context, StaticMockContext mocks) {
 
 Unstubbed static methods continue to call their real implementation. Do not close the returned `MockedStatic` manually; SmartTest closes all registrations after user `@AfterEach` on the original case thread.
 
-This feature requires the consumer to enable Mockito's inline mock maker explicitly; the same applies when the actual Bean targeted by `@SmartMock` is a final class. For example, put `mock-maker-inline` in the consumer's `src/test/resources/mockito-extensions/org.mockito.plugins.MockMaker`, or add `mockito-inline` matching its Mockito version. SmartTest does not select a MockMaker from its published JAR, avoiding conflicts with existing Mockito or PowerMock configuration.
+Boot 2 uses Mockito 4, so static mocks and final-type mocks require the consumer to enable the inline mock maker explicitly, for example by putting `mock-maker-inline` in `src/test/resources/mockito-extensions/org.mockito.plugins.MockMaker` or adding the matching `mockito-inline`. Boot 3 uses Mockito 5, whose default mock maker is inline; consumers that override the MockMaker still own static/final mock support. SmartTest does not select a MockMaker from its published JAR, avoiding conflicts with consumer configuration.
 
 By default, cases live below the test class package and simple name:
 
@@ -213,9 +237,24 @@ For database expectations, prefer explicit `[C]` fields so the intended row is u
 
 ## Build and publish
 
+An environment with only Java 8 can verify the Boot 2 line independently:
+
 ```bash
-mvn clean verify
-mvn clean install
+JAVA_HOME=/path/to/jdk8 PATH="$JAVA_HOME/bin:$PATH" \
+  mvn --batch-mode --no-transfer-progress -pl just-test-boot2 -am clean install
+JAVA_HOME=/path/to/jdk8 PATH="$JAVA_HOME/bin:$PATH" \
+  mvn --batch-mode --no-transfer-progress -f smoke-tests/boot2/pom.xml clean test
 ```
 
-Pull requests targeting `main` first run Java 8 `mvn clean verify`. After a push to `main`, the publishing workflow executes `mvn clean deploy` and publishes the configured version to GitHub Packages. This repository contains reusable framework code and minimal demos only; do not add product-specific packages, schemas, or tests.
+A Java 17 environment can verify the Boot 3 line independently:
+
+```bash
+JAVA_HOME=/path/to/jdk17 PATH="$JAVA_HOME/bin:$PATH" \
+  mvn --batch-mode --no-transfer-progress -pl just-test-boot3 -am clean install
+JAVA_HOME=/path/to/jdk17 PATH="$JAVA_HOME/bin:$PATH" \
+  mvn --batch-mode --no-transfer-progress -f smoke-tests/boot3/pom.xml clean test
+```
+
+Both product lines run the same contract suite from `src/contract-test`. Each second command uses a standalone Spring Boot consumer project that declares only the matching top-level SmartTest dependency and resolves the locally installed POM and JAR. On Java 17, `mvn clean install` builds and installs the entire reactor, but it does not replace the real Java 8 verification above.
+
+CI provides independent complete jobs for both JDKs, including the installed-artifact consumer smoke tests. The publishing workflow waits for both verification lines, installs Java 8 and Java 17 as Maven Toolchains, builds core/Boot 2 with Java 8 and Boot 3 with Java 17, runs both contract and consumer tests, and only then deploys the exact validated parent POMs and JARs. A build or smoke-test failure therefore occurs before any deployment. This repository contains reusable framework code and minimal demos only; do not add product-specific packages, schemas, or tests.

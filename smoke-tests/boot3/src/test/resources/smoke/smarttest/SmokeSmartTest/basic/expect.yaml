@@ -1,0 +1,3 @@
+smoke_record:
+  - 'id[C]': 1
+    marker: boot3
