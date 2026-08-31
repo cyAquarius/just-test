@@ -2,17 +2,28 @@
 
 [English](README.md)
 
-`just-test` 是可复用的 Java 测试工具库。当前模块 SmartTest 基于 JUnit 5、Spring Boot 与隔离的 H2 内存库，提供 YAML 驱动的集成测试能力。
+`just-test` 是可复用的 Java 测试工具库。SmartTest 通过两个独立产品线为 Spring Boot 2 和 Spring Boot 3 提供相同包名与核心语义的 YAML 驱动集成测试能力。
 
 它定位为测试范围框架：负责可重复的测试准备、断言与替身，不替代业务架构、生产数据库兼容性验证或业务代码的并发治理。
 
-## 兼容性
+## 兼容性与版本矩阵
 
-- Java 8
-- Spring Boot 2.7.18
-- JUnit 5.9.3
-- H2 2.x
-- Maven
+| 组件 | `just-test-boot2` | `just-test-boot3` |
+| --- | --- | --- |
+| Java | 8 | 17 |
+| Spring Boot | 2.7.18 | 3.5.16 |
+| Spring Framework | 5.3.31 | 6.2.19 |
+| JUnit Jupiter | 5.14.4 | 5.12.2 |
+| Mockito | 4.11.0 | 5.17.0 |
+| MyBatis / mybatis-spring | 3.5.19 / 2.1.2 | 3.5.19 / 3.0.6 |
+| H2 | 2.1.214 | 2.3.232 |
+| SnakeYAML | 1.33 | 2.4 |
+| fastjson2 | 2.0.64 | 2.0.64 |
+| SLF4J | 1.7.36 | 2.0.18 |
+
+Boot 2 线保留最后一个正式版本 2.7.18 和真实 Java 8 基线；Boot 3 线使用仍属 Boot 3、基于 Java 17 的稳定版本 3.5.16，不升级到 Boot 4。除 MyBatis、mybatis-spring、fastjson2、Boot 2 的 Mockito/SnakeYAML 和构建插件外，版本由对应 Spring Boot BOM 管理。构建使用 Maven Compiler Plugin 3.15.0 和 Surefire 3.5.6；CI 使用 `actions/checkout@v7`、`actions/setup-java@v6`。
+
+上表是 artifact 独立构建和验证时的基线。与普通 Maven 库一致，消费工程的 parent 或 dependency management 可以重新仲裁传递版本；CI 还会在匹配的 Spring Boot parent/BOM 下消费本地安装产物，覆盖常见业务工程结构。
 
 ## SmartTest 提供的能力
 
@@ -77,7 +88,7 @@ junit.jupiter.execution.parallel.mode.classes.default=concurrent
 
 ## 引入依赖
 
-只在测试范围引入：
+只在测试范围引入一个与应用平台匹配的顶层依赖。Java 8 / Boot 2 使用：
 
 ```xml
 <repositories>
@@ -90,7 +101,18 @@ junit.jupiter.execution.parallel.mode.classes.default=concurrent
 
 <dependency>
     <groupId>com.just.test</groupId>
-    <artifactId>just-test</artifactId>
+    <artifactId>just-test-boot2</artifactId>
+    <version>1.0.0-SNAPSHOT</version>
+    <scope>test</scope>
+</dependency>
+```
+
+Java 17 / Boot 3 使用：
+
+```xml
+<dependency>
+    <groupId>com.just.test</groupId>
+    <artifactId>just-test-boot3</artifactId>
     <version>1.0.0-SNAPSHOT</version>
     <scope>test</scope>
 </dependency>
@@ -98,7 +120,9 @@ junit.jupiter.execution.parallel.mode.classes.default=concurrent
 
 GitHub Packages 需要在消费项目的 `~/.m2/settings.xml` 中配置凭据。Token 应放在项目外，例如 `${env.GITHUB_PACKAGES_TOKEN}`。classic PAT 需要 `read:packages`；消费私有源码仓库时还需要 `repo`。
 
-该 artifact 会传递提供 `@SmartTest` 启动和下方推荐配置所需的 Spring Boot TestContext 与 auto-configuration API；消费工程仍负责选择并管理自身的 Spring Boot 2.x 版本。
+两个 artifact 都会传递共享的 `just-test-core` 以及各自平台的 TestContext、auto-configuration 和测试依赖；消费方不需要手工声明 core。不要同时引入两个顶层 artifact。Boot 2 产物不带入 Spring 6/Boot 3，Boot 3 产物不带入 Spring 5/Boot 2。原 `com.just.test:just-test` 只有 SNAPSHOT、没有正式发布版本，因此直接迁移为 `just-test-boot2`，不提供永久兼容壳。
+
+公开包名仍为 `com.just.test.smarttest`，业务测试迁移通常只需更换 artifactId；迁移到 Boot 3 时，消费工程自身使用的 Java EE 类型仍需按 Spring Boot 3 规则迁移到 Jakarta。Java SE 的 `javax.sql.DataSource` 不属于 Jakarta 迁移范围。
 
 ## 编写测试
 
@@ -158,7 +182,7 @@ public void configureStaticMocks(CaseContext context, StaticMockContext mocks) {
 
 未 stub 的静态方法继续调用真实实现。不要手工关闭返回的 `MockedStatic`；SmartTest 会在用户 `@AfterEach` 结束后，于原 case 线程统一关闭。
 
-该能力要求消费工程显式启用 Mockito inline mock maker；`@SmartMock` 的实际目标 Bean 为 final 类时也有相同要求。例如在消费工程的 `src/test/resources/mockito-extensions/org.mockito.plugins.MockMaker` 写入 `mock-maker-inline`，或引入与 Mockito 版本一致的 `mockito-inline`。SmartTest 不会在发布的 JAR 中全局指定 MockMaker，避免覆盖消费工程已有的 Mockito/PowerMock 配置。
+Boot 2 使用 Mockito 4，静态 Mock 或 final 类型 Mock 要求消费工程显式启用 inline mock maker，例如在 `src/test/resources/mockito-extensions/org.mockito.plugins.MockMaker` 写入 `mock-maker-inline`，或引入版本一致的 `mockito-inline`。Boot 3 使用 Mockito 5，其默认 mock maker 已是 inline；若消费工程覆盖了 MockMaker，仍需自行保证静态/final Mock 能力。SmartTest 不会在发布 JAR 中全局指定 MockMaker，避免覆盖消费工程已有配置。
 
 默认目录位于测试类包名与简单类名之下：
 
@@ -213,9 +237,24 @@ src/test/resources/com/example/smarttest/order/OrderServiceSmartTest/
 
 ## 构建与发布
 
+仅有 Java 8 的环境可独立验证 Boot 2：
+
 ```bash
-mvn clean verify
-mvn clean install
+JAVA_HOME=/path/to/jdk8 PATH="$JAVA_HOME/bin:$PATH" \
+  mvn --batch-mode --no-transfer-progress -pl just-test-boot2 -am clean install
+JAVA_HOME=/path/to/jdk8 PATH="$JAVA_HOME/bin:$PATH" \
+  mvn --batch-mode --no-transfer-progress -f smoke-tests/boot2/pom.xml clean test
 ```
 
-面向 `main` 的 Pull Request 会先运行 Java 8 `mvn clean verify`。推送到 `main` 后，发布工作流执行 `mvn clean deploy` 并将当前版本发布至 GitHub Packages。仓库只包含可复用框架代码和最小演示，不应加入具体业务包、业务表结构或业务测试。
+Java 17 环境可独立验证 Boot 3：
+
+```bash
+JAVA_HOME=/path/to/jdk17 PATH="$JAVA_HOME/bin:$PATH" \
+  mvn --batch-mode --no-transfer-progress -pl just-test-boot3 -am clean install
+JAVA_HOME=/path/to/jdk17 PATH="$JAVA_HOME/bin:$PATH" \
+  mvn --batch-mode --no-transfer-progress -f smoke-tests/boot3/pom.xml clean test
+```
+
+两个产品线都执行同一份 `src/contract-test` 契约测试；各自的第二条命令使用独立 Spring Boot 消费工程，只声明匹配的 SmartTest 顶层依赖，并解析前一步安装到本地仓库的 POM 与 JAR。Java 17 下可用 `mvn clean install` 构建并安装整个 reactor，但它不能替代上述真实 Java 8 验证。
+
+CI 为两个 JDK 提供独立完整 Job，并执行安装产物消费烟测。发布工作流先等待两条验证线全部成功，再把 Java 8 与 Java 17 配置为 Maven Toolchains：core/Boot 2 使用 Java 8、Boot 3 使用 Java 17，完成两套契约测试和消费烟测后才部署同一批已验证 POM 与 JAR，因此构建或烟测失败时不会开始部署。仓库只包含可复用框架代码和最小演示，不应加入具体业务包、业务表结构或业务测试。

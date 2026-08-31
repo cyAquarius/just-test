@@ -1,0 +1,1 @@
+CREATE TABLE smoke_record (id INT PRIMARY KEY, marker VARCHAR(32) NOT NULL);

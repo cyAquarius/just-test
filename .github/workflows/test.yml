@@ -5,24 +5,78 @@ on:
     branches:
       - main
   workflow_dispatch:
+  workflow_call:
 
 permissions:
   contents: read
 
 jobs:
-  test:
-    name: Java 8 测试
+  boot2:
+    name: Java 8 / Spring Boot 2
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - name: 检出代码
-        uses: actions/checkout@v5
+        uses: actions/checkout@v7
 
       - name: 配置 Java 8 和 Maven
-        uses: actions/setup-java@v5
+        uses: actions/setup-java@v6
         with:
           distribution: temurin
           java-version: "8"
           cache: maven
+          cache-dependency-path: |
+            pom.xml
+            just-test-core/pom.xml
+            just-test-boot2/pom.xml
+            smoke-tests/boot2/pom.xml
 
-      - name: 构建并测试
-        run: mvn --batch-mode --no-transfer-progress clean verify
+      - name: 验证 Boot 2 产品线
+        run: mvn --batch-mode --no-transfer-progress -pl just-test-boot2 -am clean install
+
+      - name: 读取待验证版本
+        id: project
+        shell: bash
+        run: |
+          project_version="$(mvn --quiet --non-recursive help:evaluate -Dexpression=project.version -DforceStdout)"
+          printf 'version=%s\n' "${project_version}" >> "${GITHUB_OUTPUT}"
+
+      - name: 验证 Boot 2 安装产物消费
+        run: mvn --batch-mode --no-transfer-progress -f smoke-tests/boot2/pom.xml -Djust-test.version="${PROJECT_VERSION}" clean test
+        env:
+          PROJECT_VERSION: ${{ steps.project.outputs.version }}
+
+  boot3:
+    name: Java 17 / Spring Boot 3
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v7
+
+      - name: 配置 Java 17 和 Maven
+        uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: "17"
+          cache: maven
+          cache-dependency-path: |
+            pom.xml
+            just-test-core/pom.xml
+            just-test-boot3/pom.xml
+            smoke-tests/boot3/pom.xml
+
+      - name: 验证 Boot 3 产品线
+        run: mvn --batch-mode --no-transfer-progress -pl just-test-boot3 -am clean install
+
+      - name: 读取待验证版本
+        id: project
+        shell: bash
+        run: |
+          project_version="$(mvn --quiet --non-recursive help:evaluate -Dexpression=project.version -DforceStdout)"
+          printf 'version=%s\n' "${project_version}" >> "${GITHUB_OUTPUT}"
+
+      - name: 验证 Boot 3 安装产物消费
+        run: mvn --batch-mode --no-transfer-progress -f smoke-tests/boot3/pom.xml -Djust-test.version="${PROJECT_VERSION}" clean test
+        env:
+          PROJECT_VERSION: ${{ steps.project.outputs.version }}
