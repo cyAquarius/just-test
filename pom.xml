@@ -3,12 +3,43 @@
          xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
          xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
     <modelVersion>4.0.0</modelVersion>
+
     <groupId>com.just.test</groupId>
-    <artifactId>just-test</artifactId>
+    <artifactId>just-test-parent</artifactId>
     <version>1.0.0-SNAPSHOT</version>
-    <packaging>jar</packaging>
-    <name>just-test</name>
-    <description>AI-oriented testing toolkit with the SmartTest framework.</description>
+    <packaging>pom</packaging>
+
+    <name>just-test parent</name>
+    <description>Parent and reactor for the SmartTest Spring Boot 2 and Spring Boot 3 product lines.</description>
+
+    <modules>
+        <module>just-test-core</module>
+        <module>just-test-boot2</module>
+        <module>just-test-boot3</module>
+    </modules>
+
+    <properties>
+        <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+        <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
+
+        <spring.boot2.version>2.7.18</spring.boot2.version>
+        <spring.boot3.version>3.5.16</spring.boot3.version>
+        <spring.framework5.version>5.3.31</spring.framework5.version>
+        <junit.core.version>5.9.3</junit.core.version>
+        <junit.boot2.version>5.14.4</junit.boot2.version>
+        <mockito.boot2.version>4.11.0</mockito.boot2.version>
+        <mybatis.version>3.5.19</mybatis.version>
+        <mybatis.spring.boot2.version>2.1.2</mybatis.spring.boot2.version>
+        <mybatis.spring.boot3.version>3.0.6</mybatis.spring.boot3.version>
+        <fastjson2.version>2.0.64</fastjson2.version>
+        <snakeyaml.boot2.version>1.33</snakeyaml.boot2.version>
+
+        <maven.compiler.plugin.version>3.15.0</maven.compiler.plugin.version>
+        <maven.surefire.plugin.version>3.5.6</maven.surefire.plugin.version>
+        <maven.enforcer.plugin.version>3.6.2</maven.enforcer.plugin.version>
+        <maven.deploy.plugin.version>3.1.4</maven.deploy.plugin.version>
+    </properties>
+
     <distributionManagement>
         <repository>
             <id>github</id>
@@ -21,67 +52,71 @@
             <url>https://maven.pkg.github.com/cyaquarius/just-test</url>
         </snapshotRepository>
     </distributionManagement>
-    <properties>
-        <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
-        <maven.compiler.source>1.8</maven.compiler.source>
-        <maven.compiler.target>1.8</maven.compiler.target>
-        <junit.version>5.9.3</junit.version>
-        <spring.boot.version>2.7.18</spring.boot.version>
-        <mybatis.version>3.5.19</mybatis.version>
-        <mybatis.spring.version>2.1.2</mybatis.spring.version>
-        <mockito.version>4.11.0</mockito.version>
-        <fastjson2.version>2.0.61</fastjson2.version>
-        <snakeyaml.version>1.33</snakeyaml.version>
-    </properties>
+
     <dependencyManagement>
         <dependencies>
             <dependency>
-                <groupId>org.junit</groupId>
-                <artifactId>junit-bom</artifactId>
-                <version>${junit.version}</version>
-                <type>pom</type>
-                <scope>import</scope>
+                <groupId>com.just.test</groupId>
+                <artifactId>just-test-core</artifactId>
+                <version>${project.version}</version>
             </dependency>
             <dependency>
-                <groupId>org.springframework.boot</groupId>
-                <artifactId>spring-boot-dependencies</artifactId>
-                <version>${spring.boot.version}</version>
-                <type>pom</type>
-                <scope>import</scope>
+                <groupId>org.mybatis</groupId>
+                <artifactId>mybatis</artifactId>
+                <version>${mybatis.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>com.alibaba.fastjson2</groupId>
+                <artifactId>fastjson2</artifactId>
+                <version>${fastjson2.version}</version>
             </dependency>
         </dependencies>
     </dependencyManagement>
-    <dependencies>
-        <dependency><groupId>org.junit.jupiter</groupId><artifactId>junit-jupiter-api</artifactId></dependency>
-        <dependency><groupId>org.springframework</groupId><artifactId>spring-context</artifactId></dependency>
-        <dependency><groupId>org.springframework</groupId><artifactId>spring-jdbc</artifactId></dependency>
-        <dependency><groupId>org.springframework</groupId><artifactId>spring-tx</artifactId></dependency>
-        <dependency><groupId>org.springframework</groupId><artifactId>spring-test</artifactId></dependency>
-        <dependency><groupId>org.springframework.boot</groupId><artifactId>spring-boot-test</artifactId></dependency>
-        <dependency><groupId>org.springframework.boot</groupId><artifactId>spring-boot-autoconfigure</artifactId></dependency>
-        <dependency><groupId>org.mybatis</groupId><artifactId>mybatis</artifactId><version>${mybatis.version}</version></dependency>
-        <dependency><groupId>org.mybatis</groupId><artifactId>mybatis-spring</artifactId><version>${mybatis.spring.version}</version><scope>test</scope></dependency>
-        <dependency><groupId>org.mockito</groupId><artifactId>mockito-core</artifactId><version>${mockito.version}</version></dependency>
-        <dependency><groupId>com.alibaba.fastjson2</groupId><artifactId>fastjson2</artifactId><version>${fastjson2.version}</version></dependency>
-        <dependency><groupId>org.yaml</groupId><artifactId>snakeyaml</artifactId><version>${snakeyaml.version}</version></dependency>
-        <dependency><groupId>com.h2database</groupId><artifactId>h2</artifactId></dependency>
-        <dependency><groupId>org.slf4j</groupId><artifactId>slf4j-api</artifactId></dependency>
-        <dependency><groupId>org.slf4j</groupId><artifactId>slf4j-simple</artifactId><scope>test</scope></dependency>
-        <dependency><groupId>org.junit.jupiter</groupId><artifactId>junit-jupiter-engine</artifactId><scope>runtime</scope></dependency>
-    </dependencies>
+
     <build>
+        <pluginManagement>
+            <plugins>
+                <plugin>
+                    <groupId>org.apache.maven.plugins</groupId>
+                    <artifactId>maven-compiler-plugin</artifactId>
+                    <version>${maven.compiler.plugin.version}</version>
+                    <configuration>
+                        <parameters>true</parameters>
+                    </configuration>
+                </plugin>
+                <plugin>
+                    <groupId>org.apache.maven.plugins</groupId>
+                    <artifactId>maven-surefire-plugin</artifactId>
+                    <version>${maven.surefire.plugin.version}</version>
+                    <configuration>
+                        <useModulePath>false</useModulePath>
+                    </configuration>
+                </plugin>
+                <plugin>
+                    <groupId>org.apache.maven.plugins</groupId>
+                    <artifactId>maven-deploy-plugin</artifactId>
+                    <version>${maven.deploy.plugin.version}</version>
+                </plugin>
+            </plugins>
+        </pluginManagement>
         <plugins>
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
-                <artifactId>maven-compiler-plugin</artifactId>
-                <version>3.11.0</version>
-                <configuration><source>1.8</source><target>1.8</target><parameters>true</parameters></configuration>
-            </plugin>
-            <plugin>
-                <groupId>org.apache.maven.plugins</groupId>
-                <artifactId>maven-surefire-plugin</artifactId>
-                <version>3.2.5</version>
-                <configuration><useModulePath>false</useModulePath></configuration>
+                <artifactId>maven-enforcer-plugin</artifactId>
+                <version>${maven.enforcer.plugin.version}</version>
+                <executions>
+                    <execution>
+                        <id>enforce-dependency-convergence</id>
+                        <goals>
+                            <goal>enforce</goal>
+                        </goals>
+                        <configuration>
+                            <rules>
+                                <dependencyConvergence/>
+                            </rules>
+                        </configuration>
+                    </execution>
+                </executions>
             </plugin>
         </plugins>
     </build>
