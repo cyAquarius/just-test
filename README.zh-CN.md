@@ -21,7 +21,7 @@
 | fastjson2 | 2.0.64 | 2.0.64 |
 | SLF4J | 1.7.36 | 2.0.18 |
 
-Boot 2 线保留最后一个正式版本 2.7.18 和真实 Java 8 基线；Boot 3 线使用仍属 Boot 3、基于 Java 17 的稳定版本 3.5.16，不升级到 Boot 4。除 MyBatis、mybatis-spring、fastjson2、Boot 2 的 Mockito/SnakeYAML 和构建插件外，版本由对应 Spring Boot BOM 管理。构建使用 Maven Compiler Plugin 3.15.0 和 Surefire 3.5.6；CI 使用 `actions/checkout@v7`、`actions/setup-java@v6`。
+Boot 2 线保留最后一个正式版本 2.7.18 和真实 Java 8 基线；Boot 3 线使用仍属 Boot 3、基于 Java 17 的稳定版本 3.5.16，不升级到 Boot 4。除 MyBatis、mybatis-spring、fastjson2、Boot 2 的 Mockito/SnakeYAML、Boot 2 的 `junit-bom` 覆盖（JUnit Jupiter 5.14.4）和构建插件外，版本由对应 Spring Boot BOM 管理。构建使用 Maven Compiler Plugin 3.15.0 和 Surefire 3.5.6；CI 使用 `actions/checkout@v7`、`actions/setup-java@v6`。
 
 上表是 artifact 独立构建和验证时的基线。与普通 Maven 库一致，消费工程的 parent 或 dependency management 可以重新仲裁传递版本；CI 还会在匹配的 Spring Boot parent/BOM 下消费本地安装产物，覆盖常见业务工程结构。
 
@@ -62,7 +62,7 @@ junit.jupiter.execution.parallel.mode.classes.default=concurrent
 
 业务 static 状态、外部共享资源和异步线程均已确认安全时，可将 `mode.default` 改为 `concurrent`，允许同一测试类中的 case 并行。正常测试类不需要声明 `@Execution`；仅在个别测试无法满足并发边界时，使用 `@Execution(ExecutionMode.SAME_THREAD)` 局部降级。
 
-`@TestInstance(PER_CLASS)` 不能与类内并发 case 组合（`@Execution(CONCURRENT)` 或 `mode.default=concurrent`）：共享测试实例会竞态 `@SmartMock` 字段注入。并发 case 请使用 JUnit 默认的 `PER_METHOD`；需要 `PER_CLASS` 时保持 `SAME_THREAD`。类间并行（`mode.classes.default`）不等于类内 case 并发。
+`@TestInstance(PER_CLASS)` 不能与类内并发 case 组合——仅当 JUnit 并行已启用（`junit.jupiter.execution.parallel.enabled=true`），且 case 会并发执行（`@Execution(CONCURRENT)` 或 `mode.default=concurrent`）时：共享测试实例会竞态 `@SmartMock` 字段注入。若并行未启用，残留的 `@Execution` / `mode.default=concurrent` 不触发该检查。并发 case 请使用 JUnit 默认的 `PER_METHOD`；需要 `PER_CLASS` 时保持 `SAME_THREAD`。类间并行（`mode.classes.default`）不等于类内 case 并发。
 
 ### 并行落地反模式
 
@@ -225,7 +225,7 @@ src/test/resources/com/example/smarttest/order/OrderServiceSmartTest/
 
 ## 生命周期
 
-`@SmartTest` 是测试类级执行契约：测试类必须实现 `SmartTestLifecycle`，类内所有可执行测试方法都必须使用 `@CaseSource`。如果类未实现该接口，或类中存在 `@Test`、`@RepeatedTest`、`@ParameterizedTest`、`@TestFactory` 或其他普通 JUnit 测试方法，SmartTest 会在 `BeforeAll` 报错并提示修正。`@TestInstance(PER_CLASS)` 与类内并发 case 组合也会在 `BeforeAll` 失败。渐进迁移时，保留原有 JUnit 测试类不变，将新 case 放入独立的 `@SmartTest` 类；未标注 `@SmartTest` 的旧测试类不受影响。
+`@SmartTest` 是测试类级执行契约：测试类必须实现 `SmartTestLifecycle`，类内所有可执行测试方法都必须使用 `@CaseSource`。如果类未实现该接口，或类中存在 `@Test`、`@RepeatedTest`、`@ParameterizedTest`、`@TestFactory` 或其他普通 JUnit 测试方法，SmartTest 会在 `BeforeAll` 报错并提示修正。`@TestInstance(PER_CLASS)` 与类内并发 case 组合（仅当 `junit.jupiter.execution.parallel.enabled=true`）也会在 `BeforeAll` 失败。渐进迁移时，保留原有 JUnit 测试类不变，将新 case 放入独立的 `@SmartTest` 类；未标注 `@SmartTest` 的旧测试类不受影响。
 
 `@CaseSource` 本身就是测试注解，不要再与其他 JUnit 测试注解组合。每个 YAML case 依次执行：
 
