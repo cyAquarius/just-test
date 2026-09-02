@@ -1,6 +1,6 @@
 package com.just.test.smarttest.annotation;
 
-import com.just.test.smarttest.context.CaseTemplateInvocationContextProvider;
+import com.just.test.smarttest.internal.context.CaseTemplateInvocationContextProvider;
 import org.junit.jupiter.api.TestTemplate;
 import org.junit.jupiter.api.extension.ExtendWith;
 
