@@ -468,9 +468,7 @@ public final class SmartTestExtension implements BeforeEachCallback, AfterEachCa
                     ((Advised) bean).getTargetSource().getTarget();
                 }
             } catch (Exception e) {
-                throw new IllegalStateException(String.format(
-                        "[SmartTest] Failed to prewarm thread-scoped mock '%s': %s",
-                        beanName, e.getMessage()), e);
+                log.warn("[SmartTest] Failed to prewarm thread-scoped mock '{}': {}", beanName, e.getMessage());
             }
         }
     }

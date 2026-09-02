@@ -20,9 +20,9 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.when;
 
 class SmartTestExtensionTest {
 
@@ -118,8 +118,8 @@ class SmartTestExtensionTest {
         @SuppressWarnings("unchecked")
         ReflectiveInvocationContext<Method> invocationContext = mock(ReflectiveInvocationContext.class);
         ExtensionContext extensionContext = mock(ExtensionContext.class);
-        when(extensionContext.getRequiredTestInstance()).thenReturn(lifecycle);
-        when(extensionContext.getRequiredTestClass()).thenReturn(lifecycle.getClass());
+        doReturn(lifecycle).when(extensionContext).getRequiredTestInstance();
+        doReturn(lifecycle.getClass()).when(extensionContext).getRequiredTestClass();
         extension.interceptTestTemplateMethod(invocation, invocationContext, extensionContext);
     }
 
