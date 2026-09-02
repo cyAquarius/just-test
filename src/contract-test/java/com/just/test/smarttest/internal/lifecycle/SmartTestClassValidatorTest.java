@@ -76,6 +76,8 @@ class SmartTestClassValidatorTest {
         ExtensionContext context = mock(ExtensionContext.class);
         when(context.getTestInstanceLifecycle())
                 .thenReturn(Optional.of(TestInstance.Lifecycle.PER_CLASS));
+        when(context.getConfigurationParameter(SmartTestClassValidator.PARALLEL_ENABLED_PROPERTY))
+                .thenReturn(Optional.of("true"));
         when(context.getConfigurationParameter(SmartTestClassValidator.PARALLEL_MODE_DEFAULT_PROPERTY))
                 .thenReturn(Optional.of("concurrent"));
 
@@ -87,10 +89,38 @@ class SmartTestClassValidatorTest {
     }
 
     @Test
+    void acceptsPerClassWhenParallelDisabledEvenIfModeDefaultIsConcurrent() {
+        ExtensionContext context = mock(ExtensionContext.class);
+        when(context.getTestInstanceLifecycle())
+                .thenReturn(Optional.of(TestInstance.Lifecycle.PER_CLASS));
+        when(context.getConfigurationParameter(SmartTestClassValidator.PARALLEL_ENABLED_PROPERTY))
+                .thenReturn(Optional.of("false"));
+        when(context.getConfigurationParameter(SmartTestClassValidator.PARALLEL_MODE_DEFAULT_PROPERTY))
+                .thenReturn(Optional.of("concurrent"));
+
+        assertDoesNotThrow(() -> SmartTestClassValidator.validate(PerClassNoExecution.class, context));
+        verify(context, never()).getExecutionMode();
+    }
+
+    @Test
+    void acceptsPerClassConcurrentAnnotationWhenParallelIsDisabled() {
+        ExtensionContext context = mock(ExtensionContext.class);
+        when(context.getTestInstanceLifecycle())
+                .thenReturn(Optional.of(TestInstance.Lifecycle.PER_CLASS));
+        when(context.getConfigurationParameter(SmartTestClassValidator.PARALLEL_ENABLED_PROPERTY))
+                .thenReturn(Optional.of("false"));
+
+        assertDoesNotThrow(() -> SmartTestClassValidator.validate(PerClassConcurrent.class, context));
+        verify(context, never()).getExecutionMode();
+    }
+
+    @Test
     void doesNotTreatClassLevelExecutionModeAsCaseConcurrency() {
         ExtensionContext context = mock(ExtensionContext.class);
         when(context.getTestInstanceLifecycle())
                 .thenReturn(Optional.of(TestInstance.Lifecycle.PER_CLASS));
+        when(context.getConfigurationParameter(SmartTestClassValidator.PARALLEL_ENABLED_PROPERTY))
+                .thenReturn(Optional.of("true"));
         when(context.getConfigurationParameter(SmartTestClassValidator.PARALLEL_MODE_DEFAULT_PROPERTY))
                 .thenReturn(Optional.of("same_thread"));
         when(context.getExecutionMode()).thenReturn(ExecutionMode.CONCURRENT);

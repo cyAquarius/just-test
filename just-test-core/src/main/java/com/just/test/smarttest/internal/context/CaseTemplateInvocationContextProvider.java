@@ -72,11 +72,7 @@ public class CaseTemplateInvocationContextProvider implements TestTemplateInvoca
             caseRoot = packagePath;
             caseNames = findCaseNames(caseRoot);
             if (!caseNames.isEmpty()) {
-                log.warn("[SmartTest] Class-named case directory is missing for {}; "
-                                + "falling back to package-level YAML root '{}'. "
-                                + "This can pick up YAML from sibling test classes in the same package. "
-                                + "Create '{}' or set @CaseSource to an explicit root.",
-                        testClass.getName(), caseRoot, defaultRoot);
+                warnPackageRootFallback(testClass, caseRoot, defaultRoot);
             }
         }
         if (caseNames.isEmpty()) {
@@ -89,6 +85,20 @@ public class CaseTemplateInvocationContextProvider implements TestTemplateInvoca
         return caseNames.stream()
                 .map(caseName -> toCaseContext(caseName, resolvedRoot))
                 .collect(Collectors.toList());
+    }
+
+    /**
+     * 包级 YAML 回退警告；保持非致命。契约测试可覆盖以断言文案包含已解析的包根。
+     */
+    void warnPackageRootFallback(Class<?> testClass, String caseRoot, String defaultRoot) {
+        log.warn(formatPackageRootFallbackWarning(testClass, caseRoot, defaultRoot));
+    }
+
+    static String formatPackageRootFallbackWarning(Class<?> testClass, String caseRoot, String defaultRoot) {
+        return "[SmartTest] Class-named case directory is missing for " + testClass.getName()
+                + "; falling back to package-level YAML root '" + caseRoot + "'. "
+                + "This can pick up YAML from sibling test classes in the same package. "
+                + "Create '" + defaultRoot + "' or set @CaseSource to an explicit root.";
     }
 
     private Set<String> findCaseNames(String caseRoot) {

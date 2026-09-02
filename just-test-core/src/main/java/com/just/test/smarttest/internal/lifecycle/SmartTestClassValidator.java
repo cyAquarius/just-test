@@ -31,6 +31,12 @@ import java.util.stream.Collectors;
 public final class SmartTestClassValidator {
 
     /**
+     * JUnit 是否启用并行。未启用时 {@code @Execution} 与 {@code mode.default} 不会产生类内并发。
+     */
+    static final String PARALLEL_ENABLED_PROPERTY =
+            "junit.jupiter.execution.parallel.enabled";
+
+    /**
      * JUnit 方法级默认并行模式。类级 {@code ExtensionContext#getExecutionMode()} 对应
      * {@code mode.classes.default}，不能用来判断同一类中的 case 是否并发。
      */
@@ -137,11 +143,21 @@ public final class SmartTestClassValidator {
     }
 
     /**
-     * 类内 case 是否并发：方法上的 {@code @Execution} 优先，否则继承类上的 {@code @Execution}，
-     * 再否则使用 {@code junit.jupiter.execution.parallel.mode.default}（缺省 {@code SAME_THREAD}）。
-     * 不读取 {@code ExtensionContext#getExecutionMode()}，以免把类间并行误判为类内并发。
+     * 类内 case 是否会并发执行。
+     *
+     * <p>有 {@code ExtensionContext} 时，先看 {@code junit.jupiter.execution.parallel.enabled}：
+     * JUnit 在未启用并行时会忽略 {@code @Execution} 和 {@code mode.default}，因此
+     * {@code enabled=false} 加上残留的 {@code mode.default=concurrent} 不算并发。</p>
+     *
+     * <p>没有 context 时无法读取平台配置，显式 {@code @Execution(CONCURRENT)} 视为会并发。
+     * 方法上的 {@code @Execution} 优先，否则继承类上的 {@code @Execution}，再否则使用
+     * {@code mode.default}（缺省 {@code SAME_THREAD}）。不读取
+     * {@code ExtensionContext#getExecutionMode()}，以免把类间并行误判为类内并发。</p>
      */
     private static boolean hasConcurrentCaseExecution(Class<?> testClass, ExtensionContext context) {
+        if (context != null && !isParallelExecutionEnabled(context)) {
+            return false;
+        }
         ExecutionMode defaultMode = resolveDefaultMethodExecutionMode(testClass, context);
         List<Method> caseMethods = AnnotationSupport.findAnnotatedMethods(
                 testClass, CaseSource.class, HierarchyTraversalMode.TOP_DOWN);
@@ -159,17 +175,28 @@ public final class SmartTestClassValidator {
         return false;
     }
 
+    private static boolean isParallelExecutionEnabled(ExtensionContext context) {
+        return configurationParameter(context, PARALLEL_ENABLED_PROPERTY)
+                .map(value -> Boolean.parseBoolean(value.trim()))
+                .orElse(false);
+    }
+
     private static ExecutionMode resolveDefaultMethodExecutionMode(Class<?> testClass, ExtensionContext context) {
         Optional<Execution> classExecution = AnnotationSupport.findAnnotation(testClass, Execution.class);
         if (classExecution.isPresent()) {
             return classExecution.get().value();
         }
         if (context != null) {
-            return context.getConfigurationParameter(PARALLEL_MODE_DEFAULT_PROPERTY)
+            return configurationParameter(context, PARALLEL_MODE_DEFAULT_PROPERTY)
                     .map(SmartTestClassValidator::parseExecutionMode)
                     .orElse(ExecutionMode.SAME_THREAD);
         }
         return ExecutionMode.SAME_THREAD;
+    }
+
+    private static Optional<String> configurationParameter(ExtensionContext context, String key) {
+        Optional<String> value = context.getConfigurationParameter(key);
+        return value == null ? Optional.empty() : value;
     }
 
     private static ExecutionMode parseExecutionMode(String value) {
