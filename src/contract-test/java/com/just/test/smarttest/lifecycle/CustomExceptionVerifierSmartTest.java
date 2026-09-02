@@ -16,9 +16,18 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 class CustomExceptionVerifierSmartTest implements SmartTestLifecycle {
 
     private static final AtomicInteger VERIFICATIONS = new AtomicInteger();
+    private static final AtomicInteger AFTER_EXECUTE = new AtomicInteger();
+
+    @Override
+    public void afterExecute(CaseContext context) {
+        AFTER_EXECUTE.incrementAndGet();
+    }
 
     @Override
     public boolean verifyException(CaseContext context) {
+        if (AFTER_EXECUTE.get() == 0) {
+            throw new AssertionError("afterExecute must run before verifyException when the test throws");
+        }
         VERIFICATIONS.incrementAndGet();
         return context.getException() instanceof IllegalStateException;
     }
@@ -31,6 +40,7 @@ class CustomExceptionVerifierSmartTest implements SmartTestLifecycle {
     @AfterAll
     static void verifiesExactlyOnce() {
         assertEquals(1, VERIFICATIONS.get());
+        assertEquals(1, AFTER_EXECUTE.get());
     }
 
     @Configuration

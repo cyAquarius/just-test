@@ -16,8 +16,10 @@ import java.lang.annotation.Target;
 /**
  * 启用 SmartTest 的 Spring Boot 测试基础设施。测试方法使用 {@link CaseSource} 声明 YAML case invocation。
  *
- * <p>该注解定义测试类级执行契约：类内可执行测试方法只能使用 {@code @CaseSource}；
- * 普通 JUnit 测试方法必须放在未标注 {@code @SmartTest} 的独立测试类中。</p>
+ * <p>该注解定义测试类级执行契约：测试类必须实现 {@code SmartTestLifecycle}，
+ * 类内可执行测试方法只能使用 {@code @CaseSource}；
+ * 普通 JUnit 测试方法必须放在未标注 {@code @SmartTest} 的独立测试类中。
+ * 未实现接口或不兼容的 JUnit 方法会在 {@code BeforeAll} 失败。</p>
  *
  * <p>不要与 {@code @SpringBootTest}、其他 {@code @BootstrapWith}、类或 case 方法级
  * {@code @Transactional}/{@code @Sql} 组合；框架会在执行前报告这些不兼容配置。</p>

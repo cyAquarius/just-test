@@ -22,7 +22,10 @@ public interface SmartTestLifecycle {
     /** 测试方法执行前（JUnit @BeforeEach 与 @BeforeCase 之后） */
     default void beforeExecute(CaseContext ctx) {}
 
-    /** 测试方法执行后（验证与 JUnit @AfterEach 之前） */
+    /**
+     * 测试方法返回或抛出后始终调用（YAML / 生命周期验证与 JUnit {@code @AfterEach} 之前）。
+     * 未处理的测试异常会在本方法之后再决定吞掉或重新抛出。
+     */
     default void afterExecute(CaseContext ctx) {}
 
     /** 返回值验证。return true = 已处理，跳过 response.yaml */

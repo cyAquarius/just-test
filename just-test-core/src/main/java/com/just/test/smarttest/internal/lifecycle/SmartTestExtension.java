@@ -46,7 +46,11 @@ import java.util.Map;
  * 因此必须保持 public。</p>
  *
  * <p>执行顺序：case bind / schema / prepare / mock setup → JUnit {@code @BeforeEach}
- * → {@code @BeforeCase} / lifecycle / test / verify → JUnit {@code @AfterEach} → resource cleanup。</p>
+ * → {@code @BeforeCase} / {@code beforeExecute} / test / {@code afterExecute} / verify
+ * → JUnit {@code @AfterEach} → resource cleanup。</p>
+ *
+ * <p>{@code afterExecute} 在测试方法返回或抛出后始终调用，然后才进行 YAML / 生命周期验证
+ * 并决定吞掉还是重新抛出未处理异常，覆盖范围与用户 {@code @AfterEach} 对称。</p>
  */
 public final class SmartTestExtension implements BeforeEachCallback, AfterEachCallback,
         InvocationInterceptor, ParameterResolver {
@@ -66,8 +70,6 @@ public final class SmartTestExtension implements BeforeEachCallback, AfterEachCa
     private JdbcTemplate jdbcTemplate;
     private SmartTestLifecycle lifecycle;
     private boolean caseBound;
-    private boolean exceptionVerificationEvaluated;
-    private boolean exceptionVerifiedByLifecycle;
 
     public SmartTestExtension(CaseContext caseContext) {
         if (caseContext == null) {
@@ -99,7 +101,7 @@ public final class SmartTestExtension implements BeforeEachCallback, AfterEachCa
         lifecycle = (SmartTestLifecycle) testInstance;
         applicationContext = SpringExtension.getApplicationContext(extensionContext);
         CONTEXT_DIAGNOSTICS.observe(applicationContext);
-        jdbcTemplate = resolveJdbcTemplate(applicationContext);
+        jdbcTemplate = requireJdbcTemplate(applicationContext);
 
         CaseExecutionContext.bind(caseContext);
         caseBound = true;
@@ -141,20 +143,20 @@ public final class SmartTestExtension implements BeforeEachCallback, AfterEachCa
                 invocation.proceed();
             } catch (Throwable failure) {
                 caseContext.setException(failure);
-                if (!ExceptionVerifier.hasExpectException(caseContext.getCasePath())) {
-                    exceptionVerifiedByLifecycle = lifecycle.verifyException(caseContext);
-                    exceptionVerificationEvaluated = true;
-                    if (!exceptionVerifiedByLifecycle) {
-                        throw failure;
-                    }
-                }
                 log.debug("[SmartTest] Exception captured for case [{}]: {}",
                         caseContext.getCaseName(), failure.getClass().getSimpleName());
             }
 
-            lifecycle.afterExecute(caseContext);
+            try {
+                lifecycle.afterExecute(caseContext);
+            } catch (Throwable afterExecuteFailure) {
+                if (caseContext.getException() != null
+                        && caseContext.getException() != afterExecuteFailure) {
+                    afterExecuteFailure.addSuppressed(caseContext.getException());
+                }
+                throw afterExecuteFailure;
+            }
             verifyCase();
-            log.debug("[SmartTest] Verification passed for case: {}", caseContext.getCaseName());
         } catch (Throwable failure) {
             warnFailure(extensionContext, failure);
             throw failure;
@@ -177,21 +179,16 @@ public final class SmartTestExtension implements BeforeEachCallback, AfterEachCa
     }
 
     private void prepareCaseData() {
-        if (jdbcTemplate == null) {
-            return;
-        }
         SchemaInitializer.initialize(jdbcTemplate, SCHEMA_LOCATION);
         DataSetLoader.load(jdbcTemplate, caseContext.getCasePath());
         log.debug("[SmartTest] Data prepared for case: {}", caseContext.getCaseName());
     }
 
-    private void verifyCase() {
+    private void verifyCase() throws Throwable {
         List<String> failures = new ArrayList<>();
         String casePath = caseContext.getCasePath();
 
-        boolean exceptionHandled = exceptionVerificationEvaluated
-                ? exceptionVerifiedByLifecycle
-                : lifecycle.verifyException(caseContext);
+        boolean exceptionHandled = lifecycle.verifyException(caseContext);
         if (!exceptionHandled) {
             if (caseContext.getException() != null) {
                 failures.addAll(ExceptionVerifier.verify(caseContext.getException(), casePath));
@@ -205,14 +202,26 @@ public final class SmartTestExtension implements BeforeEachCallback, AfterEachCa
         if (!lifecycle.verifyDatabase(caseContext, jdbcTemplate) && jdbcTemplate != null) {
             failures.addAll(DataSetVerifier.verify(jdbcTemplate, casePath));
         }
+
+        boolean unexpectedException = !exceptionHandled
+                && caseContext.getException() != null
+                && !ExceptionVerifier.hasExpectException(casePath);
         if (!failures.isEmpty()) {
             StringBuilder message = new StringBuilder("[SmartTest] Verification failed for case [")
                     .append(caseContext.getCaseName()).append("]:\n");
             for (String failure : failures) {
                 message.append("  - ").append(failure).append("\n");
             }
-            throw new AssertionError(message.toString());
+            AssertionError error = new AssertionError(message.toString());
+            if (unexpectedException) {
+                error.addSuppressed(caseContext.getException());
+            }
+            throw error;
         }
+        if (unexpectedException) {
+            throw caseContext.getException();
+        }
+        log.debug("[SmartTest] Verification passed for case: {}", caseContext.getCaseName());
     }
 
     private Throwable cleanupCaseResources() {
@@ -410,24 +419,38 @@ public final class SmartTestExtension implements BeforeEachCallback, AfterEachCa
     }
 
     private SmartTestRoutingDataSource beginCaseDatabase(ApplicationContext context) {
+        SmartTestRoutingDataSource dataSource = requireRoutingDataSource(context);
+        dataSource.beginCase();
+        return dataSource;
+    }
+
+    /**
+     * 解析框架拥有的 {@link SmartTestRoutingDataSource}；缺失视为配置错误。
+     */
+    static SmartTestRoutingDataSource requireRoutingDataSource(ApplicationContext applicationContext) {
         try {
-            SmartTestRoutingDataSource dataSource = context.getBean(SmartTestRoutingDataSource.class);
-            dataSource.beginCase();
-            return dataSource;
-        } catch (NoSuchBeanDefinitionException ignored) {
-            return null;
+            return applicationContext.getBean(SmartTestRoutingDataSource.class);
+        } catch (NoSuchBeanDefinitionException e) {
+            throw new IllegalStateException(
+                    "[SmartTest] SmartTestRoutingDataSource is missing. "
+                            + "@SmartTest owns H2 infrastructure and requires the framework routing DataSource; "
+                            + "this is a configuration error.", e);
         }
     }
 
-    /** 从 ApplicationContext 获取唯一 JdbcTemplate；没有候选时跳过数据操作。 */
-    static JdbcTemplate resolveJdbcTemplate(ApplicationContext applicationContext) {
+    /**
+     * 解析框架拥有的唯一 {@link JdbcTemplate}；缺失视为配置错误，多个候选仍暴露歧义。
+     */
+    static JdbcTemplate requireJdbcTemplate(ApplicationContext applicationContext) {
         try {
             return applicationContext.getBean(JdbcTemplate.class);
         } catch (NoUniqueBeanDefinitionException e) {
             throw e;
         } catch (NoSuchBeanDefinitionException e) {
-            log.warn("[SmartTest] JdbcTemplate not found, skipping data operations");
-            return null;
+            throw new IllegalStateException(
+                    "[SmartTest] JdbcTemplate is missing. "
+                            + "@SmartTest owns H2 infrastructure and requires the framework JdbcTemplate; "
+                            + "this is a configuration error.", e);
         }
     }
 

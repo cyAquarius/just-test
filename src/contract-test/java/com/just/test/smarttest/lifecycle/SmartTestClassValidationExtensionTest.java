@@ -31,6 +31,14 @@ class SmartTestClassValidationExtensionTest {
     }
 
     @Test
+    void rejectsClassThatDoesNotImplementLifecycle() {
+        ExtensionConfigurationException failure = assertThrows(ExtensionConfigurationException.class,
+                () -> SmartTestClassValidationExtension.validateTestClass(MissingLifecycle.class));
+
+        assertTrue(failure.getMessage().contains("must implement SmartTestLifecycle"));
+    }
+
+    @Test
     void acceptsCaseSourceOnlyClass() {
         assertDoesNotThrow(() -> SmartTestClassValidationExtension.validateTestClass(CaseSourceOnly.class));
     }
@@ -85,13 +93,19 @@ class SmartTestClassValidationExtensionTest {
         assertTrue(failure.getMessage().contains("must not declare another @BootstrapWith"));
     }
 
-    static class CaseSourceOnly {
+    static class CaseSourceOnly implements SmartTestLifecycle {
         @CaseSource
         void smartCase() {
         }
     }
 
-    static class MixedTests {
+    static class MissingLifecycle {
+        @CaseSource
+        void smartCase() {
+        }
+    }
+
+    static class MixedTests implements SmartTestLifecycle {
         @CaseSource
         void smartCase() {
         }
@@ -105,21 +119,21 @@ class SmartTestClassValidationExtensionTest {
         }
     }
 
-    static class CompetingAnnotations {
+    static class CompetingAnnotations implements SmartTestLifecycle {
         @Test
         @CaseSource
         void mixed() {
         }
     }
 
-    static class TransactionalCase {
+    static class TransactionalCase implements SmartTestLifecycle {
         @Transactional
         @CaseSource
         void smartCase() {
         }
     }
 
-    static class SqlCase {
+    static class SqlCase implements SmartTestLifecycle {
         @Sql
         @CaseSource
         void smartCase() {
@@ -128,7 +142,7 @@ class SmartTestClassValidationExtensionTest {
 
     @SmartTest
     @Transactional
-    static class TransactionalClass {
+    static class TransactionalClass implements SmartTestLifecycle {
         @CaseSource
         void smartCase() {
         }
