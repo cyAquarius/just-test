@@ -199,7 +199,7 @@ public final class SmartTestExtension implements BeforeEachCallback, AfterEachCa
         if (!lifecycle.verifyResult(caseContext)) {
             failures.addAll(ResultVerifier.verify(caseContext.getResult(), casePath));
         }
-        if (!lifecycle.verifyDatabase(caseContext, jdbcTemplate) && jdbcTemplate != null) {
+        if (!lifecycle.verifyDatabase(caseContext, jdbcTemplate)) {
             failures.addAll(DataSetVerifier.verify(jdbcTemplate, casePath));
         }
 

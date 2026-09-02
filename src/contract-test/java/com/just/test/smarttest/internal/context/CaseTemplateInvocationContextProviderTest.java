@@ -9,6 +9,7 @@ import org.junit.jupiter.api.extension.ExtensionConfigurationException;
 import org.junit.jupiter.api.extension.ExtensionContext;
 
 import java.lang.reflect.Method;
+import java.util.ArrayList;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -46,15 +47,27 @@ class CaseTemplateInvocationContextProviderTest {
         when(context.getRequiredTestMethod()).thenReturn(method);
         when(context.getTestMethod()).thenReturn(java.util.Optional.of(method));
 
-        List<CaseContext> cases = new CaseTemplateInvocationContextProvider().discoverCases(context);
+        String packageRoot = "com/just/test/smarttest/internal/context/packageroot";
+        final List<String> warnings = new ArrayList<String>();
+        CaseTemplateInvocationContextProvider provider = new CaseTemplateInvocationContextProvider() {
+            @Override
+            void warnPackageRootFallback(Class<?> testClass, String caseRoot, String defaultRoot) {
+                super.warnPackageRootFallback(testClass, caseRoot, defaultRoot);
+                warnings.add(formatPackageRootFallbackWarning(testClass, caseRoot, defaultRoot));
+            }
+        };
+
+        List<CaseContext> cases = provider.discoverCases(context);
 
         assertEquals(2, cases.size());
         assertEquals("legacy-case", cases.get(0).getCaseName());
         assertEquals("sibling-case", cases.get(1).getCaseName());
-        assertEquals("com/just/test/smarttest/internal/context/packageroot/legacy-case",
-                cases.get(0).getCasePath());
-        assertEquals("com/just/test/smarttest/internal/context/packageroot/sibling-case",
-                cases.get(1).getCasePath());
+        assertEquals(packageRoot + "/legacy-case", cases.get(0).getCasePath());
+        assertEquals(packageRoot + "/sibling-case", cases.get(1).getCasePath());
+        assertEquals(1, warnings.size());
+        assertTrue(warnings.get(0).contains(packageRoot),
+                "WARN should mention the resolved package root: " + warnings.get(0));
+        assertTrue(warnings.get(0).contains(PackageRootCases.MissingClassDirectory.class.getName()));
     }
 
     @Test
