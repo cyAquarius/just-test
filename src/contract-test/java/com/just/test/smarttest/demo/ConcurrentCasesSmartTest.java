@@ -29,7 +29,13 @@ class ConcurrentCasesSmartTest implements SmartTestLifecycle {
     private static final AtomicInteger ACTIVE_CASES = new AtomicInteger();
     private static final AtomicInteger MAX_ACTIVE_CASES = new AtomicInteger();
     private static final Set<String> EXECUTION_THREADS = ConcurrentHashMap.newKeySet();
-    private static final CyclicBarrier CASE_START_BARRIER = new CyclicBarrier(2);
+    /**
+     * Schema clone 会在 DataSource 上串行化建库。等待窗口与并行类契约测试对齐：
+     * 2 方（与 fixed parallelism=2 一致）、30 秒，避免短超时 flake。
+     */
+    private static final int OVERLAP_PARTY_COUNT = 2;
+    private static final long OVERLAP_TIMEOUT_SECONDS = 30L;
+    private static final CyclicBarrier CASE_START_BARRIER = new CyclicBarrier(OVERLAP_PARTY_COUNT);
 
     @Autowired
     private JdbcTemplate jdbcTemplate;
@@ -40,7 +46,7 @@ class ConcurrentCasesSmartTest implements SmartTestLifecycle {
         MAX_ACTIVE_CASES.accumulateAndGet(active, Math::max);
         EXECUTION_THREADS.add(Thread.currentThread().getName());
         try {
-            CASE_START_BARRIER.await(5, TimeUnit.SECONDS);
+            CASE_START_BARRIER.await(OVERLAP_TIMEOUT_SECONDS, TimeUnit.SECONDS);
             assertEquals(1, jdbcTemplate.queryForObject(
                     "SELECT COUNT(*) FROM parallel_case_record", Integer.class));
             assertEquals(context.getString("marker"), jdbcTemplate.queryForObject(
