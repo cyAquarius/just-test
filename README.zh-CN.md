@@ -44,7 +44,7 @@ SmartTest 只隔离自己拥有的测试资源，不能让任意业务代码天�
 - case 静态 Mock 只作用于当前线程，在用户 `@BeforeEach`、测试方法和用户 `@AfterEach` 中持续生效；它不能覆盖 Spring Context refresh 或早于 case invocation 的 Spring Test listener，也不会传播到业务自行创建的异步线程。
 - 检测到多个 Spring Context 时，SmartTest 会输出一次风险警告；相关 case 失败时会追加诊断日志，但不会替换原始异常。任意静态 Mock 的存在不会抑制该提示，因为框架无法判断它是否覆盖了相关入口。
 - 新旧测试类可以并存；未标注 `@SmartTest` 的旧测试不会启用 SmartTest 生命周期。但如果新旧测试并行执行，并且业务代码共享 JVM static ContextHolder/工厂，SmartTest 无法保护旧测试线程；应让受影响的旧测试保持串行，或迁移其静态入口。
-- 手工线程、`CompletableFuture` common pool 和未由 SmartTest 接管的 executor，不会自动获得 mock 或数据库上下文；没有活动 case 的数据库或 thread-scoped mock 访问会立即失败，而不会静默创建空 H2 或未配置的 mock。
+- 手工线程、`CompletableFuture` common pool 和未由 SmartTest 接管的 executor，不会自动获得 mock 或数据库上下文；没有活动 case 的数据库或 thread-scoped mock 访问会立即失败，而不会静默创建空 H2 或未配置的 mock。`@SmartTest` 拥有 H2 基础设施时，若框架 `JdbcTemplate` 或 `SmartTestRoutingDataSource` 缺失，同样视为配置错误并立即失败，而不会跳过 prepare/verify。
 - 测试类或 `@CaseSource` 方法上的 Spring `@Transactional` 与 `@Sql` 不受支持：它们的生命周期早于 case 绑定，框架会在执行前报错。请使用 `prepare.yaml` 和 `expect.yaml` 管理确定性的 case 数据。
 - 重跑成功不能证明并发安全。存在 Flake 的测试应保持串行，直到其所有权和生命周期边界清晰。
 - 新 SQL 应使用标准单引号字符串；双引号改写仅是兼容历史 MySQL Mapper 的过渡能力。
@@ -223,7 +223,7 @@ src/test/resources/com/example/smarttest/order/OrderServiceSmartTest/
 
 ## 生命周期
 
-`@SmartTest` 是测试类级执行契约：类内所有可执行测试方法都必须使用 `@CaseSource`。如果类中存在 `@Test`、`@RepeatedTest`、`@ParameterizedTest`、`@TestFactory` 或其他普通 JUnit 测试方法，SmartTest 会在执行前报错并提示拆分类。渐进迁移时，保留原有 JUnit 测试类不变，将新 case 放入独立的 `@SmartTest` 类；未标注 `@SmartTest` 的旧测试类不受影响。
+`@SmartTest` 是测试类级执行契约：测试类必须实现 `SmartTestLifecycle`，类内所有可执行测试方法都必须使用 `@CaseSource`。如果类未实现该接口，或类中存在 `@Test`、`@RepeatedTest`、`@ParameterizedTest`、`@TestFactory` 或其他普通 JUnit 测试方法，SmartTest 会在 `BeforeAll` 报错并提示修正。渐进迁移时，保留原有 JUnit 测试类不变，将新 case 放入独立的 `@SmartTest` 类；未标注 `@SmartTest` 的旧测试类不受影响。
 
 `@CaseSource` 本身就是测试注解，不要再与其他 JUnit 测试注解组合。每个 YAML case 依次执行：
 
@@ -231,7 +231,7 @@ src/test/resources/com/example/smarttest/order/OrderServiceSmartTest/
 2. 绑定 case，创建并初始化全新的 case 数据库，然后加载 `prepare.yaml`；
 3. 重置、预热 scoped mock，注入 `@SmartMock` 字段并配置 case 静态 Mock；
 4. 执行用户的 `@BeforeEach`；
-5. 调用匹配的 `@BeforeCase("case-name")` 与 `beforeExecute`，执行测试方法、`afterExecute` 及异常、返回值和数据库验证；
+5. 调用匹配的 `@BeforeCase("case-name")` 与 `beforeExecute`，执行测试方法；无论测试方法返回还是抛出，都调用 `afterExecute`，再进行异常、返回值和数据库验证。无 `expect_exception.yaml` 且 `verifyException` 未处理的异常会在 `afterExecute` 与 YAML 验证之后重新抛出；
 6. 执行用户的 `@AfterEach`；
 7. 关闭静态与 scoped mock，释放 case 数据库；清理失败不会掩盖原始测试失败。
 
