@@ -35,6 +35,7 @@
         <snakeyaml.boot2.version>1.33</snakeyaml.boot2.version>
 
         <maven.compiler.plugin.version>3.15.0</maven.compiler.plugin.version>
+        <maven.resources.plugin.version>3.3.1</maven.resources.plugin.version>
         <maven.surefire.plugin.version>3.5.6</maven.surefire.plugin.version>
         <maven.enforcer.plugin.version>3.6.2</maven.enforcer.plugin.version>
         <maven.deploy.plugin.version>3.1.4</maven.deploy.plugin.version>
@@ -86,6 +87,11 @@
                 </plugin>
                 <plugin>
                     <groupId>org.apache.maven.plugins</groupId>
+                    <artifactId>maven-resources-plugin</artifactId>
+                    <version>${maven.resources.plugin.version}</version>
+                </plugin>
+                <plugin>
+                    <groupId>org.apache.maven.plugins</groupId>
                     <artifactId>maven-surefire-plugin</artifactId>
                     <version>${maven.surefire.plugin.version}</version>
                     <configuration>
@@ -100,6 +106,30 @@
             </plugins>
         </pluginManagement>
         <plugins>
+            <!--
+              maven-compiler-plugin 3.13+ 在全量重编译时会清空 outputDirectory，
+              从而删掉已经拷贝的 spring.factories 与契约测试 YAML。编译后再拷回。
+            -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-resources-plugin</artifactId>
+                <executions>
+                    <execution>
+                        <id>restore-main-resources</id>
+                        <phase>process-classes</phase>
+                        <goals>
+                            <goal>resources</goal>
+                        </goals>
+                    </execution>
+                    <execution>
+                        <id>restore-test-resources</id>
+                        <phase>process-test-classes</phase>
+                        <goals>
+                            <goal>testResources</goal>
+                        </goals>
+                    </execution>
+                </executions>
+            </plugin>
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-enforcer-plugin</artifactId>
