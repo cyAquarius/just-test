@@ -37,6 +37,23 @@ class CaseTemplateInvocationContextProviderTest {
     }
 
     @Test
+    void fallsBackToPackageRootWhenClassNamedDirectoryIsMissing() throws Exception {
+        ExtensionContext context = mock(ExtensionContext.class);
+        Method method = PackageFallbackFixture.class.getDeclaredMethod("caseMethod", CaseContext.class);
+        doReturn(PackageFallbackFixture.class).when(context).getRequiredTestClass();
+        when(context.getRequiredTestMethod()).thenReturn(method);
+        when(context.getTestMethod()).thenReturn(java.util.Optional.of(method));
+
+        List<CaseContext> cases = new CaseTemplateInvocationContextProvider().discoverCases(context);
+
+        assertEquals(2, cases.size());
+        assertEquals("legacy-case", cases.get(0).getCaseName());
+        assertEquals("sibling-case", cases.get(1).getCaseName());
+        assertEquals("com/just/test/smarttest/internal/context/legacy-case", cases.get(0).getCasePath());
+        assertEquals("com/just/test/smarttest/internal/context/sibling-case", cases.get(1).getCasePath());
+    }
+
+    @Test
     void rejectsCaseSourceWithoutSmartTest() throws Exception {
         ExtensionContext context = mock(ExtensionContext.class);
         Method method = InvalidFixture.class.getDeclaredMethod("caseMethod", CaseContext.class);
@@ -51,6 +68,13 @@ class CaseTemplateInvocationContextProviderTest {
 
     @SmartTest
     private static class Fixture {
+        @CaseSource
+        void caseMethod(CaseContext context) {
+        }
+    }
+
+    @SmartTest
+    private static class PackageFallbackFixture {
         @CaseSource
         void caseMethod(CaseContext context) {
         }
