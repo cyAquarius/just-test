@@ -20,7 +20,12 @@ import java.util.Arrays;
 import java.util.List;
 import java.util.stream.Collectors;
 
-/** 校验 {@code @SmartTest} 测试类只使用 SmartTest case 执行模型。 */
+/**
+ * {@code @SmartTest} 元注解注册的类级校验扩展。
+ *
+ * <p>消费测试只需声明 {@code @SmartTest}，不要直接 {@code @ExtendWith} 本类型。
+ * 本扩展必须保持 public，以便 JUnit 能从注解实例化它。</p>
+ */
 public final class SmartTestClassValidationExtension implements BeforeAllCallback {
 
     @Override
