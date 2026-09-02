@@ -14,7 +14,9 @@ final class ParallelClassCoordinator {
     private static final AtomicInteger ACTIVE_CLASSES = new AtomicInteger();
     private static final AtomicInteger MAX_ACTIVE_CLASSES = new AtomicInteger();
     private static final Set<String> EXECUTION_THREADS = ConcurrentHashMap.newKeySet();
-    private static final CyclicBarrier CLASS_START_BARRIER = new CyclicBarrier(2);
+    private static final int OVERLAP_PARTY_COUNT = 2;
+    private static final long OVERLAP_TIMEOUT_SECONDS = 30L;
+    private static final CyclicBarrier CLASS_START_BARRIER = new CyclicBarrier(OVERLAP_PARTY_COUNT);
 
     private ParallelClassCoordinator() {
     }
@@ -24,7 +26,7 @@ final class ParallelClassCoordinator {
         MAX_ACTIVE_CLASSES.accumulateAndGet(active, Math::max);
         EXECUTION_THREADS.add(Thread.currentThread().getName());
         try {
-            CLASS_START_BARRIER.await(30, TimeUnit.SECONDS);
+            CLASS_START_BARRIER.await(OVERLAP_TIMEOUT_SECONDS, TimeUnit.SECONDS);
             assertEquals(expectedMarker, actualMarker);
         } finally {
             ACTIVE_CLASSES.decrementAndGet();
