@@ -2,7 +2,11 @@ package com.just.test.smarttest.internal.lifecycle;
 
 import com.just.test.smarttest.annotation.CaseSource;
 import com.just.test.smarttest.lifecycle.SmartTestLifecycle;
+import org.junit.jupiter.api.TestInstance;
 import org.junit.jupiter.api.extension.ExtensionConfigurationException;
+import org.junit.jupiter.api.extension.ExtensionContext;
+import org.junit.jupiter.api.parallel.Execution;
+import org.junit.jupiter.api.parallel.ExecutionMode;
 import org.junit.platform.commons.annotation.Testable;
 import org.junit.platform.commons.support.AnnotationSupport;
 import org.junit.platform.commons.support.HierarchyTraversalMode;
@@ -13,21 +17,34 @@ import org.springframework.transaction.annotation.Transactional;
 import java.lang.reflect.Method;
 import java.util.Arrays;
 import java.util.List;
+import java.util.Locale;
+import java.util.Optional;
 import java.util.stream.Collectors;
 
 /**
- * {@code @SmartTest} 的共享类级校验：{@link SmartTestLifecycle}、JUnit 可执行方法与
- * Spring {@code @Transactional}/{@code @Sql}。
+ * {@code @SmartTest} 的共享类级校验：{@link SmartTestLifecycle}、JUnit 可执行方法、
+ * {@code @TestInstance(PER_CLASS)} 与类内并发，以及 Spring {@code @Transactional}/{@code @Sql}。
  *
  * <p>不对消费方提供兼容承诺。Boot 模块的公开 {@code SmartTestClassValidationExtension}
  * 在 BeforeAll 调用本校验，并另行检查 Boot bootstrapper 注解。</p>
  */
 public final class SmartTestClassValidator {
 
+    /**
+     * JUnit 方法级默认并行模式。类级 {@code ExtensionContext#getExecutionMode()} 对应
+     * {@code mode.classes.default}，不能用来判断同一类中的 case 是否并发。
+     */
+    static final String PARALLEL_MODE_DEFAULT_PROPERTY =
+            "junit.jupiter.execution.parallel.mode.default";
+
     private SmartTestClassValidator() {
     }
 
     public static void validate(Class<?> testClass) {
+        validate(testClass, null);
+    }
+
+    public static void validate(Class<?> testClass, ExtensionContext context) {
         requireSmartTestLifecycle(testClass);
         validateClassSpringLifecycleAnnotations(testClass);
         List<Method> unsupportedMethods = AnnotationSupport.findAnnotatedMethods(
@@ -47,6 +64,7 @@ public final class SmartTestClassValidator {
                     testClass.getName(), methods));
         }
         validateCaseSourceMethods(testClass);
+        validatePerClassConcurrentExecution(testClass, context);
     }
 
     public static ExtensionConfigurationException configurationError(Class<?> testClass, String detail) {
@@ -90,6 +108,75 @@ public final class SmartTestClassValidator {
                         "@CaseSource method %s must not use @Transactional or @Sql because they run before a case is bound",
                         method.getName()));
             }
+        }
+    }
+
+    private static void validatePerClassConcurrentExecution(Class<?> testClass, ExtensionContext context) {
+        if (resolveLifecycle(testClass, context) != TestInstance.Lifecycle.PER_CLASS) {
+            return;
+        }
+        if (!hasConcurrentCaseExecution(testClass, context)) {
+            return;
+        }
+        throw configurationError(testClass,
+                "must not combine @TestInstance(PER_CLASS) with concurrent case execution. "
+                        + "Concurrent @CaseSource invocations share one test instance and can race @SmartMock field injection. "
+                        + "Use the default PER_METHOD lifecycle, or keep PER_CLASS with @Execution(SAME_THREAD)");
+    }
+
+    private static TestInstance.Lifecycle resolveLifecycle(Class<?> testClass, ExtensionContext context) {
+        if (context != null) {
+            Optional<TestInstance.Lifecycle> resolved = context.getTestInstanceLifecycle();
+            if (resolved.isPresent()) {
+                return resolved.get();
+            }
+        }
+        return AnnotationSupport.findAnnotation(testClass, TestInstance.class)
+                .map(TestInstance::value)
+                .orElse(TestInstance.Lifecycle.PER_METHOD);
+    }
+
+    /**
+     * 类内 case 是否并发：方法上的 {@code @Execution} 优先，否则继承类上的 {@code @Execution}，
+     * 再否则使用 {@code junit.jupiter.execution.parallel.mode.default}（缺省 {@code SAME_THREAD}）。
+     * 不读取 {@code ExtensionContext#getExecutionMode()}，以免把类间并行误判为类内并发。
+     */
+    private static boolean hasConcurrentCaseExecution(Class<?> testClass, ExtensionContext context) {
+        ExecutionMode defaultMode = resolveDefaultMethodExecutionMode(testClass, context);
+        List<Method> caseMethods = AnnotationSupport.findAnnotatedMethods(
+                testClass, CaseSource.class, HierarchyTraversalMode.TOP_DOWN);
+        if (caseMethods.isEmpty()) {
+            return defaultMode == ExecutionMode.CONCURRENT;
+        }
+        for (Method method : caseMethods) {
+            ExecutionMode methodMode = AnnotationSupport.findAnnotation(method, Execution.class)
+                    .map(Execution::value)
+                    .orElse(defaultMode);
+            if (methodMode == ExecutionMode.CONCURRENT) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static ExecutionMode resolveDefaultMethodExecutionMode(Class<?> testClass, ExtensionContext context) {
+        Optional<Execution> classExecution = AnnotationSupport.findAnnotation(testClass, Execution.class);
+        if (classExecution.isPresent()) {
+            return classExecution.get().value();
+        }
+        if (context != null) {
+            return context.getConfigurationParameter(PARALLEL_MODE_DEFAULT_PROPERTY)
+                    .map(SmartTestClassValidator::parseExecutionMode)
+                    .orElse(ExecutionMode.SAME_THREAD);
+        }
+        return ExecutionMode.SAME_THREAD;
+    }
+
+    private static ExecutionMode parseExecutionMode(String value) {
+        try {
+            return ExecutionMode.valueOf(value.trim().toUpperCase(Locale.ROOT));
+        } catch (RuntimeException ignored) {
+            return ExecutionMode.SAME_THREAD;
         }
     }
 }

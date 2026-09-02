@@ -62,6 +62,8 @@ junit.jupiter.execution.parallel.mode.classes.default=concurrent
 
 After verifying that application static state, external shared resources, and asynchronous threads are safe, set `mode.default` to `concurrent` to run cases within the same class concurrently. Normal tests do not need `@Execution`; use `@Execution(ExecutionMode.SAME_THREAD)` only to downgrade an exceptional class that cannot satisfy the concurrency boundaries.
 
+`@TestInstance(PER_CLASS)` cannot be combined with concurrent case execution (`@Execution(CONCURRENT)` or `mode.default=concurrent`). Cases would share one test instance and can race `@SmartMock` field injection. Use the JUnit default `PER_METHOD` with concurrent cases, or keep `PER_CLASS` with `SAME_THREAD`. Class-level parallelism (`mode.classes.default`) is not case concurrency.
+
 ### Parallel rollout antipatterns
 
 A parallel failure is not automatically a SmartTest isolation failure; first inspect the downstream project's test doubles, static state, and resource lifecycle. The following patterns can make usage errors look like framework flakes:
@@ -196,7 +198,7 @@ src/test/resources/com/example/smarttest/order/OrderServiceSmartTest/
     └── expect_exception.yaml
 ```
 
-`@CaseSource("custom-root")` uses a custom root below the test class package. If the default class-name directory is absent, SmartTest remains compatible with the older package-level case layout.
+`@CaseSource("custom-root")` uses a custom root below the test class package. If the default class-name directory is absent, SmartTest remains compatible with the older package-level case layout and logs a warning, because that fallback can pick up YAML from sibling test classes in the same package.
 
 ## YAML files and flags
 
@@ -223,7 +225,7 @@ For database expectations, prefer explicit `[C]` fields so the intended row is u
 
 ## Lifecycle
 
-`@SmartTest` is a class-level execution contract: the test class must implement `SmartTestLifecycle`, and every executable test method in the class must use `@CaseSource`. If the class does not implement the interface, or it contains `@Test`, `@RepeatedTest`, `@ParameterizedTest`, `@TestFactory`, or another ordinary JUnit test method, SmartTest fails in `BeforeAll` and asks you to fix the class. For incremental adoption, leave existing JUnit test classes unchanged and put new cases in a separate `@SmartTest` class; legacy classes without `@SmartTest` are unaffected.
+`@SmartTest` is a class-level execution contract: the test class must implement `SmartTestLifecycle`, and every executable test method in the class must use `@CaseSource`. If the class does not implement the interface, or it contains `@Test`, `@RepeatedTest`, `@ParameterizedTest`, `@TestFactory`, or another ordinary JUnit test method, SmartTest fails in `BeforeAll` and asks you to fix the class. Combining `@TestInstance(PER_CLASS)` with concurrent case execution also fails in `BeforeAll`. For incremental adoption, leave existing JUnit test classes unchanged and put new cases in a separate `@SmartTest` class; legacy classes without `@SmartTest` are unaffected.
 
 `@CaseSource` is itself the test annotation; do not combine it with another JUnit test annotation. For every YAML case SmartTest performs:
 
