@@ -3,6 +3,7 @@ package com.just.test.smarttest.internal.context;
 import com.just.test.smarttest.annotation.CaseSource;
 import com.just.test.smarttest.annotation.SmartTest;
 import com.just.test.smarttest.context.CaseContext;
+import com.just.test.smarttest.internal.context.packageroot.PackageRootCases;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtensionConfigurationException;
 import org.junit.jupiter.api.extension.ExtensionContext;
@@ -39,8 +40,9 @@ class CaseTemplateInvocationContextProviderTest {
     @Test
     void fallsBackToPackageRootWhenClassNamedDirectoryIsMissing() throws Exception {
         ExtensionContext context = mock(ExtensionContext.class);
-        Method method = PackageFallbackFixture.class.getDeclaredMethod("caseMethod", CaseContext.class);
-        doReturn(PackageFallbackFixture.class).when(context).getRequiredTestClass();
+        Method method = PackageRootCases.MissingClassDirectory.class
+                .getDeclaredMethod("caseMethod", CaseContext.class);
+        doReturn(PackageRootCases.MissingClassDirectory.class).when(context).getRequiredTestClass();
         when(context.getRequiredTestMethod()).thenReturn(method);
         when(context.getTestMethod()).thenReturn(java.util.Optional.of(method));
 
@@ -49,8 +51,10 @@ class CaseTemplateInvocationContextProviderTest {
         assertEquals(2, cases.size());
         assertEquals("legacy-case", cases.get(0).getCaseName());
         assertEquals("sibling-case", cases.get(1).getCaseName());
-        assertEquals("com/just/test/smarttest/internal/context/legacy-case", cases.get(0).getCasePath());
-        assertEquals("com/just/test/smarttest/internal/context/sibling-case", cases.get(1).getCasePath());
+        assertEquals("com/just/test/smarttest/internal/context/packageroot/legacy-case",
+                cases.get(0).getCasePath());
+        assertEquals("com/just/test/smarttest/internal/context/packageroot/sibling-case",
+                cases.get(1).getCasePath());
     }
 
     @Test
@@ -68,13 +72,6 @@ class CaseTemplateInvocationContextProviderTest {
 
     @SmartTest
     private static class Fixture {
-        @CaseSource
-        void caseMethod(CaseContext context) {
-        }
-    }
-
-    @SmartTest
-    private static class PackageFallbackFixture {
         @CaseSource
         void caseMethod(CaseContext context) {
         }
