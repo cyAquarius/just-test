@@ -71,6 +71,13 @@ public class CaseTemplateInvocationContextProvider implements TestTemplateInvoca
         if (caseNames.isEmpty() && configuredRoot.isEmpty()) {
             caseRoot = packagePath;
             caseNames = findCaseNames(caseRoot);
+            if (!caseNames.isEmpty()) {
+                log.warn("[SmartTest] Class-named case directory is missing for {}; "
+                                + "falling back to package-level YAML root '{}'. "
+                                + "This can pick up YAML from sibling test classes in the same package. "
+                                + "Create '{}' or set @CaseSource to an explicit root.",
+                        testClass.getName(), caseRoot, defaultRoot);
+            }
         }
         if (caseNames.isEmpty()) {
             throw new ExtensionConfigurationException(String.format(

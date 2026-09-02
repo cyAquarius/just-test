@@ -17,14 +17,16 @@ import java.lang.annotation.Annotation;
  * 本扩展必须保持 public，以便 JUnit 能从注解实例化它。</p>
  *
  * <p>Boot bootstrapper 约束留在本适配器；JUnit / {@code SmartTestLifecycle} /
- * {@code @Transactional} / {@code @Sql} 共享规则委托给 core 的
+ * {@code PER_CLASS} 并发 / {@code @Transactional} / {@code @Sql} 共享规则委托给 core 的
  * {@link SmartTestClassValidator}，在 {@code BeforeAll} 失败。</p>
  */
 public final class SmartTestClassValidationExtension implements BeforeAllCallback {
 
     @Override
     public void beforeAll(ExtensionContext context) {
-        validateTestClass(context.getRequiredTestClass());
+        Class<?> testClass = context.getRequiredTestClass();
+        validateBootBootstrapper(testClass);
+        SmartTestClassValidator.validate(testClass, context);
     }
 
     static void validateTestClass(Class<?> testClass) {

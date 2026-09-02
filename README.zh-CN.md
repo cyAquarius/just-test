@@ -62,6 +62,8 @@ junit.jupiter.execution.parallel.mode.classes.default=concurrent
 
 业务 static 状态、外部共享资源和异步线程均已确认安全时，可将 `mode.default` 改为 `concurrent`，允许同一测试类中的 case 并行。正常测试类不需要声明 `@Execution`；仅在个别测试无法满足并发边界时，使用 `@Execution(ExecutionMode.SAME_THREAD)` 局部降级。
 
+`@TestInstance(PER_CLASS)` 不能与类内并发 case 组合（`@Execution(CONCURRENT)` 或 `mode.default=concurrent`）：共享测试实例会竞态 `@SmartMock` 字段注入。并发 case 请使用 JUnit 默认的 `PER_METHOD`；需要 `PER_CLASS` 时保持 `SAME_THREAD`。类间并行（`mode.classes.default`）不等于类内 case 并发。
+
 ### 并行落地反模式
 
 并行失败不一定是 SmartTest 隔离失效；先排查下游项目的替身、静态状态和资源生命周期。以下用法会把使用错误伪装成 framework flake：
@@ -196,7 +198,7 @@ src/test/resources/com/example/smarttest/order/OrderServiceSmartTest/
     └── expect_exception.yaml
 ```
 
-`@CaseSource("custom-root")` 可指定测试类包下的自定义根目录。默认类名目录不存在时，仍兼容旧的包级用例目录。
+`@CaseSource("custom-root")` 可指定测试类包下的自定义根目录。默认类名目录不存在时，仍兼容旧的包级用例目录，并打出 WARN：该回退可能拾取同一包下其他测试类的 YAML。
 
 ## YAML 文件与 Flag
 
@@ -223,7 +225,7 @@ src/test/resources/com/example/smarttest/order/OrderServiceSmartTest/
 
 ## 生命周期
 
-`@SmartTest` 是测试类级执行契约：测试类必须实现 `SmartTestLifecycle`，类内所有可执行测试方法都必须使用 `@CaseSource`。如果类未实现该接口，或类中存在 `@Test`、`@RepeatedTest`、`@ParameterizedTest`、`@TestFactory` 或其他普通 JUnit 测试方法，SmartTest 会在 `BeforeAll` 报错并提示修正。渐进迁移时，保留原有 JUnit 测试类不变，将新 case 放入独立的 `@SmartTest` 类；未标注 `@SmartTest` 的旧测试类不受影响。
+`@SmartTest` 是测试类级执行契约：测试类必须实现 `SmartTestLifecycle`，类内所有可执行测试方法都必须使用 `@CaseSource`。如果类未实现该接口，或类中存在 `@Test`、`@RepeatedTest`、`@ParameterizedTest`、`@TestFactory` 或其他普通 JUnit 测试方法，SmartTest 会在 `BeforeAll` 报错并提示修正。`@TestInstance(PER_CLASS)` 与类内并发 case 组合也会在 `BeforeAll` 失败。渐进迁移时，保留原有 JUnit 测试类不变，将新 case 放入独立的 `@SmartTest` 类；未标注 `@SmartTest` 的旧测试类不受影响。
 
 `@CaseSource` 本身就是测试注解，不要再与其他 JUnit 测试注解组合。每个 YAML case 依次执行：
 
