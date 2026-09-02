@@ -44,7 +44,7 @@ SmartTest isolates the test resources it owns. It does **not** make arbitrary ap
 - Case static mocks affect only the current thread. They are active for user `@BeforeEach`, the test, and user `@AfterEach`; they cannot cover Spring context refresh or Spring Test listeners that run before the case invocation, and do not propagate to application-created asynchronous threads.
 - When multiple Spring contexts are detected, SmartTest emits one risk warning. A related case failure adds a diagnostic log without replacing the original exception. The presence of an arbitrary static mock does not suppress this hint because the framework cannot know whether it covers the relevant gateway.
 - New and legacy test classes can coexist; legacy classes without `@SmartTest` do not activate the SmartTest lifecycle. If both run in parallel while application code shares a JVM-static ContextHolder or factory, SmartTest cannot protect the legacy test thread. Keep affected legacy tests serial or migrate their static gateway.
-- Manually created threads, `CompletableFuture` common-pool tasks, and executors not managed by SmartTest do not receive mock or database context automatically; database or thread-scoped mock access without an active case fails fast instead of creating an empty H2 database or an unstubbed mock.
+- Manually created threads, `CompletableFuture` common-pool tasks, and executors not managed by SmartTest do not receive mock or database context automatically; database or thread-scoped mock access without an active case fails fast instead of creating an empty H2 database or an unstubbed mock. When `@SmartTest` owns H2 infrastructure, a missing framework `JdbcTemplate` or `SmartTestRoutingDataSource` is also a configuration error and fails fast rather than skipping prepare/verify.
 - Spring `@Transactional` and `@Sql` are unsupported on a SmartTest class or `@CaseSource` method because their lifecycle runs before a case is bound; SmartTest fails fast on these configurations. Use `prepare.yaml` and `expect.yaml` for deterministic case data instead.
 - A passing rerun is not proof of concurrency safety. Keep flaky suites serial until their ownership and lifecycle boundaries are established.
 - Write new SQL with standard single-quoted strings. The double-quote rewrite is only a compatibility bridge for existing MySQL mapper SQL.
@@ -223,7 +223,7 @@ For database expectations, prefer explicit `[C]` fields so the intended row is u
 
 ## Lifecycle
 
-`@SmartTest` is a class-level execution contract: every executable test method in the class must use `@CaseSource`. If the class contains `@Test`, `@RepeatedTest`, `@ParameterizedTest`, `@TestFactory`, or another ordinary JUnit test method, SmartTest fails before execution and asks you to split the class. For incremental adoption, leave existing JUnit test classes unchanged and put new cases in a separate `@SmartTest` class; legacy classes without `@SmartTest` are unaffected.
+`@SmartTest` is a class-level execution contract: the test class must implement `SmartTestLifecycle`, and every executable test method in the class must use `@CaseSource`. If the class does not implement the interface, or it contains `@Test`, `@RepeatedTest`, `@ParameterizedTest`, `@TestFactory`, or another ordinary JUnit test method, SmartTest fails in `BeforeAll` and asks you to fix the class. For incremental adoption, leave existing JUnit test classes unchanged and put new cases in a separate `@SmartTest` class; legacy classes without `@SmartTest` are unaffected.
 
 `@CaseSource` is itself the test annotation; do not combine it with another JUnit test annotation. For every YAML case SmartTest performs:
 
@@ -231,7 +231,7 @@ For database expectations, prefer explicit `[C]` fields so the intended row is u
 2. bind the case, create and initialize a fresh case database, and load `prepare.yaml`;
 3. reset and prewarm scoped mocks, inject `@SmartMock` fields, and configure case static mocks;
 4. execute user `@BeforeEach` methods;
-5. invoke matching `@BeforeCase("case-name")` methods and `beforeExecute`, execute the test, call `afterExecute`, and verify exception, result, and database data;
+5. invoke matching `@BeforeCase("case-name")` methods and `beforeExecute`, execute the test, always call `afterExecute` (even if the test threw), then verify exception, result, and database data. An exception that is not declared in `expect_exception.yaml` and not handled by `verifyException` is rethrown after `afterExecute` and YAML verification;
 6. execute user `@AfterEach` methods;
 7. close static and scoped mocks and release the case database, retaining cleanup failures without hiding the original test failure.
 
