@@ -21,7 +21,7 @@ It is deliberately a test-scope framework: it supplies repeatable test setup, as
 | fastjson2 | 2.0.64 | 2.0.64 |
 | SLF4J | 1.7.36 | 2.0.18 |
 
-The Boot 2 line retains the final 2.7.18 release and a real Java 8 baseline. The Boot 3 line uses stable Boot 3.5.16 on Java 17 and does not move to Boot 4. Versions come from the corresponding Spring Boot BOM except for MyBatis, mybatis-spring, fastjson2, Boot 2 Mockito/SnakeYAML, and build plugins. Builds use Maven Compiler Plugin 3.15.0 and Surefire 3.5.6; CI uses `actions/checkout@v7` and `actions/setup-java@v6`.
+The Boot 2 line retains the final 2.7.18 release and a real Java 8 baseline. The Boot 3 line uses stable Boot 3.5.16 on Java 17 and does not move to Boot 4. Versions come from the corresponding Spring Boot BOM except for MyBatis, mybatis-spring, fastjson2, Boot 2 Mockito/SnakeYAML, the Boot 2 `junit-bom` override (JUnit Jupiter 5.14.4), and build plugins. Builds use Maven Compiler Plugin 3.15.0 and Surefire 3.5.6; CI uses `actions/checkout@v7` and `actions/setup-java@v6`.
 
 The matrix is the standalone artifact build and validation baseline. As with normal Maven libraries, a consumer's parent or dependency management can override transitive versions; CI additionally consumes each installed artifact under the matching Spring Boot parent/BOM to verify that common application layout.
 
@@ -62,7 +62,7 @@ junit.jupiter.execution.parallel.mode.classes.default=concurrent
 
 After verifying that application static state, external shared resources, and asynchronous threads are safe, set `mode.default` to `concurrent` to run cases within the same class concurrently. Normal tests do not need `@Execution`; use `@Execution(ExecutionMode.SAME_THREAD)` only to downgrade an exceptional class that cannot satisfy the concurrency boundaries.
 
-`@TestInstance(PER_CLASS)` cannot be combined with concurrent case execution (`@Execution(CONCURRENT)` or `mode.default=concurrent`). Cases would share one test instance and can race `@SmartMock` field injection. Use the JUnit default `PER_METHOD` with concurrent cases, or keep `PER_CLASS` with `SAME_THREAD`. Class-level parallelism (`mode.classes.default`) is not case concurrency.
+`@TestInstance(PER_CLASS)` cannot be combined with concurrent case execution when JUnit parallel is enabled (`junit.jupiter.execution.parallel.enabled=true`) and cases would run concurrently (`@Execution(CONCURRENT)` or `mode.default=concurrent`). Cases would share one test instance and can race `@SmartMock` field injection. If parallel is disabled, leftover `@Execution` / `mode.default=concurrent` settings are ignored for this check. Use the JUnit default `PER_METHOD` with concurrent cases, or keep `PER_CLASS` with `SAME_THREAD`. Class-level parallelism (`mode.classes.default`) is not case concurrency.
 
 ### Parallel rollout antipatterns
 
@@ -225,7 +225,7 @@ For database expectations, prefer explicit `[C]` fields so the intended row is u
 
 ## Lifecycle
 
-`@SmartTest` is a class-level execution contract: the test class must implement `SmartTestLifecycle`, and every executable test method in the class must use `@CaseSource`. If the class does not implement the interface, or it contains `@Test`, `@RepeatedTest`, `@ParameterizedTest`, `@TestFactory`, or another ordinary JUnit test method, SmartTest fails in `BeforeAll` and asks you to fix the class. Combining `@TestInstance(PER_CLASS)` with concurrent case execution also fails in `BeforeAll`. For incremental adoption, leave existing JUnit test classes unchanged and put new cases in a separate `@SmartTest` class; legacy classes without `@SmartTest` are unaffected.
+`@SmartTest` is a class-level execution contract: the test class must implement `SmartTestLifecycle`, and every executable test method in the class must use `@CaseSource`. If the class does not implement the interface, or it contains `@Test`, `@RepeatedTest`, `@ParameterizedTest`, `@TestFactory`, or another ordinary JUnit test method, SmartTest fails in `BeforeAll` and asks you to fix the class. Combining `@TestInstance(PER_CLASS)` with concurrent case execution (only when `junit.jupiter.execution.parallel.enabled=true`) also fails in `BeforeAll`. For incremental adoption, leave existing JUnit test classes unchanged and put new cases in a separate `@SmartTest` class; legacy classes without `@SmartTest` are unaffected.
 
 `@CaseSource` is itself the test annotation; do not combine it with another JUnit test annotation. For every YAML case SmartTest performs:
 
