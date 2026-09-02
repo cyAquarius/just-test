@@ -8,8 +8,8 @@ import java.lang.annotation.Target;
 /**
  * 标记 @Bean 方法为线程隔离 mock：每个线程持有独立实例，并行 stubbing 无竞态。
  *
- * <p>底层走 {@code SmartMockPostProcessor}：将带此注解的 @Bean 定义替换为
- * {@code ThreadScope + ScopedProxy}，与 {@code @SmartMock} 字段注解同一套机制。</p>
+ * <p>框架将带此注解的 {@code @Bean} 定义替换为线程作用域 ScopedProxy，
+ * 与 {@code @SmartMock} 字段注解同一套机制。</p>
  *
  * <p>实例仅能在活动 SmartTest case 线程中访问；异步线程不会继承 case 上下文。</p>
  *

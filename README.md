@@ -122,7 +122,7 @@ GitHub Packages requires credentials in the consumer's `~/.m2/settings.xml`. Kee
 
 Each artifact transitively provides shared `just-test-core` plus the matching platform TestContext, auto-configuration, and test dependencies; consumers do not declare core themselves. Do not depend on both top-level artifacts. The Boot 2 artifact does not bring Spring 6/Boot 3, and the Boot 3 artifact does not bring Spring 5/Boot 2. The former `com.just.test:just-test` coordinate only had SNAPSHOT builds and no stable release, so it migrates directly to `just-test-boot2` without a permanent compatibility shell.
 
-Public packages remain under `com.just.test.smarttest`, so application tests normally change only the artifactId. When moving an application to Boot 3, migrate its Java EE types to Jakarta as required by Spring Boot 3; Java SE `javax.sql.DataSource` is not part of that migration.
+The stable public API stays under `com.just.test.smarttest`: `annotation` (`@SmartTest`, `@CaseSource`, `@SmartMock`, `@BeforeCase`, `@ThreadScopedMock`, and related markers), `CaseContext`, `SmartTestLifecycle`, and `StaticMockContext`. Engine types live in `com.just.test.smarttest.internal` and are unsupported for consumers even when they remain public for JUnit or Spring registration. Application tests normally change only the artifactId. When moving an application to Boot 3, migrate its Java EE types to Jakarta as required by Spring Boot 3; Java SE `javax.sql.DataSource` is not part of that migration.
 
 ## Write a test
 

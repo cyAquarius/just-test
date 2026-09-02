@@ -12,8 +12,8 @@ import java.util.stream.Collectors;
 /**
  * Case 运行时上下文，承载单个测试 case 的输入参数、执行结果和异常。
  *
- * <p>由 {@link CaseTemplateInvocationContextProvider} 为每个 {@code @CaseSource} invocation 创建，
- * {@code SmartTestExtension} 将其注入测试及标准 JUnit 生命周期方法，并在执行过程中填充结果和异常。</p>
+ * <p>由 {@code @CaseSource} 为每个 invocation 创建，框架将其注入测试方法及标准
+ * JUnit 生命周期方法，并在执行过程中填充结果和异常。</p>
  *
  * <p>{@link #toString()} 返回 caseName；JUnit invocation 也使用 caseName 作为显示名。</p>
  */

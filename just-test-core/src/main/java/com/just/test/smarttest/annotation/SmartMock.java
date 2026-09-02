@@ -8,7 +8,7 @@ import java.lang.annotation.Target;
 /**
  * 线程安全的 Mock 注解，替代 {@code @MockBean} 解决并行测试下 mock 互相覆盖的问题。
  *
- * <p>底层通过 ThreadScope + ScopedProxy 实现：每个线程拿到独立的 Mockito mock 实例，
+ * <p>底层通过线程作用域 ScopedProxy 实现：每个线程拿到独立的 Mockito mock 实例，
  * when() stubbing 天然线程隔离，与 H2 数据库路由完全对称。</p>
  *
  * <p>字段只在 {@link SmartTest} 的 {@link CaseSource} invocation 生命周期内注入；
