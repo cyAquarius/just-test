@@ -122,7 +122,7 @@ GitHub Packages 需要在消费项目的 `~/.m2/settings.xml` 中配置凭据。
 
 两个 artifact 都会传递共享的 `just-test-core` 以及各自平台的 TestContext、auto-configuration 和测试依赖；消费方不需要手工声明 core。不要同时引入两个顶层 artifact。Boot 2 产物不带入 Spring 6/Boot 3，Boot 3 产物不带入 Spring 5/Boot 2。原 `com.just.test:just-test` 只有 SNAPSHOT、没有正式发布版本，因此直接迁移为 `just-test-boot2`，不提供永久兼容壳。
 
-公开包名仍为 `com.just.test.smarttest`，业务测试迁移通常只需更换 artifactId；迁移到 Boot 3 时，消费工程自身使用的 Java EE 类型仍需按 Spring Boot 3 规则迁移到 Jakarta。Java SE 的 `javax.sql.DataSource` 不属于 Jakarta 迁移范围。
+稳定公开 API 仍在 `com.just.test.smarttest` 下：`annotation`（`@SmartTest`、`@CaseSource`、`@SmartMock`、`@BeforeCase`、`@ThreadScopedMock` 及相关标记）、`CaseContext`、`SmartTestLifecycle` 和 `StaticMockContext`。引擎类型放在 `com.just.test.smarttest.internal`，即便因 JUnit / Spring 注册而保持 public，也不对消费方提供兼容承诺。业务测试迁移通常只需更换 artifactId；迁移到 Boot 3 时，消费工程自身使用的 Java EE 类型仍需按 Spring Boot 3 规则迁移到 Jakarta。Java SE 的 `javax.sql.DataSource` 不属于 Jakarta 迁移范围。
 
 ## 编写测试
 
