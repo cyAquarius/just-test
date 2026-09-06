@@ -112,6 +112,14 @@ junit.jupiter.execution.parallel.mode.classes.default=concurrent
 Java 17 / Boot 3 使用：
 
 ```xml
+<repositories>
+    <repository>
+        <id>github</id>
+        <url>https://maven.pkg.github.com/cyaquarius/just-test</url>
+        <snapshots><enabled>true</enabled></snapshots>
+    </repository>
+</repositories>
+
 <dependency>
     <groupId>com.just.test</groupId>
     <artifactId>just-test-boot3</artifactId>
@@ -217,7 +225,7 @@ src/test/resources/com/example/smarttest/order/OrderServiceSmartTest/
 | `[N]` | 跳过字段；在 `prepare.yaml` 中表示不插入该列。 |
 | `[R]` | 正则匹配。 |
 | `[A]` | 非空断言。 |
-| `[D]` / `[D60]` | 时间容差（秒），默认 60 秒。 |
+| `[D]` / `[D60]` | 实际时间落在距*当前时刻* N 秒内（默认 60 秒）。YAML 中的期望值不参与比较。 |
 | `[J]` | JSON 结构比较。 |
 | `[F]` | `prepare.yaml` 中的原始数据库函数，如 `NOW()`。 |
 
@@ -233,7 +241,7 @@ src/test/resources/com/example/smarttest/order/OrderServiceSmartTest/
 2. 绑定 case，创建并初始化全新的 case 数据库，然后加载 `prepare.yaml`；
 3. 重置、预热 scoped mock，注入 `@SmartMock` 字段并配置 case 静态 Mock；
 4. 执行用户的 `@BeforeEach`；
-5. 调用匹配的 `@BeforeCase("case-name")` 与 `beforeExecute`，执行测试方法；无论测试方法返回还是抛出，都调用 `afterExecute`，再进行异常、返回值和数据库验证。无 `expect_exception.yaml` 且 `verifyException` 未处理的异常会在 `afterExecute` 与 YAML 验证之后重新抛出；
+5. 调用匹配的 `@BeforeCase("case-name")` 与 `beforeExecute`，执行测试方法；无论测试方法返回还是抛出，都调用 `afterExecute`，再进行异常、返回值和数据库验证。若 `afterExecute` 自身抛出，则跳过 YAML 验证并直接抛出该异常（若测试方法也抛过异常，会作为 suppressed 附加）。无 `expect_exception.yaml` 且 `verifyException` 未处理的异常会在 `afterExecute` 与 YAML 验证之后重新抛出；
 6. 执行用户的 `@AfterEach`；
 7. 关闭静态与 scoped mock，释放 case 数据库；清理失败不会掩盖原始测试失败。
 

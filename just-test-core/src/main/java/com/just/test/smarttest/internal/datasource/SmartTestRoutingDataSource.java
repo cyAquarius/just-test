@@ -50,6 +50,8 @@ public class SmartTestRoutingDataSource extends AbstractDataSource implements Di
     private final AtomicLong fallbackCount = new AtomicLong();
     private SingleConnectionDataSource templateDataSource;
     private List<String> templateSchema;
+    private List<String> cachedCloneScript;
+    private final AtomicLong scriptCaptureCount = new AtomicLong();
 
     /**
      * @param urlTemplate H2 URL 模板，{key} 占位符在运行时替换为 case 标识。
@@ -140,7 +142,7 @@ public class SmartTestRoutingDataSource extends AbstractDataSource implements Di
             synchronized (templateLock) {
                 ensureTemplate(cleanedDdls);
                 try {
-                    cloneTemplate(jdbcTemplate);
+                    replayCachedCloneScript(jdbcTemplate);
                     H2FunctionRegistrar.register(jdbcTemplate);
                     cloneCount.incrementAndGet();
                 } catch (Exception cloneFailure) {
@@ -263,16 +265,35 @@ public class SmartTestRoutingDataSource extends AbstractDataSource implements Di
         }
     }
 
-    private void cloneTemplate(JdbcTemplate caseJdbcTemplate) {
+    private void replayCachedCloneScript(JdbcTemplate caseJdbcTemplate) {
         if (forceCloneFailureForTests.compareAndSet(true, false)) {
             throw new IllegalStateException("Forced schema clone failure");
+        }
+        ensureCachedCloneScript();
+        List<String> script = cachedCloneScript;
+        if (script == null || script.isEmpty()) {
+            throw new IllegalStateException("Schema template produced an empty clone script");
+        }
+
+        caseJdbcTemplate.execute((ConnectionCallback<Void>) connection -> {
+            try (Statement statement = connection.createStatement()) {
+                for (String sql : script) {
+                    statement.execute(sql);
+                }
+            }
+            return null;
+        });
+    }
+
+    private void ensureCachedCloneScript() {
+        if (cachedCloneScript != null && !cachedCloneScript.isEmpty()) {
+            return;
         }
         if (templateDataSource == null) {
             throw new IllegalStateException("Schema template is not available");
         }
 
-        JdbcTemplate templateJdbcTemplate = new JdbcTemplate(templateDataSource);
-        List<String> script = templateJdbcTemplate.execute(
+        List<String> script = new JdbcTemplate(templateDataSource).execute(
                 (ConnectionCallback<List<String>>) connection -> {
                     List<String> statements = new ArrayList<>();
                     try (Statement statement = connection.createStatement();
@@ -286,18 +307,11 @@ public class SmartTestRoutingDataSource extends AbstractDataSource implements Di
                     }
                     return statements;
                 });
+        scriptCaptureCount.incrementAndGet();
         if (script == null || script.isEmpty()) {
             throw new IllegalStateException("Schema template produced an empty clone script");
         }
-
-        caseJdbcTemplate.execute((ConnectionCallback<Void>) connection -> {
-            try (Statement statement = connection.createStatement()) {
-                for (String sql : script) {
-                    statement.execute(sql);
-                }
-            }
-            return null;
-        });
+        cachedCloneScript = Collections.unmodifiableList(new ArrayList<>(script));
     }
 
     private void recreateCurrentCaseDataSource() {
@@ -316,6 +330,7 @@ public class SmartTestRoutingDataSource extends AbstractDataSource implements Di
             dataSource.destroy();
         }
         templateSchema = null;
+        cachedCloneScript = null;
     }
 
     private String templateUrl() {
@@ -341,6 +356,10 @@ public class SmartTestRoutingDataSource extends AbstractDataSource implements Di
 
     long schemaFallbackCountForTests() {
         return fallbackCount.get();
+    }
+
+    long schemaScriptCaptureCountForTests() {
+        return scriptCaptureCount.get();
     }
 
     private boolean isUsable(SingleConnectionDataSource dataSource) {
