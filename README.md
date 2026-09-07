@@ -112,6 +112,14 @@ Add exactly one top-level dependency in test scope. For Java 8 / Boot 2 use:
 For Java 17 / Boot 3 use:
 
 ```xml
+<repositories>
+    <repository>
+        <id>github</id>
+        <url>https://maven.pkg.github.com/cyaquarius/just-test</url>
+        <snapshots><enabled>true</enabled></snapshots>
+    </repository>
+</repositories>
+
 <dependency>
     <groupId>com.just.test</groupId>
     <artifactId>just-test-boot3</artifactId>
@@ -217,7 +225,7 @@ Field suffix flags are stage-specific: `[C]` selects rows in `expect.yaml` and e
 | `[N]` | Skip the field; in `prepare.yaml`, do not insert it. |
 | `[R]` | Regular-expression match. |
 | `[A]` | Non-null assertion. |
-| `[D]` / `[D60]` | Timestamp tolerance in seconds (default: 60). |
+| `[D]` / `[D60]` | Actual time is within N seconds of *now* (default 60). The YAML expected value is not compared. |
 | `[J]` | JSON structural comparison. |
 | `[F]` | Raw database function in `prepare.yaml`, such as `NOW()`. |
 
@@ -233,7 +241,7 @@ For database expectations, prefer explicit `[C]` fields so the intended row is u
 2. bind the case, create and initialize a fresh case database, and load `prepare.yaml`;
 3. reset and prewarm scoped mocks, inject `@SmartMock` fields, and configure case static mocks;
 4. execute user `@BeforeEach` methods;
-5. invoke matching `@BeforeCase("case-name")` methods and `beforeExecute`, execute the test, always call `afterExecute` (even if the test threw), then verify exception, result, and database data. An exception that is not declared in `expect_exception.yaml` and not handled by `verifyException` is rethrown after `afterExecute` and YAML verification;
+5. invoke matching `@BeforeCase("case-name")` methods and `beforeExecute`, execute the test, always call `afterExecute` (even if the test threw), then verify exception, result, and database data. If `afterExecute` itself throws, YAML verification is skipped and that exception is propagated (the original test exception is added as suppressed when present). An exception that is not declared in `expect_exception.yaml` and not handled by `verifyException` is rethrown after `afterExecute` and YAML verification;
 6. execute user `@AfterEach` methods;
 7. close static and scoped mocks and release the case database, retaining cleanup failures without hiding the original test failure.
 

@@ -157,6 +157,7 @@ class SmartTestRoutingDataSourceTest {
             assertEquals(0, jdbcTemplate.queryForObject(
                     "SELECT COUNT(*) FROM clone_cache_record", Integer.class));
             assertEquals(2, dataSource.schemaCloneCountForTests());
+            assertEquals(1, dataSource.schemaScriptCaptureCountForTests());
         } finally {
             Files.deleteIfExists(schemaFile);
             CaseExecutionContext.clear();

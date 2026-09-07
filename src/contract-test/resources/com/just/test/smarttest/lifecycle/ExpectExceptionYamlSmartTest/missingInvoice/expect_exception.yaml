@@ -1,0 +1,2 @@
+type: com.just.test.smarttest.lifecycle.InvoiceNotFoundException
+message[R]: 'invoice-\d+ not found'

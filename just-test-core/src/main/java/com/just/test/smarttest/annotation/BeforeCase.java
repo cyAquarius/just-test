@@ -18,6 +18,9 @@ import java.lang.annotation.Target;
  *
  * <p>一个测试类中可以有多个 {@code @BeforeCase} 方法，分别对应不同的 case。
  * 没有匹配的 case 不会触发任何 {@code @BeforeCase} 方法。</p>
+ *
+ * <p>方法必须无参。继承树上先调用子类再调用父类中匹配的方法，
+ * 然后再调用 {@code beforeExecute}。</p>
  */
 @Target(ElementType.METHOD)
 @Retention(RetentionPolicy.RUNTIME)

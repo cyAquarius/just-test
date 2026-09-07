@@ -28,7 +28,8 @@ import java.util.concurrent.ConcurrentMap;
  *
  * <p>每个 case 仍然使用独立的内存数据库；清理后的 DDL 会缓存，避免后续 case
  * 重复读取资源和清理语法。对 {@link SmartTestRoutingDataSource}，默认先从共享
- * template 数据库通过 H2 {@code SCRIPT SIMPLE} 克隆 schema；克隆失败时回退到
+ * template 数据库通过 H2 {@code SCRIPT SIMPLE} 克隆 schema，并缓存 SCRIPT 语句列表，
+ * 后续 case 重放该缓存而不再对 template 执行 {@code SCRIPT}；克隆失败时回退到
  * 缓存 DDL 重放。设置 {@code smarttest.schema.clone=false} 可禁用克隆并始终使用
  * 缓存 DDL 重放。</p>
  */
