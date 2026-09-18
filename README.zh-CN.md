@@ -23,7 +23,7 @@
 
 Boot 2 线保留最后一个正式版本 2.7.18 和真实 Java 8 基线；Boot 3 线使用仍属 Boot 3、基于 Java 17 的稳定版本 3.5.16，不升级到 Boot 4。除 MyBatis、mybatis-spring、fastjson2、Boot 2 的 Mockito/SnakeYAML、Boot 2 的 `junit-bom` 覆盖（JUnit Jupiter 5.14.4）和构建插件外，版本由对应 Spring Boot BOM 管理。构建使用 Maven Compiler Plugin 3.15.0 和 Surefire 3.5.6；CI 使用 `actions/checkout@v7`、`actions/setup-java@v6`。
 
-上表是 artifact 独立构建和验证时的基线。与普通 Maven 库一致，消费工程的 parent 或 dependency management 可以重新仲裁传递版本；CI 还会在匹配的 Spring Boot parent/BOM 下消费本地安装产物，覆盖常见业务工程结构。
+上表是两条产品线独立构建和验证时的基线。CI 还会在匹配的 Spring Boot parent/BOM 下跑消费烟测，覆盖常见业务工程结构。
 
 ## SmartTest 提供的能力
 
@@ -88,33 +88,9 @@ junit.jupiter.execution.parallel.mode.classes.default=concurrent
    - **错误：** 关键外部依赖未 stub，业务又把异常吞掉或将异常当作成功；并行时不同返回值和时序会让它看起来像 framework flake。
    - **正确：** 在 `beforeExecute` / `@BeforeCase` 中为关键外部协作者设置明确 stub，并显式断言成功与异常路径；不要把未定义的外部返回值交给业务 fail-open 逻辑。
 
-## 引入依赖
+## 公开 API
 
-从本仓库源码安装后再引用：在仓库根目录执行 `mvn clean install`（或只安装对应产品线），消费工程从本地 Maven 仓库解析。只在测试范围引入一个与应用平台匹配的顶层依赖。Java 8 / Boot 2 使用：
-
-```xml
-<dependency>
-    <groupId>com.just.test</groupId>
-    <artifactId>just-test-boot2</artifactId>
-    <version>1.0.0-SNAPSHOT</version>
-    <scope>test</scope>
-</dependency>
-```
-
-Java 17 / Boot 3 使用：
-
-```xml
-<dependency>
-    <groupId>com.just.test</groupId>
-    <artifactId>just-test-boot3</artifactId>
-    <version>1.0.0-SNAPSHOT</version>
-    <scope>test</scope>
-</dependency>
-```
-
-两个 artifact 都会传递共享的 `just-test-core` 以及各自平台的 TestContext、auto-configuration 和测试依赖；消费方不需要手工声明 core。不要同时引入两个顶层 artifact。Boot 2 产物不带入 Spring 6/Boot 3，Boot 3 产物不带入 Spring 5/Boot 2。原 `com.just.test:just-test` 只有 SNAPSHOT、没有正式发布版本，因此直接迁移为 `just-test-boot2`，不提供永久兼容壳。
-
-稳定公开 API 仍在 `com.just.test.smarttest` 下：`annotation`（`@SmartTest`、`@CaseSource`、`@SmartMock`、`@BeforeCase`、`@ThreadScopedMock`）、`CaseContext`、`SmartTestLifecycle` 和 `StaticMockContext`。`SmartTestMarker` 与 Boot 模块的 `SmartTestClassValidationExtension` 只供 `@SmartTest` 注册 JUnit/Spring 基础设施，消费测试不要直接依赖。引擎类型放在 `com.just.test.smarttest.internal`，即便因 JUnit / Spring 注册而保持 public，也不对消费方提供兼容承诺。业务测试迁移通常只需更换 artifactId；迁移到 Boot 3 时，消费工程自身使用的 Java EE 类型仍需按 Spring Boot 3 规则迁移到 Jakarta。Java SE 的 `javax.sql.DataSource` 不属于 Jakarta 迁移范围。
+稳定公开 API 在 `com.just.test.smarttest` 下：`annotation`（`@SmartTest`、`@CaseSource`、`@SmartMock`、`@BeforeCase`、`@ThreadScopedMock`）、`CaseContext`、`SmartTestLifecycle` 和 `StaticMockContext`。`SmartTestMarker` 与 Boot 模块的 `SmartTestClassValidationExtension` 只供 `@SmartTest` 注册 JUnit/Spring 基础设施，不要直接依赖。引擎类型放在 `com.just.test.smarttest.internal`，即便因 JUnit / Spring 注册而保持 public，也不对消费方提供兼容承诺。迁移到 Boot 3 时，消费工程自身使用的 Java EE 类型仍需按 Spring Boot 3 规则迁移到 Jakarta。Java SE 的 `javax.sql.DataSource` 不属于 Jakarta 迁移范围。
 
 ## 编写测试
 
@@ -176,7 +152,7 @@ public void configureStaticMocks(CaseContext context, StaticMockContext mocks) {
 
 未 stub 的静态方法继续调用真实实现。不要手工关闭返回的 `MockedStatic`；SmartTest 会在用户 `@AfterEach` 结束后，于原 case 线程统一关闭。
 
-Boot 2 使用 Mockito 4，静态 Mock 或 final 类型 Mock 要求消费工程显式启用 inline mock maker，例如在 `src/test/resources/mockito-extensions/org.mockito.plugins.MockMaker` 写入 `mock-maker-inline`，或引入版本一致的 `mockito-inline`。Boot 3 使用 Mockito 5，其默认 mock maker 已是 inline；若消费工程覆盖了 MockMaker，仍需自行保证静态/final Mock 能力。SmartTest 不会在发布 JAR 中全局指定 MockMaker，避免覆盖消费工程已有配置。
+Boot 2 使用 Mockito 4，静态 Mock 或 final 类型 Mock 要求消费工程显式启用 inline mock maker，例如在 `src/test/resources/mockito-extensions/org.mockito.plugins.MockMaker` 写入 `mock-maker-inline`，或引入版本一致的 `mockito-inline`。Boot 3 使用 Mockito 5，其默认 mock maker 已是 inline；若消费工程覆盖了 MockMaker，仍需自行保证静态/final Mock 能力。SmartTest 不会全局指定 MockMaker，避免覆盖消费工程已有配置。
 
 默认目录位于测试类包名与简单类名之下：
 
@@ -249,6 +225,6 @@ JAVA_HOME=/path/to/jdk17 PATH="$JAVA_HOME/bin:$PATH" \
   mvn --batch-mode --no-transfer-progress -f smoke-tests/boot3/pom.xml clean test
 ```
 
-两个产品线都执行同一份 `src/contract-test` 契约测试；各自的第二条命令使用独立 Spring Boot 消费工程，只声明匹配的 SmartTest 顶层依赖，并解析前一步安装到本地仓库的 POM 与 JAR。Java 17 下可用 `mvn clean install` 构建并安装整个 reactor，但它不能替代上述真实 Java 8 验证。
+两个产品线都执行同一份 `src/contract-test` 契约测试；各自的第二条命令跑 `smoke-tests/` 下对应工程。Java 17 下可用 `mvn clean install` 构建整个 reactor，但它不能替代上述真实 Java 8 验证。
 
-CI 为两个 JDK 提供独立完整 Job，并执行安装产物消费烟测。仓库只包含可复用框架代码和最小演示，不应加入具体业务包、业务表结构或业务测试。
+CI 为两个 JDK 提供独立完整 Job，并跑消费烟测。仓库只包含可复用框架代码和最小演示，不应加入具体业务包、业务表结构或业务测试。

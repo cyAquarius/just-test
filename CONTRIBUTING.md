@@ -18,7 +18,7 @@ GitHub 的 `[skip ci]` / `[ci skip]` 会跳过本仓库的验证与发布工作�
 
 发布正式版本时：
 
-1. 去掉 `-SNAPSHOT`，并同步 README 中的版本示例；
+1. 去掉 `-SNAPSHOT`；
 2. 在真实 JDK 上跑通 Boot 2（Java 8 + Spring Boot 2.7.18）与 Boot 3（Java 17 + Spring Boot 3.5.16）；
 3. 打 tag（例如 `v1.0.0`）并合并到 `main`，不要使用 `[skip ci]`。产物不通过本仓库的 GitHub Actions 发布。
 
