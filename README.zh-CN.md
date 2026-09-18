@@ -90,17 +90,9 @@ junit.jupiter.execution.parallel.mode.classes.default=concurrent
 
 ## 引入依赖
 
-只在测试范围引入一个与应用平台匹配的顶层依赖。Java 8 / Boot 2 使用：
+从本仓库源码安装后再引用：在仓库根目录执行 `mvn clean install`（或只安装对应产品线），消费工程从本地 Maven 仓库解析。只在测试范围引入一个与应用平台匹配的顶层依赖。Java 8 / Boot 2 使用：
 
 ```xml
-<repositories>
-    <repository>
-        <id>github</id>
-        <url>https://maven.pkg.github.com/cyaquarius/just-test</url>
-        <snapshots><enabled>true</enabled></snapshots>
-    </repository>
-</repositories>
-
 <dependency>
     <groupId>com.just.test</groupId>
     <artifactId>just-test-boot2</artifactId>
@@ -112,14 +104,6 @@ junit.jupiter.execution.parallel.mode.classes.default=concurrent
 Java 17 / Boot 3 使用：
 
 ```xml
-<repositories>
-    <repository>
-        <id>github</id>
-        <url>https://maven.pkg.github.com/cyaquarius/just-test</url>
-        <snapshots><enabled>true</enabled></snapshots>
-    </repository>
-</repositories>
-
 <dependency>
     <groupId>com.just.test</groupId>
     <artifactId>just-test-boot3</artifactId>
@@ -127,8 +111,6 @@ Java 17 / Boot 3 使用：
     <scope>test</scope>
 </dependency>
 ```
-
-GitHub Packages 需要在消费项目的 `~/.m2/settings.xml` 中配置凭据。Token 应放在项目外，例如 `${env.GITHUB_PACKAGES_TOKEN}`。classic PAT 需要 `read:packages`；消费私有源码仓库时还需要 `repo`。
 
 两个 artifact 都会传递共享的 `just-test-core` 以及各自平台的 TestContext、auto-configuration 和测试依赖；消费方不需要手工声明 core。不要同时引入两个顶层 artifact。Boot 2 产物不带入 Spring 6/Boot 3，Boot 3 产物不带入 Spring 5/Boot 2。原 `com.just.test:just-test` 只有 SNAPSHOT、没有正式发布版本，因此直接迁移为 `just-test-boot2`，不提供永久兼容壳。
 
@@ -247,7 +229,7 @@ src/test/resources/com/example/smarttest/order/OrderServiceSmartTest/
 6. 执行用户的 `@AfterEach`；
 7. 关闭静态与 scoped mock，释放 case 数据库；清理失败不会掩盖原始测试失败。
 
-## 构建与发布
+## 构建与验证
 
 仅有 Java 8 的环境可独立验证 Boot 2：
 
@@ -269,4 +251,4 @@ JAVA_HOME=/path/to/jdk17 PATH="$JAVA_HOME/bin:$PATH" \
 
 两个产品线都执行同一份 `src/contract-test` 契约测试；各自的第二条命令使用独立 Spring Boot 消费工程，只声明匹配的 SmartTest 顶层依赖，并解析前一步安装到本地仓库的 POM 与 JAR。Java 17 下可用 `mvn clean install` 构建并安装整个 reactor，但它不能替代上述真实 Java 8 验证。
 
-CI 为两个 JDK 提供独立完整 Job，并执行安装产物消费烟测。发布工作流先等待两条验证线全部成功，再把 Java 8 与 Java 17 配置为 Maven Toolchains：core/Boot 2 使用 Java 8、Boot 3 使用 Java 17，完成两套契约测试和消费烟测后才部署同一批已验证 POM 与 JAR，因此构建或烟测失败时不会开始部署。仓库只包含可复用框架代码和最小演示，不应加入具体业务包、业务表结构或业务测试。
+CI 为两个 JDK 提供独立完整 Job，并执行安装产物消费烟测。仓库只包含可复用框架代码和最小演示，不应加入具体业务包、业务表结构或业务测试。

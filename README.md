@@ -90,17 +90,9 @@ A parallel failure is not automatically a SmartTest isolation failure; first ins
 
 ## Add the dependency
 
-Add exactly one top-level dependency in test scope. For Java 8 / Boot 2 use:
+Install from source with `mvn clean install` (or install only the matching product line), then add exactly one top-level test-scoped dependency resolved from the local Maven repository. For Java 8 / Boot 2 use:
 
 ```xml
-<repositories>
-    <repository>
-        <id>github</id>
-        <url>https://maven.pkg.github.com/cyaquarius/just-test</url>
-        <snapshots><enabled>true</enabled></snapshots>
-    </repository>
-</repositories>
-
 <dependency>
     <groupId>com.just.test</groupId>
     <artifactId>just-test-boot2</artifactId>
@@ -112,14 +104,6 @@ Add exactly one top-level dependency in test scope. For Java 8 / Boot 2 use:
 For Java 17 / Boot 3 use:
 
 ```xml
-<repositories>
-    <repository>
-        <id>github</id>
-        <url>https://maven.pkg.github.com/cyaquarius/just-test</url>
-        <snapshots><enabled>true</enabled></snapshots>
-    </repository>
-</repositories>
-
 <dependency>
     <groupId>com.just.test</groupId>
     <artifactId>just-test-boot3</artifactId>
@@ -127,8 +111,6 @@ For Java 17 / Boot 3 use:
     <scope>test</scope>
 </dependency>
 ```
-
-GitHub Packages requires credentials in the consumer's `~/.m2/settings.xml`. Keep the token outside the project, for example `${env.GITHUB_PACKAGES_TOKEN}`. A classic PAT needs `read:packages`; private-repository consumers also need `repo`.
 
 Each artifact transitively provides shared `just-test-core` plus the matching platform TestContext, auto-configuration, and test dependencies; consumers do not declare core themselves. Do not depend on both top-level artifacts. The Boot 2 artifact does not bring Spring 6/Boot 3, and the Boot 3 artifact does not bring Spring 5/Boot 2. The former `com.just.test:just-test` coordinate only had SNAPSHOT builds and no stable release, so it migrates directly to `just-test-boot2` without a permanent compatibility shell.
 
@@ -247,7 +229,7 @@ For database expectations, prefer explicit `[C]` fields so the intended row is u
 6. execute user `@AfterEach` methods;
 7. close static and scoped mocks and release the case database, retaining cleanup failures without hiding the original test failure.
 
-## Build and publish
+## Build and verify
 
 An environment with only Java 8 can verify the Boot 2 line independently:
 
@@ -269,4 +251,4 @@ JAVA_HOME=/path/to/jdk17 PATH="$JAVA_HOME/bin:$PATH" \
 
 Both product lines run the same contract suite from `src/contract-test`. Each second command uses a standalone Spring Boot consumer project that declares only the matching top-level SmartTest dependency and resolves the locally installed POM and JAR. On Java 17, `mvn clean install` builds and installs the entire reactor, but it does not replace the real Java 8 verification above.
 
-CI provides independent complete jobs for both JDKs, including the installed-artifact consumer smoke tests. The publishing workflow waits for both verification lines, installs Java 8 and Java 17 as Maven Toolchains, builds core/Boot 2 with Java 8 and Boot 3 with Java 17, runs both contract and consumer tests, and only then deploys the exact validated parent POMs and JARs. A build or smoke-test failure therefore occurs before any deployment. This repository contains reusable framework code and minimal demos only; do not add product-specific packages, schemas, or tests.
+CI provides independent complete jobs for both JDKs, including the installed-artifact consumer smoke tests. This repository contains reusable framework code and minimal demos only; do not add product-specific packages, schemas, or tests.
