@@ -176,6 +176,9 @@
                         <groupId>org.apache.maven.plugins</groupId>
                         <artifactId>maven-source-plugin</artifactId>
                         <version>3.3.1</version>
+                        <configuration>
+                            <skipSource>${just-test.publish.skip}</skipSource>
+                        </configuration>
                         <executions>
                             <execution>
                                 <id>attach-sources</id>
@@ -190,6 +193,7 @@
                         <artifactId>maven-javadoc-plugin</artifactId>
                         <version>3.11.2</version>
                         <configuration>
+                            <skip>${just-test.publish.skip}</skip>
                             <doclint>none</doclint>
                             <quiet>true</quiet>
                             <failOnError>false</failOnError>
@@ -217,9 +221,14 @@
                             </execution>
                         </executions>
                         <configuration>
+                            <skip>${just-test.publish.skip}</skip>
+                            <passphraseEnvName>MAVEN_GPG_PASSPHRASE</passphraseEnvName>
+                            <useAgent>false</useAgent>
                             <gpgArguments>
+                                <arg>--batch</arg>
                                 <arg>--pinentry-mode</arg>
                                 <arg>loopback</arg>
+                                <arg>--yes</arg>
                             </gpgArguments>
                         </configuration>
                     </plugin>

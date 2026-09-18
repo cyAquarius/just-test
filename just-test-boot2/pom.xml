@@ -154,6 +154,7 @@
                                 <configuration>
                                     <flattenMode>oss</flattenMode>
                                     <updatePomFile>true</updatePomFile>
+                                    <pomFile>${project.basedir}/dependency-reduced-pom.xml</pomFile>
                                 </configuration>
                             </execution>
                         </executions>

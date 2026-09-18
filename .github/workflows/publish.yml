@@ -43,10 +43,21 @@ jobs:
             smoke-tests/boot2/pom.xml
             smoke-tests/boot3/pom.xml
           server-id: central
-          server-username: CENTRAL_USERNAME
-          server-password: CENTRAL_PASSWORD
+          server-username-env-var: CENTRAL_USERNAME
+          server-password-env-var: CENTRAL_PASSWORD
           gpg-private-key: ${{ secrets.GPG_PRIVATE_KEY }}
-          gpg-passphrase: ${{ secrets.GPG_PASSPHRASE }}
+          gpg-passphrase-env-var: MAVEN_GPG_PASSPHRASE
+
+      - name: 配置 GnuPG 非交互签名
+        shell: bash
+        run: |
+          set -euo pipefail
+          homedir="${GNUPGHOME:-${HOME}/.gnupg}"
+          mkdir -p "${homedir}"
+          chmod 700 "${homedir}"
+          printf 'pinentry-mode loopback\n' >> "${homedir}/gpg.conf"
+          printf 'allow-loopback-pinentry\n' >> "${homedir}/gpg-agent.conf"
+          gpgconf --kill gpg-agent 2>/dev/null || true
 
       - name: 使用对应 JDK 构建并测试
         run: mvn --batch-mode --no-transfer-progress -Pdual-jdk-release clean install
@@ -93,4 +104,5 @@ jobs:
               exit 1
             fi
           fi
-          mvn --batch-mode --no-transfer-progress -Pdual-jdk-release,central-publish -DskipTests deploy
+          mvn --batch-mode --no-transfer-progress -Pdual-jdk-release,central-publish \
+            -DskipTests -Dgpg.passphraseEnvName=MAVEN_GPG_PASSPHRASE deploy
