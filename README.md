@@ -90,7 +90,7 @@ A parallel failure is not automatically a SmartTest isolation failure; first ins
 
 ## Maven Central
 
-Coordinates use `io.github.cyaquarius`. Java packages remain `com.just.test.smarttest`. Release tags such as `v1.0.0` publish to Maven Central. The tree is currently `1.0.0-SNAPSHOT`; until a release exists, install from source with `mvn install`.
+Coordinates use `io.github.cyaquarius`. Java packages remain `com.just.test.smarttest`. Maven Central publishes only `just-test-boot2` and `just-test-boot3` (`just-test-core` is shaded into those JARs). Release tags such as `v1.0.0` publish; the tree is currently `1.0.0-SNAPSHOT`, so install from source with `mvn install` until a release exists.
 
 Java 8 / Boot 2:
 

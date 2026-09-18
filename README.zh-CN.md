@@ -90,7 +90,7 @@ junit.jupiter.execution.parallel.mode.classes.default=concurrent
 
 ## Maven Central
 
-坐标为 `io.github.cyaquarius`。Java 包名仍是 `com.just.test.smarttest`。正式版通过打 tag（例如 `v1.0.0`）发布到 Maven Central；当前仓库版本是 `1.0.0-SNAPSHOT`，未发 Central 前请本地 `mvn install`。
+坐标为 `io.github.cyaquarius`。Java 包名仍是 `com.just.test.smarttest`。Maven Central **只发布** `just-test-boot2` 与 `just-test-boot3`（`just-test-core` 打进这两个 JAR，不单独上架）。正式版通过打 tag（例如 `v1.0.0`）发布；当前仓库版本是 `1.0.0-SNAPSHOT`，未发 Central 前请本地 `mvn install`。
 
 Java 8 / Boot 2：
 
