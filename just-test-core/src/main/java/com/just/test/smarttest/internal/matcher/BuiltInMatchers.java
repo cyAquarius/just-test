@@ -16,7 +16,7 @@ import java.util.regex.Pattern;
  *   <tr><td>CN</td><td>Condition + Not exist — 定位后断言行不存在</td><td>expect</td><td>{@code id[CN]: 1}</td></tr>
  *   <tr><td>R</td><td>Regex — 正则匹配</td><td>expect</td><td>{@code name[R]: "张.*"}</td></tr>
  *   <tr><td>A</td><td>Available — 非空断言</td><td>expect</td><td>{@code create_by[A]:}</td></tr>
- *   <tr><td>D</td><td>Date — 日期容差比较（秒）</td><td>expect</td><td>{@code gmt_create[D60]:} 60秒内</td></tr>
+ *   <tr><td>D</td><td>Date — 相对当前时刻的新鲜度（秒），YAML 期望值不比较</td><td>expect</td><td>{@code gmt_create[D60]:} 距现在 60 秒内</td></tr>
  *   <tr><td>J</td><td>JSON — JSON 结构比较</td><td>expect</td><td>{@code ext_info[J]: '{"k":"v"}'}</td></tr>
  *   <tr><td>F</td><td>Function — DB 函数（prepare 阶段插入）</td><td>prepare</td><td>{@code gmt_create[F]: "NOW()"}</td></tr>
  * </table>
@@ -33,7 +33,7 @@ public final class BuiltInMatchers {
     public static final String FLAG_R = "R";
     /** Available — 非空断言 */
     public static final String FLAG_A = "A";
-    /** Date — 日期容差比较 */
+    /** Date — 相对当前时刻的新鲜度（秒）；YAML 期望值不参与比较 */
     public static final String FLAG_D = "D";
     /** JSON — JSON 结构比较 */
     public static final String FLAG_J = "J";
@@ -96,10 +96,11 @@ public final class BuiltInMatchers {
     // ==================== 统一 Flag 断言 ====================
 
     /**
-     * 对 matcher 类 flag（A/R/D/J）执行断言，消除 DataSetVerifier 与 ResultVerifier 的重复分发逻辑。
+     * 对 matcher 类 flag（A/R/D/J）执行断言，消除 DataSetVerifier、ResultVerifier
+     * 与 ExceptionVerifier 的重复分发逻辑。
      *
-     * <p>处理的 flag：A（非空）、R（正则）、D/Dxx（日期容差）、J（JSON 结构）。
-     * 不处理 C/CN/N 和默认精确匹配（Y），由调用方自行处理。</p>
+     * <p>处理的 flag：A（非空）、R（正则）、D/Dxx（相对当前时刻的新鲜度）、J（JSON 结构）。
+     * {@code [D]} 忽略 YAML 期望值。不处理 C/CN/N 和默认精确匹配（Y），由调用方自行处理。</p>
      *
      * @param flag          bracket flag（如 "A"、"R"、"D60"、"J"），null 表示无 flag
      * @param expectedValue YAML 中的期望值
@@ -156,7 +157,8 @@ public final class BuiltInMatchers {
     }
 
     /**
-     * 创建日期容差匹配器。
+     * 创建日期新鲜度匹配器：实际时间须落在距当前时刻 {@code toleranceSeconds} 秒内。
+     * YAML 期望值不参与比较。
      */
     public static FieldMatcher dateMatcher(int toleranceSeconds) {
         return new DateMatcher(toleranceSeconds);
@@ -230,7 +232,7 @@ public final class BuiltInMatchers {
 
         @Override
         public String describe() {
-            return "[D" + toleranceSeconds + "]";
+            return "[D" + toleranceSeconds + "] (within " + toleranceSeconds + "s of now)";
         }
     }
 

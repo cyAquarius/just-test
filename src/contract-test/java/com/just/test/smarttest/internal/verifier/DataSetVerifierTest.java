@@ -9,6 +9,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class DataSetVerifierTest {
@@ -55,5 +56,17 @@ class DataSetVerifierTest {
         } finally {
             dataSource.destroy();
         }
+    }
+
+    @Test
+    void rejectsUnsafeWhereColumnNames() {
+        Map<String, Object> expectedRow = new LinkedHashMap<>();
+        expectedRow.put("id;drop[C]", 1);
+        Map<String, Object> expected = new LinkedHashMap<>();
+        expected.put("sample", Arrays.asList(expectedRow));
+
+        IllegalArgumentException error = assertThrows(IllegalArgumentException.class,
+                () -> DataSetVerifier.verifyFromMap(new JdbcTemplate(), expected));
+        assertTrue(error.getMessage().contains("column name"), error.getMessage());
     }
 }

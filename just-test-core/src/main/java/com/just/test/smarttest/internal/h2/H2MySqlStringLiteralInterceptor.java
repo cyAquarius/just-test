@@ -20,9 +20,10 @@ import java.util.Properties;
  * 双引号限定的标识符。改写规则：将这些位置的 {@code "X"} 替换为 {@code 'X'}，
  * 并把原字符串内的单引号转义 {@code "'"} → {@code ''''}。
  * <p>
- * <b>范围：</b>仅在测试环境（src/test）生效，不影响生产代码和生产 SQL。
+ * <b>范围：</b>由 SmartTest 装到消费测试的 {@code SqlSessionFactory} 上，
+ * 只改写测试运行中的 MyBatis SQL；生产 Mapper 与纯 {@code JdbcTemplate} 不走此拦截器。
  *
- * @see H2MySqlIfInterceptor 同类拦截器：IF(...) → CASEWHEN(...)
+ * @see H2MySqlIfInterceptor 同类拦截器：IF(...) → CASEWHEN(...)、DATE_FORMAT → FORMATDATETIME
  */
 @Intercepts({
         @Signature(type = StatementHandler.class, method = "prepare", args = {Connection.class, Integer.class})

@@ -2,9 +2,6 @@ package com.just.test.smarttest.internal.verifier;
 
 import com.just.test.smarttest.internal.loader.DataSetLoader;
 import com.just.test.smarttest.internal.matcher.BuiltInMatchers;
-import com.just.test.smarttest.internal.matcher.FieldMatcher;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -35,8 +32,6 @@ import java.util.Map;
  * </ol>
  */
 public class ExceptionVerifier {
-
-    private static final Logger log = LoggerFactory.getLogger(ExceptionVerifier.class);
 
     /**
      * 校验异常是否符合 expect_exception.yaml 的声明。
@@ -107,31 +102,19 @@ public class ExceptionVerifier {
         Object expectedValue = expectData.get(messageKey);
         String actualMessage = actual.getMessage();
 
-        // N — 跳过
         if (BuiltInMatchers.FLAG_N.equals(flag)) {
             return;
         }
 
-        // A — 非空断言
-        if (BuiltInMatchers.FLAG_A.equals(flag)) {
-            if (actualMessage == null) {
-                failures.add("[exception.message]: expected not null but got null");
+        String matcherResult = BuiltInMatchers.assertMatcherFlag(
+                flag, expectedValue, actualMessage, "exception.message");
+        if (matcherResult != null) {
+            if (!matcherResult.isEmpty()) {
+                failures.add(matcherResult);
             }
             return;
         }
 
-        // R — 正则匹配
-        if (BuiltInMatchers.FLAG_R.equals(flag)) {
-            String pattern = expectedValue == null ? "" : expectedValue.toString();
-            FieldMatcher matcher = BuiltInMatchers.regexMatcher(pattern);
-            if (!matcher.matches(actualMessage)) {
-                failures.add(String.format("[exception.message]: expected %s but got <%s>",
-                        matcher.describe(), actualMessage));
-            }
-            return;
-        }
-
-        // Y（默认）— 精确匹配
         String expectedStr = expectedValue == null ? null : expectedValue.toString();
         if (expectedStr == null && actualMessage != null) {
             failures.add(String.format("[exception.message]: expected null but got <%s>", actualMessage));

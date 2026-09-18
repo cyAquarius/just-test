@@ -6,11 +6,14 @@ import org.springframework.jdbc.datasource.SingleConnectionDataSource;
 
 import java.util.Arrays;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class DataSetLoaderTest {
 
@@ -39,5 +42,28 @@ class DataSetLoaderTest {
         } finally {
             dataSource.destroy();
         }
+    }
+
+    @Test
+    void parseYamlByPathNormalizesFlowSequenceFlagKeys() {
+        Map<String, Object> yaml = DataSetLoader.parseYamlByPath(
+                "com/just/test/smarttest/internal/loader/flow-keys", "prepare.yaml");
+        assertNotNull(yaml);
+        @SuppressWarnings("unchecked")
+        Map<String, Object> row = ((List<Map<String, Object>>) yaml.get("loader_flow")).get(0);
+        assertTrue(row.containsKey("[N]"));
+        assertEquals("ok", row.get("name"));
+    }
+
+    @Test
+    void rejectsUnsafeColumnNames() {
+        Map<String, Object> row = new LinkedHashMap<>();
+        row.put("id;drop", 1);
+        Map<String, Object> data = new LinkedHashMap<>();
+        data.put("loader_sample", Arrays.asList(row));
+
+        IllegalArgumentException error = assertThrows(IllegalArgumentException.class,
+                () -> DataSetLoader.loadFromMap(new JdbcTemplate(), data, "test"));
+        assertTrue(error.getMessage().contains("column name"), error.getMessage());
     }
 }

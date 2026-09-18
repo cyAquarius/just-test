@@ -140,6 +140,7 @@ public final class SmartTestExtension implements BeforeEachCallback, AfterEachCa
             lifecycle.beforeExecute(caseContext);
 
             try {
+                // JUnit test-template 方法是 void；结果必须由测试调用 CaseContext#setResult。
                 invocation.proceed();
             } catch (Throwable failure) {
                 caseContext.setException(failure);

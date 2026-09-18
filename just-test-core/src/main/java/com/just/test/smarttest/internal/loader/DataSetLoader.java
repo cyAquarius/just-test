@@ -24,12 +24,13 @@ import java.util.regex.Pattern;
 /**
  * YAML 数据集加载器（ACTS 2.0 风格）。
  *
- * <p>从测试类同包加载 YAML 文件，解析 prepare 块并将数据 INSERT 到 H2。</p>
+ * <p>从 classpath 上的 case 目录加载 YAML（{@code casePath/prepare.yaml} 等），
+ * 解析 prepare 块并将数据 INSERT 到 H2。</p>
  */
 public class DataSetLoader {
 
     private static final Logger log = LoggerFactory.getLogger(DataSetLoader.class);
-    private static final Pattern SAFE_TABLE_NAME = Pattern.compile("^[a-zA-Z0-9_]+$");
+    private static final Pattern SAFE_SQL_IDENTIFIER = Pattern.compile("^[a-zA-Z0-9_]+$");
     private static final String ALL_TABLES_SQL =
             "SELECT TABLE_NAME FROM INFORMATION_SCHEMA.TABLES "
                     + "WHERE TABLE_SCHEMA = CURRENT_SCHEMA() AND TABLE_TYPE = 'BASE TABLE'";
@@ -38,9 +39,20 @@ public class DataSetLoader {
      * 校验表名只包含安全字符（字母、数字、下划线）。
      */
     public static void validateTableName(String tableName) {
-        if (tableName == null || !SAFE_TABLE_NAME.matcher(tableName).matches()) {
+        validateSqlIdentifier(tableName, "table name");
+    }
+
+    /**
+     * 校验列名只包含安全字符（字母、数字、下划线）。
+     */
+    public static void validateColumnName(String columnName) {
+        validateSqlIdentifier(columnName, "column name");
+    }
+
+    private static void validateSqlIdentifier(String name, String kind) {
+        if (name == null || !SAFE_SQL_IDENTIFIER.matcher(name).matches()) {
             throw new IllegalArgumentException(
-                    "[SmartTest] Invalid table name: " + tableName + " — only [a-zA-Z0-9_] allowed");
+                    "[SmartTest] Invalid " + kind + ": " + name + " — only [a-zA-Z0-9_] allowed");
         }
     }
 
@@ -62,10 +74,12 @@ public class DataSetLoader {
     }
 
     /**
-     * 清空当前 Schema 的全部业务表，避免测试间数据污染。
+     * 清空当前 Schema 的全部业务表。
      *
-     * <p>不能以 H2 的行数估算决定是否清理：它是性能统计，不是隔离正确性信号。
-     * 后续若需要优化，应使用精确的写表跟踪，而不是跳过可能残留的表。</p>
+     * <p>不是 case 主路径：每个 case 使用独立内存库，框架不靠 TRUNCATE 做隔离。
+     * 仅契约测试或需要在同一连接上重置表数据时调用。</p>
+     *
+     * <p>不能以 H2 的行数估算决定是否清理：它是性能统计，不是隔离正确性信号。</p>
      */
     public static void cleanTables(JdbcTemplate jdbcTemplate) {
         jdbcTemplate.execute((ConnectionCallback<Void>) connection -> {
@@ -127,9 +141,17 @@ public class DataSetLoader {
      * @param fileName 文件名（如 prepare.yaml、expect.yaml）
      * @return YAML 数据 Map，文件不存在返回 null
      */
+    @SuppressWarnings("unchecked")
     public static Map<String, Object> parseYamlByPath(String casePath, String fileName) {
-        String resourcePath = casePath + "/" + fileName;
-        return parseYamlFromResource(resourcePath);
+        Object raw = parseYamlRaw(casePath, fileName);
+        if (raw == null) {
+            return null;
+        }
+        if (!(raw instanceof Map)) {
+            throw new IllegalArgumentException(
+                    "[SmartTest] YAML must be a mapping: " + casePath + "/" + fileName);
+        }
+        return (Map<String, Object>) raw;
     }
 
     /**
@@ -210,22 +232,6 @@ public class DataSetLoader {
         return String.valueOf(key);
     }
 
-    @SuppressWarnings("unchecked")
-    private static Map<String, Object> parseYamlFromResource(String resourcePath) {
-        try (InputStream is = Thread.currentThread().getContextClassLoader().getResourceAsStream(resourcePath)) {
-            if (is == null) {
-                log.debug("[SmartTest] YAML file not found: {}", resourcePath);
-                return null;
-            }
-            Yaml yaml = new Yaml(new SafeConstructor(new LoaderOptions()));
-            return (Map<String, Object>) yaml.load(new InputStreamReader(is, StandardCharsets.UTF_8));
-        } catch (RuntimeException e) {
-            throw e;
-        } catch (Exception e) {
-            throw new RuntimeException("[SmartTest] Failed to parse YAML: " + resourcePath, e);
-        }
-    }
-
     private static void insertRows(JdbcTemplate jdbcTemplate, String tableName, List<Map<String, Object>> rows) {
         int insertedCount = 0;
         for (Map<String, Object> row : rows) {
@@ -246,6 +252,7 @@ public class DataSetLoader {
                     continue;
                 }
 
+                validateColumnName(fieldName);
                 columns.add(fieldName);
 
                 // F flag — DB 函数，直接拼入 SQL（如 NOW()）

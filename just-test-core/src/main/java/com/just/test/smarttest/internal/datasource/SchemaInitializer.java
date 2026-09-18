@@ -64,7 +64,7 @@ public class SchemaInitializer {
             return;
         }
         String dbKey = routingDataSource == null ? "external" : routingDataSource.currentDbKey();
-        log.info("[SmartTest] Initializing schema for database [{}]", dbKey);
+        log.debug("[SmartTest] Initializing schema for database [{}]", dbKey);
 
         try {
             List<String> cleanedDdls = getCachedSchema(schemaLocations);
@@ -105,7 +105,7 @@ public class SchemaInitializer {
                     String ddl = readResource(resource);
                     String cleaned = cleanMySqlSyntax(ddl);
                     cleanedDdls.add(cleaned);
-                    log.info("[SmartTest] Schema loaded and cleaned: {}", resource.getFilename());
+                    log.debug("[SmartTest] Schema loaded and cleaned: {}", resource.getFilename());
                 }
             }
             return Collections.unmodifiableList(cleanedDdls);

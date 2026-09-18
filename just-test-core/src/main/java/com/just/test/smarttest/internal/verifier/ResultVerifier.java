@@ -23,7 +23,7 @@ import java.util.Set;
  *   <li>{@code [N]} — 跳过</li>
  *   <li>{@code [R]} — 正则匹配</li>
  *   <li>{@code [A]} — 非空断言</li>
- *   <li>{@code [D]}/{@code [D60]} — 日期容差</li>
+ *   <li>{@code [D]}/{@code [D60]} — 实际时间距当前时刻 N 秒内（YAML 期望值不比较）</li>
  *   <li>{@code [J]} — JSON 结构比较</li>
  *   <li>{@code [C]} — List 元素定位键（无序匹配）</li>
  *   <li>无 flag — 精确断言（Y）</li>

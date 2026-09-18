@@ -174,6 +174,8 @@ class OrderServiceSmartTest implements SmartTestLifecycle {
 }
 ```
 
+框架不会从 `@CaseSource` 方法的返回值采集结果（方法本身是 `void`）。要用 `response.yaml` 或 `verifyResult` 时必须调用 `context.setResult(...)`；漏写则按 `null` 断言。
+
 `@SmartTest` 已包含 Spring Boot bootstrapper，并通过 `test` profile 加载 `application-test.yml`，不要再组合 `@SpringBootTest` 或重复声明 `@BootstrapWith`。独立测试包内应只有一个可发现的 `@SpringBootConfiguration`。测试类不在其子包下、存在多个候选启动配置或某个测试需要特殊配置时，再使用 `@ContextConfiguration(classes = SmartTestApplication.class)` 显式选择。
 
 同类型有多个候选 Bean 时，使用 `@SmartMock(name = "beanName")` 或 `@Qualifier("beanName")`。替换 Spring Bean 时优先使用 `@SmartMock`，不要求使用 `@MockBean`。
@@ -212,7 +214,7 @@ src/test/resources/com/example/smarttest/order/OrderServiceSmartTest/
 
 - `request.yaml`：通过 `CaseContext` 的 `getString`、`getLong`、`getInt`、`getObject`、`getList`、`getMap` 获取输入。
 - `prepare.yaml`：case 执行前插入的数据。
-- `response.yaml`：预期返回值。
+- `response.yaml`：预期返回值。只与 `CaseContext.setResult` 写入的对象比较，不会读取测试方法的 Java 返回值。
 - `expect.yaml`：预期数据库记录。
 - `expect_exception.yaml`：预期异常类型及可选消息。
 

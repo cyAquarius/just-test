@@ -198,6 +198,12 @@ public class CaseContext {
         return result;
     }
 
+    /**
+     * 写入本 case 的业务返回值，供 {@code response.yaml} / {@code verifyResult} 使用。
+     *
+     * <p>框架不会从 {@code @CaseSource} 方法的返回值自动采集结果；
+     * 需要结果断言时必须显式调用本方法。</p>
+     */
     public void setResult(Object result) {
         this.result = result;
     }

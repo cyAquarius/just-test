@@ -229,7 +229,7 @@ public class SmartTestRoutingDataSource extends AbstractDataSource implements Di
         dataSource.setUsername("sa");
         dataSource.setPassword("");
         dataSource.setSuppressClose(true);
-        log.info("[SmartTest] Created H2 database for case [{}]: {}", key, url);
+        log.debug("[SmartTest] Created H2 database for case [{}]: {}", key, url);
         return dataSource;
     }
 

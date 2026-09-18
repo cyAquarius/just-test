@@ -174,6 +174,8 @@ class OrderServiceSmartTest implements SmartTestLifecycle {
 }
 ```
 
+SmartTest does not collect the `@CaseSource` method's Java return value (the method is `void`). Call `context.setResult(...)` when `response.yaml` or `verifyResult` should see a result; omitting it asserts against `null`.
+
 `@SmartTest` already includes the Spring Boot bootstrapper and loads `application-test.yml` through the `test` profile. Do not combine it with `@SpringBootTest` or declare another `@BootstrapWith`. The dedicated test package should expose exactly one `@SpringBootConfiguration`. Use `@ContextConfiguration(classes = SmartTestApplication.class)` only when a test is outside that package hierarchy, several startup configurations are candidates, or that test needs a special configuration.
 
 Use `@SmartMock(name = "beanName")` or `@Qualifier("beanName")` when a type has multiple candidates. Prefer `@SmartMock` when replacing Spring beans; `@MockBean` is not required.
@@ -212,7 +214,7 @@ src/test/resources/com/example/smarttest/order/OrderServiceSmartTest/
 
 - `request.yaml`: input exposed through `CaseContext` (`getString`, `getLong`, `getInt`, `getObject`, `getList`, and `getMap`).
 - `prepare.yaml`: rows inserted before the case.
-- `response.yaml`: expected return value.
+- `response.yaml`: expected return value. Compared only to the object written with `CaseContext.setResult`, not the test method's Java return value.
 - `expect.yaml`: expected database rows.
 - `expect_exception.yaml`: expected exception type and optional message.
 

@@ -20,7 +20,7 @@ import java.util.Map;
  *   <li>{@code [CN]} — 定位后断言行不存在</li>
  *   <li>{@code [R]} — 正则匹配</li>
  *   <li>{@code [A]} — 非空断言</li>
- *   <li>{@code [D]} / {@code [D60]} — 日期容差比较</li>
+ *   <li>{@code [D]} / {@code [D60]} — 实际时间距当前时刻 N 秒内（YAML 期望值不比较）</li>
  *   <li>{@code [J]} — JSON 结构比较</li>
  *   <li>无 flag — 精确断言（Y）</li>
  * </ul>
@@ -180,6 +180,7 @@ public class DataSetVerifier {
 
     private static void appendCondition(StringBuilder where, List<Object> params,
                                         String fieldName, Object value) {
+        DataSetLoader.validateColumnName(fieldName);
         if (where.length() > 0) {
             where.append(" AND ");
         }

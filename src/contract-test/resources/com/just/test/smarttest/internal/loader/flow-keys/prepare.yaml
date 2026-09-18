@@ -1,0 +1,4 @@
+loader_flow:
+  - id: 1
+    [N]: skip-me
+    name: ok
