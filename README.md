@@ -2,7 +2,7 @@
 
 [中文文档](README.zh-CN.md)
 
-`just-test` is a reusable Java test toolkit. SmartTest provides the same public packages and core semantics for Spring Boot 2 and Spring Boot 3 through two independent product lines.
+`just-test` is a reusable Java test toolkit licensed under the [Apache License 2.0](LICENSE). SmartTest provides the same public packages and core semantics for Spring Boot 2 and Spring Boot 3 through two independent product lines.
 
 It is deliberately a test-scope framework: it supplies repeatable test setup, assertions, and test doubles, but it does not replace application design, production database compatibility testing, or concurrency control in application code.
 
@@ -87,6 +87,23 @@ A parallel failure is not automatically a SmartTest isolation failure; first ins
 4. **Unstubbed external dependencies plus business fail-open**
    - **Wrong:** Leave critical external dependencies unstubbed while business code swallows an exception or treats it as success; parallel timing and return values can make this look like a framework flake.
    - **Right:** Stub critical collaborators in `beforeExecute` / `@BeforeCase` and assert success and exception paths explicitly; do not pass undefined external return values into business fail-open logic.
+
+## Maven Central
+
+Coordinates use `io.github.cyaquarius`. Java packages remain `com.just.test.smarttest`. Release tags such as `v1.0.0` publish to Maven Central. The tree is currently `1.0.0-SNAPSHOT`; until a release exists, install from source with `mvn install`.
+
+Java 8 / Boot 2:
+
+```xml
+<dependency>
+    <groupId>io.github.cyaquarius</groupId>
+    <artifactId>just-test-boot2</artifactId>
+    <version>1.0.0</version>
+    <scope>test</scope>
+</dependency>
+```
+
+Java 17 / Boot 3: use `just-test-boot3`. Do not depend on both top-level artifacts; `just-test-core` is transitive.
 
 ## Public API
 

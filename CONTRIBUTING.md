@@ -14,13 +14,13 @@ GitHub 的 `[skip ci]` / `[ci skip]` 会跳过本仓库的验证与发布工作�
 
 ## SNAPSHOT 与正式版本
 
-当前坐标为 `1.0.0-SNAPSHOT`，供本地 `mvn install` 与契约/烟测使用。
+当前坐标为 `io.github.cyaquarius:*:1.0.0-SNAPSHOT`，供本地 `mvn install` 与契约/烟测使用。正式版发到 Maven Central，不走 GitHub Packages。
 
 发布正式版本时：
 
-1. 去掉 `-SNAPSHOT`；
-2. 在真实 JDK 上跑通 Boot 2（Java 8 + Spring Boot 2.7.18）与 Boot 3（Java 17 + Spring Boot 3.5.16）；
-3. 打 tag（例如 `v1.0.0`）并合并到 `main`，不要使用 `[skip ci]`。产物不通过本仓库的 GitHub Actions 发布。
+1. `main` 上验证通过，不要使用 `[skip ci]`；
+2. 打 tag（例如 `v1.0.0`）并 push。CI 会去掉 SNAPSHOT、签名并上传 Central；
+3. 仓库需已配置 Secrets：`CENTRAL_USERNAME`、`CENTRAL_PASSWORD`、`GPG_PRIVATE_KEY`、`GPG_PASSPHRASE`。
 
 ## 如何构建双产品线
 

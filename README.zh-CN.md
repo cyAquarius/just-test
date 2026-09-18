@@ -2,7 +2,7 @@
 
 [English](README.md)
 
-`just-test` 是可复用的 Java 测试工具库。SmartTest 通过两个独立产品线为 Spring Boot 2 和 Spring Boot 3 提供相同包名与核心语义的 YAML 驱动集成测试能力。
+`just-test` 是可复用的 Java 测试工具库，采用 [Apache License 2.0](LICENSE)。SmartTest 通过两个独立产品线为 Spring Boot 2 和 Spring Boot 3 提供相同包名与核心语义的 YAML 驱动集成测试能力。
 
 它定位为测试范围框架：负责可重复的测试准备、断言与替身，不替代业务架构、生产数据库兼容性验证或业务代码的并发治理。
 
@@ -87,6 +87,23 @@ junit.jupiter.execution.parallel.mode.classes.default=concurrent
 4. **未 stub 的外部依赖配合业务 fail-open**
    - **错误：** 关键外部依赖未 stub，业务又把异常吞掉或将异常当作成功；并行时不同返回值和时序会让它看起来像 framework flake。
    - **正确：** 在 `beforeExecute` / `@BeforeCase` 中为关键外部协作者设置明确 stub，并显式断言成功与异常路径；不要把未定义的外部返回值交给业务 fail-open 逻辑。
+
+## Maven Central
+
+坐标为 `io.github.cyaquarius`。Java 包名仍是 `com.just.test.smarttest`。正式版通过打 tag（例如 `v1.0.0`）发布到 Maven Central；当前仓库版本是 `1.0.0-SNAPSHOT`，未发 Central 前请本地 `mvn install`。
+
+Java 8 / Boot 2：
+
+```xml
+<dependency>
+    <groupId>io.github.cyaquarius</groupId>
+    <artifactId>just-test-boot2</artifactId>
+    <version>1.0.0</version>
+    <scope>test</scope>
+</dependency>
+```
+
+Java 17 / Boot 3：把 `artifactId` 换成 `just-test-boot3`。不要同时引入两个顶层 artifact；`just-test-core` 会传递进来，不必再声明。
 
 ## 公开 API
 

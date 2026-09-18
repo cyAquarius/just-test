@@ -22,7 +22,7 @@
 
     <dependencies>
         <dependency>
-            <groupId>com.just.test</groupId>
+            <groupId>io.github.cyaquarius</groupId>
             <artifactId>just-test-boot2</artifactId>
             <version>${just-test.version}</version>
             <scope>test</scope>
