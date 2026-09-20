@@ -139,6 +139,7 @@ public class SmartTestApplication {
 SmartTest Context 使用框架提供的 H2 `DataSource`、事务管理器和 `JdbcTemplate`。测试启动配置不得同时加载生产 `DataSource`、事务管理器或其他数据库基础设施配置；请通过 `test` profile 或组件扫描排除这些生产配置。框架内部会精确连接自身 H2，但不会改写用户 Bean 的 `@Primary` 属性，也不会替测试选择生产与测试数据源。
 
 ```java
+// src/test/java/com/example/smarttest/order/OrderServiceSmartTest.java
 @SmartTest
 class OrderServiceSmartTest implements SmartTestLifecycle {
 
@@ -177,10 +178,13 @@ public void configureStaticMocks(CaseContext context, StaticMockContext mocks) {
 
 Boot 2 使用 Mockito 4，静态 Mock 或 final 类型 Mock 要求消费工程显式启用 inline mock maker，例如在 `src/test/resources/mockito-extensions/org.mockito.plugins.MockMaker` 写入 `mock-maker-inline`，或引入版本一致的 `mockito-inline`。Boot 3 使用 Mockito 5，其默认 mock maker 已是 inline；若消费工程覆盖了 MockMaker，仍需自行保证静态/final Mock 能力。SmartTest 不会全局指定 MockMaker，避免覆盖消费工程已有配置。
 
-类名这一层是必选契约。默认只探测 `{packagePath}/{SimpleClassName}/*/*.yaml|yml`，不会扫描包级 YAML。
+类名这一层是必选契约。发现路径不变：框架只探测 classpath 上的 `{package}/{SimpleClassName}/{case}/`（默认 `{packagePath}/{SimpleClassName}/*/*.yaml|yml`），不会扫描包级 YAML。
+
+**人类和 AI 的推荐默认**：把 case YAML 放在 `src/test/java` 里、紧挨测试类，避免在 `java` 与 `resources` 两棵树之间跳：
 
 ```text
-src/test/resources/com/example/smarttest/order/OrderServiceSmartTest/
+src/test/java/com/example/smarttest/order/OrderServiceSmartTest.java
+src/test/java/com/example/smarttest/order/OrderServiceSmartTest/
 └── create-order/
     ├── request.yaml
     ├── prepare.yaml
@@ -189,9 +193,32 @@ src/test/resources/com/example/smarttest/order/OrderServiceSmartTest/
     └── expect_exception.yaml
 ```
 
-`@CaseSource("custom-root")` 是显式逃生口，解析为 `{packagePath}/{custom-root}/`。类名根或自定义根缺失时直接以 `No YAML case directories found` 失败，不会静默回退到包目录。
+Maven 默认不会从 `src/test/java` 拷 YAML，需要写进 `testResources`。`src/test/resources` 留给 `sql/schema.sql`、`application-test.yml` 等共享夹具（也可作为 case 的备选位置）：
 
-YAML 按测试 classpath 解析，因此既可以放在 `src/test/resources`，也可以通过 `testResources` 把 `**/*.yaml`（以及 `**/*.yml`）映射进去，把用例与测试类一起放在 `src/test/java`。
+```xml
+<build>
+    <testResources>
+        <testResource>
+            <directory>src/test/java</directory>
+            <includes>
+                <include>**/*.yaml</include>
+                <include>**/*.yml</include>
+            </includes>
+        </testResource>
+        <testResource>
+            <directory>src/test/resources</directory>
+        </testResource>
+    </testResources>
+</build>
+```
+
+只放 `src/test/resources` 的镜像布局仍然可用，但是次要选项。classpath 路径相同：
+
+```text
+src/test/resources/com/example/smarttest/order/OrderServiceSmartTest/create-order/
+```
+
+`@CaseSource("custom-root")` 是显式逃生口，解析为 `{packagePath}/{custom-root}/`。类名根或自定义根缺失时直接以 `No YAML case directories found` 失败，不会静默回退到包目录。
 
 ## YAML 文件与 Flag
 

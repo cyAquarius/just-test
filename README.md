@@ -139,6 +139,7 @@ public class SmartTestApplication {
 The SmartTest context uses the H2 `DataSource`, transaction manager, and `JdbcTemplate` supplied by the framework. Its test startup configuration must not also load production `DataSource`, transaction-manager, or other database-infrastructure configurations; exclude them with the `test` profile or component-scan filters. The framework wires its own infrastructure explicitly, but does not rewrite user Bean `@Primary` metadata or choose between production and test data sources on the consumer's behalf.
 
 ```java
+// src/test/java/com/example/smarttest/order/OrderServiceSmartTest.java
 @SmartTest
 class OrderServiceSmartTest implements SmartTestLifecycle {
 
@@ -177,10 +178,13 @@ Unstubbed static methods continue to call their real implementation. Do not clos
 
 Boot 2 uses Mockito 4, so static mocks and final-type mocks require the consumer to enable the inline mock maker explicitly, for example by putting `mock-maker-inline` in `src/test/resources/mockito-extensions/org.mockito.plugins.MockMaker` or adding the matching `mockito-inline`. Boot 3 uses Mockito 5, whose default mock maker is inline; consumers that override the MockMaker still own static/final mock support. SmartTest does not select a MockMaker globally, avoiding conflicts with consumer configuration.
 
-The class-name layer is required. By default SmartTest probes only `{packagePath}/{SimpleClassName}/*/*.yaml|yml`; it does not scan package-level YAML.
+The class-name layer is required. Discovery is unchanged: SmartTest probes only the classpath path `{package}/{SimpleClassName}/{case}/` (default `{packagePath}/{SimpleClassName}/*/*.yaml|yml`). It does not scan package-level YAML.
+
+**Recommended default** for humans and AI: put case YAML beside the test class under `src/test/java`, so you do not jump between the `java` and `resources` trees:
 
 ```text
-src/test/resources/com/example/smarttest/order/OrderServiceSmartTest/
+src/test/java/com/example/smarttest/order/OrderServiceSmartTest.java
+src/test/java/com/example/smarttest/order/OrderServiceSmartTest/
 └── create-order/
     ├── request.yaml
     ├── prepare.yaml
@@ -189,9 +193,32 @@ src/test/resources/com/example/smarttest/order/OrderServiceSmartTest/
     └── expect_exception.yaml
 ```
 
-`@CaseSource("custom-root")` is the explicit escape hatch and resolves to `{packagePath}/{custom-root}/`. A missing class-named or custom root fails with `No YAML case directories found`; there is no silent fallback to the package directory.
+Maven does not copy YAML from `src/test/java` unless you include it in `testResources`. Keep `src/test/resources` for `sql/schema.sql`, `application-test.yml`, and other shared fixtures (and as an optional alternate for cases):
 
-YAML is resolved from the test classpath, so cases may live under `src/test/resources` or be co-located next to the test class under `src/test/java` if the consumer maps `**/*.yaml` (and `**/*.yml`) into `testResources`.
+```xml
+<build>
+    <testResources>
+        <testResource>
+            <directory>src/test/java</directory>
+            <includes>
+                <include>**/*.yaml</include>
+                <include>**/*.yml</include>
+            </includes>
+        </testResource>
+        <testResource>
+            <directory>src/test/resources</directory>
+        </testResource>
+    </testResources>
+</build>
+```
+
+A resources-only mirror still works and is secondary. The classpath path is the same:
+
+```text
+src/test/resources/com/example/smarttest/order/OrderServiceSmartTest/create-order/
+```
+
+`@CaseSource("custom-root")` is the explicit escape hatch and resolves to `{packagePath}/{custom-root}/`. A missing class-named or custom root fails with `No YAML case directories found`; there is no silent fallback to the package directory.
 
 ## YAML files and flags
 

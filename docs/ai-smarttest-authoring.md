@@ -25,12 +25,15 @@ SmartTest 面向 **YAML 用例 + 薄 Java glue**，不是手写 assert 堆。本
 
 完整启动类示例见 README「编写测试」。
 
-## 用例目录与简单类名层
+## 用例目录（推荐与测试类同目录）
 
-默认布局：
+发现路径不变：`{package}/{SimpleClassName}/{case}/`。类名层是必选锚点，没有包级回退。
+
+**默认写在测试类旁边**（人类和 AI 都按这个来，避免在 `java` / `resources` 之间跳）：
 
 ```text
-src/test/resources/<test-class-package>/<SimpleClassName>/<case-name>/
+src/test/java/com/example/smarttest/order/OrderServiceSmartTest.java
+src/test/java/com/example/smarttest/order/OrderServiceSmartTest/create-order/
 ├── request.yaml
 ├── prepare.yaml
 ├── response.yaml
@@ -38,23 +41,37 @@ src/test/resources/<test-class-package>/<SimpleClassName>/<case-name>/
 └── expect_exception.yaml
 ```
 
-例如 `com.example.smarttest.order.OrderServiceSmartTest` 的 `create-order`：
+消费工程要让 Maven 把 `src/test/java` 里的 yaml 拷进测试 classpath：
 
-```text
-src/test/resources/com/example/smarttest/order/OrderServiceSmartTest/create-order/
+```xml
+<build>
+    <testResources>
+        <testResource>
+            <directory>src/test/java</directory>
+            <includes>
+                <include>**/*.yaml</include>
+                <include>**/*.yml</include>
+            </includes>
+        </testResource>
+        <testResource>
+            <directory>src/test/resources</directory>
+        </testResource>
+    </testResources>
+</build>
 ```
 
-**为什么要简单类名这一层：** 同一包下可以有多个 `@SmartTest` 类。类名目录是必选锚点，把每个测试类的 YAML 隔开。框架不会扫描包级 YAML；类名根缺失时直接以 `No YAML case directories found` 失败。
+`src/test/resources` 留给 `sql/schema.sql`、`application-test.yml`。resources-only 镜像（`src/test/resources/<package>/<SimpleClassName>/<case>/`）仍然可用，但是次要选项；本仓库契约/烟测演示仍用这种备选，不要为了「跟文档一致」去搬它们。
 
-**逃生口：** `@CaseSource("custom-root")` 使用测试类包下的自定义根，例如 `src/test/resources/com/example/smarttest/order/custom-root/<case-name>/`。自定义根缺失同样 fail-fast，不会回退到包目录。自定义根仍应按类或职责隔离，不要把多个类的 case 倒进同一个无差别目录。
+**为什么要简单类名这一层：** 同一包下可以有多个 `@SmartTest` 类。类名目录把每个测试类的 YAML 隔开。框架不会扫描包级 YAML；类名根缺失时直接以 `No YAML case directories found` 失败。
 
-YAML 按测试 classpath 解析；也可通过 `testResources` 把 `**/*.yaml` 映射进 `src/test/java`，与测试类放在一起。
+**逃生口：** `@CaseSource("custom-root")` 使用测试类包下的自定义根，例如同目录下的 `.../order/custom-root/<case-name>/`。自定义根缺失同样 fail-fast，不会回退到包目录。自定义根仍应按类或职责隔离，不要把多个类的 case 倒进同一个无差别目录。
 
 每个 case 子目录按需要放 yaml，不必五个文件都写。
 
 ## Java glue
 
 ```java
+// src/test/java/com/example/smarttest/order/OrderServiceSmartTest.java
 @SmartTest
 class OrderServiceSmartTest implements SmartTestLifecycle {
 
@@ -113,3 +130,4 @@ class OrderServiceSmartTest implements SmartTestLifecycle {
 - 在 `@SmartTest` 类或 `@CaseSource` 方法上使用 Spring `@Transactional` / `@Sql`（生命周期早于 case 绑定，框架 fail-fast）。用 `prepare.yaml` / `expect.yaml`。
 - 再叠 `@SpringBootTest`、普通 `@Test`，或不写 `context.setResult` 却期望 `response.yaml` 对上返回值。
 - 把 YAML 直接堆在包目录、省略类名层，或让多个类共享同一个无差别 `@CaseSource` 自定义根。
+- 把 YAML 放在测试类旁边，却不在 POM 里把 `src/test/java` 的 `**/*.yaml|yml` 配进 `testResources`。
