@@ -7,12 +7,12 @@
     <parent>
         <groupId>io.github.cyaquarius</groupId>
         <artifactId>just-test-parent</artifactId>
-        <version>1.1.0</version>
+        <version>1.2.0</version>
     </parent>
 
     <artifactId>just-test-boot3</artifactId>
     <name>just-test Spring Boot 3</name>
-    <description>SmartTest adapter for Java 17 and Spring Boot 3.</description>
+    <description>JustTest adapter for Java 17 and Spring Boot 3.</description>
 
     <properties>
         <maven.compiler.release>17</maven.compiler.release>
@@ -72,8 +72,8 @@
                         <configuration>
                             <excludes>
                                 <exclude>**/*$*</exclude>
-                                <exclude>**/ParallelFirstSmartTest.java</exclude>
-                                <exclude>**/ParallelSecondSmartTest.java</exclude>
+                                <exclude>**/ParallelFirstJustTest.java</exclude>
+                                <exclude>**/ParallelSecondJustTest.java</exclude>
                             </excludes>
                         </configuration>
                     </execution>
@@ -82,8 +82,8 @@
                         <goals><goal>test</goal></goals>
                         <configuration>
                             <includes>
-                                <include>**/ParallelFirstSmartTest.java</include>
-                                <include>**/ParallelSecondSmartTest.java</include>
+                                <include>**/ParallelFirstJustTest.java</include>
+                                <include>**/ParallelSecondJustTest.java</include>
                             </includes>
                             <excludes>
                                 <exclude>**/*$*</exclude>

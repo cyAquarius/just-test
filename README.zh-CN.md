@@ -2,7 +2,7 @@
 
 [English](README.md)
 
-`just-test` 是可复用的 Java 测试工具库，采用 [Apache License 2.0](LICENSE)。SmartTest 通过两个独立产品线为 Spring Boot 2 和 Spring Boot 3 提供相同包名与核心语义的 YAML 驱动集成测试能力。
+`just-test` 是可复用的 Java 测试工具库，采用 [Apache License 2.0](LICENSE)。JustTest 通过两个独立产品线为 Spring Boot 2 和 Spring Boot 3 提供相同包名与核心语义的 YAML 驱动集成测试能力。
 
 它定位为测试范围框架：负责可重复的测试准备、断言与替身，不替代业务架构、生产数据库兼容性验证或业务代码的并发治理。
 
@@ -25,34 +25,34 @@ Boot 2 线保留最后一个正式版本 2.7.18 和真实 Java 8 基线；Boot 3
 
 上表是两条产品线独立构建和验证时的基线。CI 还会在匹配的 Spring Boot parent/BOM 下跑消费烟测，覆盖常见业务工程结构。
 
-## SmartTest 提供的能力
+## JustTest 提供的能力
 
-- `@SmartTest` 配置 Spring Test、H2、`JdbcTemplate` 与事务管理器，使被测服务可以按正常事务行为执行；不存在 `refresh` scope 时会注册一个替代实现，使使用 `@RefreshScope` 或 `@Scope("refresh")` 的业务 Bean 无需 Spring Cloud refresh 基础设施即可加载，但测试不提供真实的 refresh 语义。
-- `@SmartTestProject` 是推荐的消费方启动注解：空类加上 `basePackages`（以及可选的 `mapperPackages`）即可组合 `@SpringBootConfiguration`、`@EnableAutoConfiguration`、默认组件扫描排除、可选的 MyBatis→SmartTest 数据源装配，以及 `dataSource` / `transactionManager` 别名（还可用 `dataSourceAliases` / `transactionManagerAliases` 声明存量 Bean 名）。默认还会写入 `feign.okhttp.enabled=false`（Boot 3 另写 `spring.cloud.openfeign.okhttp.enabled=false`），避免 OkHttp Feign 注册名为 `client` 的 Bean 与 `@Resource private XxxClient client` 按字段名冲突；`FeignAutoConfiguration` / `FeignContext` 仍保留给依赖包中的 Feign Client。需要 OkHttp 时设 `enableFeignOkHttp = true`。已有手写启动类可继续使用。
+- `@JustTest` 配置 Spring Test、H2、`JdbcTemplate` 与事务管理器，使被测服务可以按正常事务行为执行；不存在 `refresh` scope 时会注册一个替代实现，使使用 `@RefreshScope` 或 `@Scope("refresh")` 的业务 Bean 无需 Spring Cloud refresh 基础设施即可加载，但测试不提供真实的 refresh 语义。
+- `@JustTestProject` 是推荐的消费方启动注解：空类加上 `basePackages`（以及可选的 `mapperPackages`）即可组合 `@SpringBootConfiguration`、`@EnableAutoConfiguration`、默认组件扫描排除、可选的 MyBatis→JustTest 数据源装配，以及 `dataSource` / `transactionManager` 别名（还可用 `dataSourceAliases` / `transactionManagerAliases` 声明存量 Bean 名）。默认还会写入 `feign.okhttp.enabled=false`（Boot 3 另写 `spring.cloud.openfeign.okhttp.enabled=false`），避免 OkHttp Feign 注册名为 `client` 的 Bean 与 `@Resource private XxxClient client` 按字段名冲突；`FeignAutoConfiguration` / `FeignContext` 仍保留给依赖包中的 Feign Client。需要 OkHttp 时设 `enableFeignOkHttp = true`。已有手写启动类可继续使用。
 - `@CaseSource` 发现 YAML 用例，并为每个 case 创建完整的 JUnit test-template invocation；测试方法和标准单测生命周期方法均可注入 `CaseContext`。
 - 通过 `prepare.yaml`、`response.yaml`、`expect.yaml`、`expect_exception.yaml` 完成数据准备以及结果、数据库和异常验证。
-- `@SmartMock` 创建线程作用域 Mockito mock；同类型多 Bean 时，显式 `name` 只命中类型兼容的 Bean；如果现有 Bean 类型无法解析（例如 `FactoryBean` 隐藏了对象类型），仍会使用名称回退。名称相同但类型无关的 Bean 不会被替换，错误的显式名称仍会以缺少候选 Bean 的错误失败。
+- `@JustMock` 创建线程作用域 Mockito mock；同类型多 Bean 时，显式 `name` 只命中类型兼容的 Bean；如果现有 Bean 类型无法解析（例如 `FactoryBean` 隐藏了对象类型），仍会使用名称回退。名称相同但类型无关的 Bean 不会被替换，错误的显式名称仍会以缺少候选 Bean 的错误失败。
 - `@ThreadScopedMock` 将同一 scoped mock 模型用于标注的 `@Bean` 方法。
 - `StaticMockContext` 可在每个 case 线程中替换业务静态 Context/工厂入口，并在 case 结束时自动恢复。
-- H2 数据库按 SmartTest `ApplicationContext` 与活动 case 隔离；清理后的 DDL 会缓存，默认从模板数据库克隆 schema（可通过 `smarttest.schema.clone=false` 禁用）；case 结束时释放对应数据库，schema 初始化失败可重试。对于 MySQL 的 `schema.sql` dump，清理器会剥离常见的 `SHOW CREATE TABLE` 附加语法，例如表级 `ROW_FORMAT`、`UNSIGNED`、`ON UPDATE CURRENT_TIMESTAMP`、列级 `CHARACTER SET` 和 `DEFAULT b'0'`；不宣称覆盖所有 MySQL 方言。
+- H2 数据库按 JustTest `ApplicationContext` 与活动 case 隔离；清理后的 DDL 会缓存，默认从模板数据库克隆 schema（可通过 `justtest.schema.clone=false` 禁用）；case 结束时释放对应数据库，schema 初始化失败可重试。对于 MySQL 的 `schema.sql` dump，清理器会剥离常见的 `SHOW CREATE TABLE` 附加语法，例如表级 `ROW_FORMAT`、`UNSIGNED`、`ON UPDATE CURRENT_TIMESTAMP`、列级 `CHARACTER SET` 和 `DEFAULT b'0'`；不宣称覆盖所有 MySQL 方言。
 - MyBatis 测试 SQL 进行受控的 MySQL→H2 改写：`IF(...)` 改为 `CASEWHEN(...)`，`DATE_FORMAT(...)` 改为 `FORMATDATETIME(...)`；`DATE_FORMAT` 改写通过 MyBatis `StatementHandler` 拦截器链执行（与 `IF(...)` → `CASEWHEN(...)` 使用相同路径），因此纯 `JdbcTemplate` SQL 若未经过该拦截器则不会改写。历史双引号字符串仅在已知字符串函数参数和比较运算符右值中兼容。
 
 ## 边界与并发
 
-SmartTest 只隔离自己拥有的测试资源，不能让任意业务代码天然全局并发安全。
+JustTest 只隔离自己拥有的测试资源，不能让任意业务代码天然全局并发安全。
 
 - 业务代码初始化的 static registry 仍由业务侧负责。
 - case 静态 Mock 只作用于当前线程，在用户 `@BeforeEach`、测试方法和用户 `@AfterEach` 中持续生效；它不能覆盖 Spring Context refresh 或早于 case invocation 的 Spring Test listener，也不会传播到业务自行创建的异步线程。
-- 检测到多个 Spring Context 时，SmartTest 会输出一次风险警告；相关 case 失败时会追加诊断日志，但不会替换原始异常。任意静态 Mock 的存在不会抑制该提示，因为框架无法判断它是否覆盖了相关入口。
-- 新旧测试类可以并存；未标注 `@SmartTest` 的旧测试不会启用 SmartTest 生命周期。但如果新旧测试并行执行，并且业务代码共享 JVM static ContextHolder/工厂，SmartTest 无法保护旧测试线程；应让受影响的旧测试保持串行，或迁移其静态入口。
-- 手工线程、`CompletableFuture` common pool 和未由 SmartTest 接管的 executor，不会自动获得 mock 或数据库上下文；没有活动 case 的数据库或 thread-scoped mock 访问会立即失败，而不会静默创建空 H2 或未配置的 mock。`@SmartTest` 拥有 H2 基础设施时，若框架 `JdbcTemplate` 或 `SmartTestRoutingDataSource` 缺失，同样视为配置错误并立即失败，而不会跳过 prepare/verify。
+- 检测到多个 Spring Context 时，JustTest 会输出一次风险警告；相关 case 失败时会追加诊断日志，但不会替换原始异常。任意静态 Mock 的存在不会抑制该提示，因为框架无法判断它是否覆盖了相关入口。
+- 新旧测试类可以并存；未标注 `@JustTest` 的旧测试不会启用 JustTest 生命周期。但如果新旧测试并行执行，并且业务代码共享 JVM static ContextHolder/工厂，JustTest 无法保护旧测试线程；应让受影响的旧测试保持串行，或迁移其静态入口。
+- 手工线程、`CompletableFuture` common pool 和未由 JustTest 接管的 executor，不会自动获得 mock 或数据库上下文；没有活动 case 的数据库或 thread-scoped mock 访问会立即失败，而不会静默创建空 H2 或未配置的 mock。`@JustTest` 拥有 H2 基础设施时，若框架 `JdbcTemplate` 或 `JustTestRoutingDataSource` 缺失，同样视为配置错误并立即失败，而不会跳过 prepare/verify。
 - 测试类或 `@CaseSource` 方法上的 Spring `@Transactional` 与 `@Sql` 不受支持：它们的生命周期早于 case 绑定，框架会在执行前报错。请使用 `prepare.yaml` 和 `expect.yaml` 管理确定性的 case 数据。
 - 重跑成功不能证明并发安全。存在 Flake 的测试应保持串行，直到其所有权和生命周期边界清晰。
 - 新 SQL 应使用标准单引号字符串；双引号改写仅是兼容历史 MySQL Mapper 的过渡能力。
 
 ### 并行配置
 
-并行调度由消费工程的 JUnit 配置控制，SmartTest 负责并行后的框架资源隔离。推荐先启用测试类之间并行、保持同一类中的 case 串行：
+并行调度由消费工程的 JUnit 配置控制，JustTest 负责并行后的框架资源隔离。推荐先启用测试类之间并行、保持同一类中的 case 串行：
 
 ```properties
 # src/test/resources/junit-platform.properties
@@ -63,22 +63,22 @@ junit.jupiter.execution.parallel.mode.classes.default=concurrent
 
 业务 static 状态、外部共享资源和异步线程均已确认安全时，可将 `mode.default` 改为 `concurrent`，允许同一测试类中的 case 并行。正常测试类不需要声明 `@Execution`；仅在个别测试无法满足并发边界时，使用 `@Execution(ExecutionMode.SAME_THREAD)` 局部降级。
 
-`@TestInstance(PER_CLASS)` 不能与类内并发 case 组合——仅当 JUnit 并行已启用（`junit.jupiter.execution.parallel.enabled=true`），且 case 会并发执行（`@Execution(CONCURRENT)` 或 `mode.default=concurrent`）时：共享测试实例会竞态 `@SmartMock` 字段注入。若并行未启用，残留的 `@Execution` / `mode.default=concurrent` 不触发该检查。并发 case 请使用 JUnit 默认的 `PER_METHOD`；需要 `PER_CLASS` 时保持 `SAME_THREAD`。类间并行（`mode.classes.default`）不等于类内 case 并发。
+`@TestInstance(PER_CLASS)` 不能与类内并发 case 组合——仅当 JUnit 并行已启用（`junit.jupiter.execution.parallel.enabled=true`），且 case 会并发执行（`@Execution(CONCURRENT)` 或 `mode.default=concurrent`）时：共享测试实例会竞态 `@JustMock` 字段注入。若并行未启用，残留的 `@Execution` / `mode.default=concurrent` 不触发该检查。并发 case 请使用 JUnit 默认的 `PER_METHOD`；需要 `PER_CLASS` 时保持 `SAME_THREAD`。类间并行（`mode.classes.default`）不等于类内 case 并发。
 
 ### 并行落地反模式
 
-并行失败不一定是 SmartTest 隔离失效；先排查下游项目的替身、静态状态和资源生命周期。以下用法会把使用错误伪装成 framework flake：
+并行失败不一定是 JustTest 隔离失效；先排查下游项目的替身、静态状态和资源生命周期。以下用法会把使用错误伪装成 framework flake：
 
-1. **用 `ReflectionTestUtils` 覆盖 `@SmartMock` 代理**
-   - **错误：** 在 `beforeExecute` 中使用 `ReflectionTestUtils`，把 raw Mockito mock 写入业务 Bean 字段，覆盖 `@SmartMock` 创建的 `ThreadScope` proxy。业务 Bean 往往是 singleton，这会污染 singleton 字段，让其他线程或 case 看到错误的 stub。
-   - **正确：** 只 stub 测试类上的 `@SmartMock` 字段，让业务 Bean 保持 scoped proxy。静态工厂或 Context 入口使用 `StaticMockContext` / `configureStaticMocks` 按 case 配置。
+1. **用 `ReflectionTestUtils` 覆盖 `@JustMock` 代理**
+   - **错误：** 在 `beforeExecute` 中使用 `ReflectionTestUtils`，把 raw Mockito mock 写入业务 Bean 字段，覆盖 `@JustMock` 创建的 `ThreadScope` proxy。业务 Bean 往往是 singleton，这会污染 singleton 字段，让其他线程或 case 看到错误的 stub。
+   - **正确：** 只 stub 测试类上的 `@JustMock` 字段，让业务 Bean 保持 scoped proxy。静态工厂或 Context 入口使用 `StaticMockContext` / `configureStaticMocks` 按 case 配置。
 
 2. **给 case H2 URL 加数据库保活参数**
    - **错误：** 为掩盖 `already closed`，在 case URL 上增加 `DB_CLOSE_DELAY=-1`（或类似的 keep-alive 参数）。这只是延后暴露生命周期问题，会造成内存增长、完整测试运行变慢甚至 OOM。
    - **正确：** 按 [#12（already closed）](https://github.com/cyAquarius/just-test/issues/12) 的资源边界处理：case 切换时先解绑线程上的 JDBC/MyBatis holder，再释放旧 DataSource 并重建当前 case 的 DataSource。模板数据库可为 schema clone 在内部使用 `DB_CLOSE_DELAY=-1`（见 [#16](https://github.com/cyAquarius/just-test/issues/16)），但这不意味着可以把它加到 case URL；默认 case URL 不含 `DB_CLOSE_DELAY`。
 
-3. **期待 SmartTest 自动修复业务 static registry**
-   - **错误：** 将业务 static Context、factory 或 registry 的并发污染归咎于 SmartTest，期待框架自动修复，或默认在上游加入全局 `ContextCreationLock`。SmartTest 不负责这些业务静态入口的所有权和并发治理。
+3. **期待 JustTest 自动修复业务 static registry**
+   - **错误：** 将业务 static Context、factory 或 registry 的并发污染归咎于 JustTest，期待框架自动修复，或默认在上游加入全局 `ContextCreationLock`。JustTest 不负责这些业务静态入口的所有权和并发治理。
    - **正确：** 按落地清单排查：
      - 出现多个 Spring Context 警告时，检查 `StaticMockContext` / `configureStaticMocks` 是否覆盖相关 static Context 或 factory 入口。
      - Mapper `#0` 双 Bean 等 Bean 装配问题按名称、限定符和启动配置排查，参考 [#11](https://github.com/cyAquarius/just-test/issues/11)，不要用全局锁掩盖。
@@ -91,7 +91,7 @@ junit.jupiter.execution.parallel.mode.classes.default=concurrent
 
 ## Maven Central
 
-坐标为 `io.github.cyaquarius`。Java 包名仍是 `com.just.test.smarttest`。Maven Central **只发布** `just-test-boot2` 与 `just-test-boot3`（`just-test-core` 打进这两个 JAR，不单独上架）。`1.1.0` 是当前发布坐标，消费方应使用 Central 坐标。本地 `mvn install` 仍用于基于本仓库开发。
+坐标为 `io.github.cyaquarius`。Java 包名仍是 `com.just.test`。Maven Central **只发布** `just-test-boot2` 与 `just-test-boot3`（`just-test-core` 打进这两个 JAR，不单独上架）。`1.2.0` 是当前发布坐标，消费方应使用 Central 坐标。本地 `mvn install` 仍用于基于本仓库开发。
 
 Java 8 / Boot 2：
 
@@ -99,68 +99,68 @@ Java 8 / Boot 2：
 <dependency>
     <groupId>io.github.cyaquarius</groupId>
     <artifactId>just-test-boot2</artifactId>
-    <version>1.1.0</version>
+    <version>1.2.0</version>
     <scope>test</scope>
 </dependency>
 ```
 
 Java 17 / Boot 3：把 `artifactId` 换成 `just-test-boot3`。不要同时引入两个顶层 artifact。不要单独声明 `just-test-core`——它已打进 boot JAR，且没有独立的 Central 坐标。
 
-若公司私服已代理 Central，只需声明依赖；若无法访问 Central，请代理 Central，或将 boot2/boot3 的 `1.1.0` 制品上传到私服 release 仓库，并保持坐标为 `io.github.cyaquarius`。
+若公司私服已代理 Central，只需声明依赖；若无法访问 Central，请代理 Central，或将 boot2/boot3 的 `1.2.0` 制品上传到私服 release 仓库，并保持坐标为 `io.github.cyaquarius`。
 
-`enableFeignOkHttp` 默认关闭 OkHttp、保留 `FeignContext` 的行为已在 `main` 上，将随 1.1.0 之后的下一个 patch 发布。
+`enableFeignOkHttp` 默认关闭 OkHttp、保留 `FeignContext` 的行为已包含在 `1.2.0`。
 
-AI 编写用例：按仓库内配方 [docs/ai-smarttest-authoring.md](docs/ai-smarttest-authoring.md)。
+AI 编写用例：按仓库内配方 [docs/ai-justtest-authoring.md](docs/ai-justtest-authoring.md)。
 
 ## 公开 API
 
-稳定公开 API 在 `com.just.test.smarttest` 下：`annotation`（`@SmartTest`、`@SmartTestProject`、`@CaseSource`、`@SmartMock`、`@BeforeCase`、`@ThreadScopedMock`）、`CaseContext`、`SmartTestLifecycle` 和 `StaticMockContext`。`SmartTestMarker` 与 Boot 模块的 `SmartTestClassValidationExtension` 只供 `@SmartTest` 注册 JUnit/Spring 基础设施，不要直接依赖。引擎类型放在 `com.just.test.smarttest.internal`，即便因 JUnit / Spring 注册而保持 public，也不对消费方提供兼容承诺。迁移到 Boot 3 时，消费工程自身使用的 Java EE 类型仍需按 Spring Boot 3 规则迁移到 Jakarta。Java SE 的 `javax.sql.DataSource` 不属于 Jakarta 迁移范围。
+稳定公开 API 在 `com.just.test` 下：`annotation`（`@JustTest`、`@JustTestProject`、`@CaseSource`、`@JustMock`、`@BeforeCase`、`@ThreadScopedMock`）、`CaseContext`、`JustTestLifecycle` 和 `StaticMockContext`。`JustTestMarker` 与 Boot 模块的 `JustTestClassValidationExtension` 只供 `@JustTest` 注册 JUnit/Spring 基础设施，不要直接依赖。引擎类型放在 `com.just.test.internal`，即便因 JUnit / Spring 注册而保持 public，也不对消费方提供兼容承诺。迁移到 Boot 3 时，消费工程自身使用的 Java EE 类型仍需按 Spring Boot 3 规则迁移到 Jakarta。Java SE 的 `javax.sql.DataSource` 不属于 Jakarta 迁移范围。
 
 ## 编写测试
 
-AI 编写配方（方法包布局、Java glue、Flag、反模式）见 [docs/ai-smarttest-authoring.md](docs/ai-smarttest-authoring.md)。
+AI 编写配方（方法包布局、Java glue、Flag、反模式）见 [docs/ai-justtest-authoring.md](docs/ai-justtest-authoring.md)。
 
-SmartTest 统一使用 Spring Boot TestContext。启动知识分成三层：
+JustTest 统一使用 Spring Boot TestContext。启动知识分成三层：
 
-1. **框架拥有：** H2、事务管理器、`JdbcTemplate`、默认组件扫描 denylist、默认关闭 Feign OkHttp（`feign.okhttp.enabled=false` / Boot 3 的 `spring.cloud.openfeign.okhttp.enabled=false`；**不**排除 `FeignAutoConfiguration`），以及（声明了 `mapperPackages` 时）绑定 SmartTest DataSource 的 MyBatis `SqlSessionFactory` / `SqlSessionTemplate` / MapperScan。
+1. **框架拥有：** H2、事务管理器、`JdbcTemplate`、默认组件扫描 denylist、默认关闭 Feign OkHttp（`feign.okhttp.enabled=false` / Boot 3 的 `spring.cloud.openfeign.okhttp.enabled=false`；**不**排除 `FeignAutoConfiguration`），以及（声明了 `mapperPackages` 时）绑定 JustTest DataSource 的 MyBatis `SqlSessionFactory` / `SqlSessionTemplate` / MapperScan。
 2. **默认可覆盖：** `excludeClasses`、`excludeFilters`、`includeFilters`、`excludeAutoConfiguration`、`enableFeignOkHttp`。消费方不必复制默认 denylist。
-3. **项目必须声明：** `basePackages`（不猜测业务根包）、`src/test/resources/sql/schema.sql`，以及 Support 上的 `@SmartMock`。不要把生产 DataSource / 事务管理器配置放到测试启动类上。
+3. **项目必须声明：** `basePackages`（不猜测业务根包）、`src/test/resources/sql/schema.sql`，以及 Support 上的 `@JustMock`。不要把生产 DataSource / 事务管理器配置放到测试启动类上。
 
 ```java
-// src/test/java/com/example/smarttest/SmartTestApplication.java
-@SmartTestProject(
+// src/test/java/com/example/justtest/JustTestApplication.java
+@JustTestProject(
     basePackages = "com.example",
     mapperPackages = "com.example.mapper", // 可选；没有 MyBatis 时省略
     dataSourceAliases = "masterDataSource", // 可选的存量 Bean 名
     transactionManagerAliases = "masterDataTransactionManager"
     // enableFeignOkHttp = true // 仅在测试需要 OkHttp Feign（`client` Bean）时开启
 )
-public class SmartTestApplication {
+public class JustTestApplication {
 }
 ```
 
-`@SmartTestProject` 元注解组合 `@SpringBootConfiguration` 与 `@EnableAutoConfiguration`，类体可以为空。默认扫描会排除 `basePackages` 下的其他 `@SpringBootApplication` / `@SpringBootConfiguration`，并在注解存在时排除 `@Controller` / `@RestController` / `@ControllerAdvice`；classpath 上有 OpenFeign 时排除 `@FeignClient`；能安全探测到的 Job / 调度刻板类型也会排除。Feign OkHttp 默认关闭（`enableFeignOkHttp` 默认为 `false`）：`OkHttpFeignConfiguration` 会注册名为 `client` 的 `OkHttpClient`，`@Resource` 会按字段名优先命中它，从而与 `EmailClient client` 这类写法冲突；`FeignAutoConfiguration` 与 `FeignContext` 仍会装配，供依赖包中的 Feign Client 使用。`dataSource` 与 `transactionManager` 在名称未被占用时注册为 SmartTest 主 Bean 的别名。`dataSourceAliases` / `transactionManagerAliases` 按同样规则为存量 `@Qualifier` / `@Transactional` 注册额外别名：空白项忽略、重复项去重，目标名已有 Bean 定义或别名时不覆盖（会打出跳过诊断日志）。声明了 `mapperPackages` 但缺少 mybatis-spring 会 fail-fast；有 MyBatis 但未声明 `mapperPackages` 时不会猜测扫描根。
+`@JustTestProject` 元注解组合 `@SpringBootConfiguration` 与 `@EnableAutoConfiguration`，类体可以为空。默认扫描会排除 `basePackages` 下的其他 `@SpringBootApplication` / `@SpringBootConfiguration`，并在注解存在时排除 `@Controller` / `@RestController` / `@ControllerAdvice`；classpath 上有 OpenFeign 时排除 `@FeignClient`；能安全探测到的 Job / 调度刻板类型也会排除。Feign OkHttp 默认关闭（`enableFeignOkHttp` 默认为 `false`）：`OkHttpFeignConfiguration` 会注册名为 `client` 的 `OkHttpClient`，`@Resource` 会按字段名优先命中它，从而与 `EmailClient client` 这类写法冲突；`FeignAutoConfiguration` 与 `FeignContext` 仍会装配，供依赖包中的 Feign Client 使用。`dataSource` 与 `transactionManager` 在名称未被占用时注册为 JustTest 主 Bean 的别名。`dataSourceAliases` / `transactionManagerAliases` 按同样规则为存量 `@Qualifier` / `@Transactional` 注册额外别名：空白项忽略、重复项去重，目标名已有 Bean 定义或别名时不覆盖（会打出跳过诊断日志）。声明了 `mapperPackages` 但缺少 mybatis-spring 会 fail-fast；有 MyBatis 但未声明 `mapperPackages` 时不会猜测扫描根。
 
-手写 `@SpringBootConfiguration` + `@EnableAutoConfiguration` + `@ComponentScan` 启动类仍然有效。新项目请优先使用 `@SmartTestProject`。
+手写 `@SpringBootConfiguration` + `@EnableAutoConfiguration` + `@ComponentScan` 启动类仍然有效。新项目请优先使用 `@JustTestProject`。
 
-`SmartTestApplication` 是消费工程专用于 SmartTest 的测试启动配置，不需要 `main` 方法。将它放入独立测试包，并将所有 SmartTest 测试类放在该包或其子包下，例如 `com.example.smarttest.order`。Spring Boot 会先发现这个更近的测试配置，不会继续搜索父包中的生产 `Application`；仅放在 `src/test` 并不能避免两个启动类冲突，因为测试 classpath 同时包含生产类和测试类。非 SmartTest 的普通 JUnit 测试放在该树之外。用例目录仍是 Support + 方法包，不要另造一套 case 根约定。
+`JustTestApplication` 是消费工程专用于 JustTest 的测试启动配置，不需要 `main` 方法。将它放入独立测试包，并将所有 JustTest 测试类放在该包或其子包下，例如 `com.example.justtest.order`。Spring Boot 会先发现这个更近的测试配置，不会继续搜索父包中的生产 `Application`；仅放在 `src/test` 并不能避免两个启动类冲突，因为测试 classpath 同时包含生产类和测试类。非 JustTest 的普通 JUnit 测试放在该树之外。用例目录仍是 Support + 方法包，不要另造一套 case 根约定。
 
-SmartTest Context 使用框架提供的 H2 `DataSource`、事务管理器和 `JdbcTemplate`。其余生产持久化配置请用 `test` profile 或 `excludeClasses` / `excludeFilters` 排除。框架不会改写用户 Bean 的 `@Primary` 属性，也不会替测试选择生产与测试数据源，更不会自动 mock 业务 Client。
+JustTest Context 使用框架提供的 H2 `DataSource`、事务管理器和 `JdbcTemplate`。其余生产持久化配置请用 `test` profile 或 `excludeClasses` / `excludeFilters` 排除。框架不会改写用户 Bean 的 `@Primary` 属性，也不会替测试选择生产与测试数据源，更不会自动 mock 业务 Client。
 
 ```java
-// src/test/java/com/example/smarttest/order/OrderSmartTestSupport.java
-abstract class OrderSmartTestSupport implements SmartTestLifecycle {
+// src/test/java/com/example/justtest/order/OrderJustTestSupport.java
+abstract class OrderJustTestSupport implements JustTestLifecycle {
 
     @Autowired
     protected OrderService orderService;
 
-    @SmartMock
+    @JustMock
     protected PricingClient pricingClient;
 }
 
-// src/test/java/com/example/smarttest/order/create/CreateSmartTest.java
-@SmartTest
-class CreateSmartTest extends OrderSmartTestSupport {
+// src/test/java/com/example/justtest/order/create/CreateJustTest.java
+@JustTest
+class CreateJustTest extends OrderJustTestSupport {
 
     @CaseSource
     void createOrder(CaseContext context) {
@@ -171,10 +171,10 @@ class CreateSmartTest extends OrderSmartTestSupport {
 
 框架不会从 `@CaseSource` 方法的返回值采集结果（方法本身是 `void`）。要用 `response.yaml` 或 `verifyResult` 时必须调用 `context.setResult(...)`；漏写则按 `null` 断言。
 
-`@SmartTest` 已包含 Spring Boot bootstrapper，并通过 `test` profile 加载 `application-test.yml`，不要再组合 `@SpringBootTest` 或重复声明 `@BootstrapWith`。独立测试包内应只有一个可发现的 `@SpringBootConfiguration`。测试类不在其子包下、存在多个候选启动配置或某个测试需要特殊配置时，再使用 `@ContextConfiguration(classes = SmartTestApplication.class)` 显式选择。
+`@JustTest` 已包含 Spring Boot bootstrapper，并通过 `test` profile 加载 `application-test.yml`，不要再组合 `@SpringBootTest` 或重复声明 `@BootstrapWith`。独立测试包内应只有一个可发现的 `@SpringBootConfiguration`。测试类不在其子包下、存在多个候选启动配置或某个测试需要特殊配置时，再使用 `@ContextConfiguration(classes = JustTestApplication.class)` 显式选择。
 
-同类型有多个候选 Bean 时，使用 `@SmartMock(name = "beanName")` 或 `@Qualifier("beanName")`。替换 Spring Bean 时优先使用 `@SmartMock`，不要求使用 `@MockBean`。
-不要使用 `ReflectionTestUtils` 将 raw Mockito mock 写入业务 Bean 字段来替换 `@SmartMock` 的 `ThreadScope` proxy；请只 stub 测试类中的 `@SmartMock` 字段。
+同类型有多个候选 Bean 时，使用 `@JustMock(name = "beanName")` 或 `@Qualifier("beanName")`。替换 Spring Bean 时优先使用 `@JustMock`，不要求使用 `@MockBean`。
+不要使用 `ReflectionTestUtils` 将 raw Mockito mock 写入业务 Bean 字段来替换 `@JustMock` 的 `ThreadScope` proxy；请只 stub 测试类中的 `@JustMock` 字段。
 
 业务通过静态入口获取 Spring Context 时，可按 case 显式绑定：
 
@@ -187,24 +187,24 @@ public void configureStaticMocks(CaseContext context, StaticMockContext mocks) {
 }
 ```
 
-未 stub 的静态方法继续调用真实实现。不要手工关闭返回的 `MockedStatic`；SmartTest 会在用户 `@AfterEach` 结束后，于原 case 线程统一关闭。
+未 stub 的静态方法继续调用真实实现。不要手工关闭返回的 `MockedStatic`；JustTest 会在用户 `@AfterEach` 结束后，于原 case 线程统一关闭。
 
-Boot 2 使用 Mockito 4，静态 Mock 或 final 类型 Mock 要求消费工程显式启用 inline mock maker，例如在 `src/test/resources/mockito-extensions/org.mockito.plugins.MockMaker` 写入 `mock-maker-inline`，或引入版本一致的 `mockito-inline`。Boot 3 使用 Mockito 5，其默认 mock maker 已是 inline；若消费工程覆盖了 MockMaker，仍需自行保证静态/final Mock 能力。SmartTest 不会全局指定 MockMaker，避免覆盖消费工程已有配置。
+Boot 2 使用 Mockito 4，静态 Mock 或 final 类型 Mock 要求消费工程显式启用 inline mock maker，例如在 `src/test/resources/mockito-extensions/org.mockito.plugins.MockMaker` 写入 `mock-maker-inline`，或引入版本一致的 `mockito-inline`。Boot 3 使用 Mockito 5，其默认 mock maker 已是 inline；若消费工程覆盖了 MockMaker，仍需自行保证静态/final Mock 能力。JustTest 不会全局指定 MockMaker，避免覆盖消费工程已有配置。
 
-默认 case 根是测试类所在包。case 目录是 classpath 上 `.java` 的同级兄弟（`{packagePath}/*/*.yaml|yml`）。框架不会探测 `{packagePath}/{SimpleClassName}/`。同一包内最多一个**自身直接标注** `@SmartTest` 的具体类；仅从父类继承 marker 不能准入。抽象 Support 基类放在父级业务类目录，只放共享生命周期和 mock，不要标 `@SmartTest`，也不要放 case YAML；抽象类上标 `@SmartTest` 会 fail-fast。一个具体测试类只放一个 `@CaseSource` 方法——同一类上多个 `@CaseSource` 会共享本包全部 sibling case。
+默认 case 根是测试类所在包。case 目录是 classpath 上 `.java` 的同级兄弟（`{packagePath}/*/*.yaml|yml`）。框架不会探测 `{packagePath}/{SimpleClassName}/`。同一包内最多一个**自身直接标注** `@JustTest` 的具体类；仅从父类继承 marker 不能准入。抽象 Support 基类放在父级业务类目录，只放共享生命周期和 mock，不要标 `@JustTest`，也不要放 case YAML；抽象类上标 `@JustTest` 会 fail-fast。一个具体测试类只放一个 `@CaseSource` 方法——同一类上多个 `@CaseSource` 会共享本包全部 sibling case。
 
 推荐树（与测试类一起放在 `src/test/java`）：
 
 ```text
-src/test/java/com/example/smarttest/order/
-├── OrderSmartTestSupport.java
+src/test/java/com/example/justtest/order/
+├── OrderJustTestSupport.java
 ├── create/
-│   ├── CreateSmartTest.java
+│   ├── CreateJustTest.java
 │   ├── ok/
 │   ├── dup/
 │   └── bad-input/
 └── cancel/
-    ├── CancelSmartTest.java
+    ├── CancelJustTest.java
     └── ok/
 ```
 
@@ -256,13 +256,13 @@ src/test/java/com/example/smarttest/order/
 
 ## 生命周期
 
-`@SmartTest` 是测试类级执行契约：测试类必须实现 `SmartTestLifecycle`，类内所有可执行测试方法都必须使用 `@CaseSource`。如果类未实现该接口，或类中存在 `@Test`、`@RepeatedTest`、`@ParameterizedTest`、`@TestFactory` 或其他普通 JUnit 测试方法，SmartTest 会在 `BeforeAll` 报错并提示修正。`@TestInstance(PER_CLASS)` 与类内并发 case 组合（仅当 `junit.jupiter.execution.parallel.enabled=true`）也会在 `BeforeAll` 失败。渐进迁移时，保留原有 JUnit 测试类不变，将新 case 放入独立的 `@SmartTest` 类；未标注 `@SmartTest` 的旧测试类不受影响。
+`@JustTest` 是测试类级执行契约：测试类必须实现 `JustTestLifecycle`，类内所有可执行测试方法都必须使用 `@CaseSource`。如果类未实现该接口，或类中存在 `@Test`、`@RepeatedTest`、`@ParameterizedTest`、`@TestFactory` 或其他普通 JUnit 测试方法，JustTest 会在 `BeforeAll` 报错并提示修正。`@TestInstance(PER_CLASS)` 与类内并发 case 组合（仅当 `junit.jupiter.execution.parallel.enabled=true`）也会在 `BeforeAll` 失败。渐进迁移时，保留原有 JUnit 测试类不变，将新 case 放入独立的 `@JustTest` 类；未标注 `@JustTest` 的旧测试类不受影响。
 
 `@CaseSource` 本身就是测试注解，不要再与其他 JUnit 测试注解组合。每个 YAML case 依次执行：
 
 1. 创建独立的 JUnit invocation 及其 `CaseContext`；
 2. 绑定 case，创建并初始化全新的 case 数据库，然后加载 `prepare.yaml`；
-3. 重置、预热 scoped mock，注入 `@SmartMock` 字段并配置 case 静态 Mock；
+3. 重置、预热 scoped mock，注入 `@JustMock` 字段并配置 case 静态 Mock；
 4. 执行用户的 `@BeforeEach`；
 5. 调用匹配的 `@BeforeCase("case-name")` 与 `beforeExecute`，执行测试方法；无论测试方法返回还是抛出，都调用 `afterExecute`，再进行异常、返回值和数据库验证。若 `afterExecute` 自身抛出，则跳过 YAML 验证并直接抛出该异常（若测试方法也抛过异常，会作为 suppressed 附加）。无 `expect_exception.yaml` 且 `verifyException` 未处理的异常会在 `afterExecute` 与 YAML 验证之后重新抛出；
 6. 执行用户的 `@AfterEach`；

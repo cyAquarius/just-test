@@ -1,6 +1,6 @@
 # 贡献指南
 
-本仓库是可复用的 SmartTest 测试工具库。协作默认使用中文，代码标识符与命令保持英文。产品说明见 [README.zh-CN.md](README.zh-CN.md)。
+本仓库是可复用的 JustTest 测试工具库。协作默认使用中文，代码标识符与命令保持英文。产品说明见 [README.zh-CN.md](README.zh-CN.md)。
 
 ## 不要用 `[skip ci]` 跳过结构或依赖变更
 

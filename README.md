@@ -2,7 +2,7 @@
 
 [中文文档](README.zh-CN.md)
 
-`just-test` is a reusable Java test toolkit licensed under the [Apache License 2.0](LICENSE). SmartTest provides the same public packages and core semantics for Spring Boot 2 and Spring Boot 3 through two independent product lines.
+`just-test` is a reusable Java test toolkit licensed under the [Apache License 2.0](LICENSE). JustTest provides the same public packages and core semantics for Spring Boot 2 and Spring Boot 3 through two independent product lines.
 
 It is deliberately a test-scope framework: it supplies repeatable test setup, assertions, and test doubles, but it does not replace application design, production database compatibility testing, or concurrency control in application code.
 
@@ -25,34 +25,34 @@ The Boot 2 line retains the final 2.7.18 release and a real Java 8 baseline. The
 
 The matrix is the standalone build and validation baseline for both product lines. CI also runs consumer smoke tests under the matching Spring Boot parent/BOM to cover a common application layout.
 
-## What SmartTest provides
+## What JustTest provides
 
-- `@SmartTest` configures Spring Test, H2, `JdbcTemplate`, and a transaction manager so application services can exercise their normal transaction behavior; it registers a `refresh` scope stand-in when none exists, so business beans using `@RefreshScope` or `@Scope("refresh")` can load without Spring Cloud refresh infrastructure, but tests do not get real refresh semantics.
-- `@SmartTestProject` is the recommended consumer startup annotation: an empty class with `basePackages` (and optional `mapperPackages`) gets `@SpringBootConfiguration`, `@EnableAutoConfiguration`, opinionated component-scan excludes, optional MyBatis wiring to SmartTest's DataSource, and `dataSource` / `transactionManager` aliases (plus optional legacy names via `dataSourceAliases` / `transactionManagerAliases`). By default it also sets `feign.okhttp.enabled=false` (and Boot 3's `spring.cloud.openfeign.okhttp.enabled=false`) so OkHttp Feign does not register a bean named `client` that collides with `@Resource private XxxClient client`; `FeignAutoConfiguration` / `FeignContext` remain for Feign clients in dependency jars. Set `enableFeignOkHttp = true` to opt in. Existing hand-written startup classes keep working.
+- `@JustTest` configures Spring Test, H2, `JdbcTemplate`, and a transaction manager so application services can exercise their normal transaction behavior; it registers a `refresh` scope stand-in when none exists, so business beans using `@RefreshScope` or `@Scope("refresh")` can load without Spring Cloud refresh infrastructure, but tests do not get real refresh semantics.
+- `@JustTestProject` is the recommended consumer startup annotation: an empty class with `basePackages` (and optional `mapperPackages`) gets `@SpringBootConfiguration`, `@EnableAutoConfiguration`, opinionated component-scan excludes, optional MyBatis wiring to JustTest's DataSource, and `dataSource` / `transactionManager` aliases (plus optional legacy names via `dataSourceAliases` / `transactionManagerAliases`). By default it also sets `feign.okhttp.enabled=false` (and Boot 3's `spring.cloud.openfeign.okhttp.enabled=false`) so OkHttp Feign does not register a bean named `client` that collides with `@Resource private XxxClient client`; `FeignAutoConfiguration` / `FeignContext` remain for Feign clients in dependency jars. Set `enableFeignOkHttp = true` to opt in. Existing hand-written startup classes keep working.
 - `@CaseSource` discovers YAML cases and creates one full JUnit test-template invocation per case, with `CaseContext` available to the test and standard per-test lifecycle methods.
 - `prepare.yaml`, `response.yaml`, `expect.yaml`, and `expect_exception.yaml` cover data setup and result, database, and exception verification.
-- `@SmartMock` creates a thread-scoped Mockito mock. When several beans share a type, an explicit `name` wins only for a type-compatible bean; if an existing bean's type cannot be resolved (for example, a `FactoryBean` hides its object type), name fallback still applies. A same-named bean of an unrelated type is not replaced, and a wrong explicit name fails with a missing-candidate error.
+- `@JustMock` creates a thread-scoped Mockito mock. When several beans share a type, an explicit `name` wins only for a type-compatible bean; if an existing bean's type cannot be resolved (for example, a `FactoryBean` hides its object type), name fallback still applies. A same-named bean of an unrelated type is not replaced, and a wrong explicit name fails with a missing-candidate error.
 - `@ThreadScopedMock` applies the same scoped-mock model to an annotated `@Bean` method.
 - `StaticMockContext` can replace an application static context/factory gateway per case thread and restores it automatically at case end.
-- The H2 test database is isolated per SmartTest `ApplicationContext` and active case; cleaned DDL is cached, and the schema is cloned from a template database by default (disable with `smarttest.schema.clone=false`); each case database is released at case end, and schema initialization is retried after failure. For MySQL `schema.sql` dumps, the cleaner strips common `SHOW CREATE TABLE` extras such as table `ROW_FORMAT`, `UNSIGNED`, `ON UPDATE CURRENT_TIMESTAMP`, column `CHARACTER SET`, and `DEFAULT b'0'`; it does not cover every MySQL dialect.
+- The H2 test database is isolated per JustTest `ApplicationContext` and active case; cleaned DDL is cached, and the schema is cloned from a template database by default (disable with `justtest.schema.clone=false`); each case database is released at case end, and schema initialization is retried after failure. For MySQL `schema.sql` dumps, the cleaner strips common `SHOW CREATE TABLE` extras such as table `ROW_FORMAT`, `UNSIGNED`, `ON UPDATE CURRENT_TIMESTAMP`, column `CHARACTER SET`, and `DEFAULT b'0'`; it does not cover every MySQL dialect.
 - MyBatis test SQL receives narrowly scoped MySQL-to-H2 rewrites: `IF(...)` becomes `CASEWHEN(...)`, and `DATE_FORMAT(...)` becomes `FORMATDATETIME(...)`; the `DATE_FORMAT` rewrite runs through the MyBatis `StatementHandler` interceptor path (the same path as `IF(...)` → `CASEWHEN(...)`), so plain `JdbcTemplate` SQL is not rewritten unless it goes through that interceptor. Legacy double-quoted string literals are supported inside known string functions and on the right side of comparison operators.
 
 ## Boundaries and concurrency
 
-SmartTest isolates the test resources it owns. It does **not** make arbitrary application code globally parallel-safe.
+JustTest isolates the test resources it owns. It does **not** make arbitrary application code globally parallel-safe.
 
 - Static registries initialized by application code remain an application concern.
 - Case static mocks affect only the current thread. They are active for user `@BeforeEach`, the test, and user `@AfterEach`; they cannot cover Spring context refresh or Spring Test listeners that run before the case invocation, and do not propagate to application-created asynchronous threads.
-- When multiple Spring contexts are detected, SmartTest emits one risk warning. A related case failure adds a diagnostic log without replacing the original exception. The presence of an arbitrary static mock does not suppress this hint because the framework cannot know whether it covers the relevant gateway.
-- New and legacy test classes can coexist; legacy classes without `@SmartTest` do not activate the SmartTest lifecycle. If both run in parallel while application code shares a JVM-static ContextHolder or factory, SmartTest cannot protect the legacy test thread. Keep affected legacy tests serial or migrate their static gateway.
-- Manually created threads, `CompletableFuture` common-pool tasks, and executors not managed by SmartTest do not receive mock or database context automatically; database or thread-scoped mock access without an active case fails fast instead of creating an empty H2 database or an unstubbed mock. When `@SmartTest` owns H2 infrastructure, a missing framework `JdbcTemplate` or `SmartTestRoutingDataSource` is also a configuration error and fails fast rather than skipping prepare/verify.
-- Spring `@Transactional` and `@Sql` are unsupported on a SmartTest class or `@CaseSource` method because their lifecycle runs before a case is bound; SmartTest fails fast on these configurations. Use `prepare.yaml` and `expect.yaml` for deterministic case data instead.
+- When multiple Spring contexts are detected, JustTest emits one risk warning. A related case failure adds a diagnostic log without replacing the original exception. The presence of an arbitrary static mock does not suppress this hint because the framework cannot know whether it covers the relevant gateway.
+- New and legacy test classes can coexist; legacy classes without `@JustTest` do not activate the JustTest lifecycle. If both run in parallel while application code shares a JVM-static ContextHolder or factory, JustTest cannot protect the legacy test thread. Keep affected legacy tests serial or migrate their static gateway.
+- Manually created threads, `CompletableFuture` common-pool tasks, and executors not managed by JustTest do not receive mock or database context automatically; database or thread-scoped mock access without an active case fails fast instead of creating an empty H2 database or an unstubbed mock. When `@JustTest` owns H2 infrastructure, a missing framework `JdbcTemplate` or `JustTestRoutingDataSource` is also a configuration error and fails fast rather than skipping prepare/verify.
+- Spring `@Transactional` and `@Sql` are unsupported on a JustTest class or `@CaseSource` method because their lifecycle runs before a case is bound; JustTest fails fast on these configurations. Use `prepare.yaml` and `expect.yaml` for deterministic case data instead.
 - A passing rerun is not proof of concurrency safety. Keep flaky suites serial until their ownership and lifecycle boundaries are established.
 - Write new SQL with standard single-quoted strings. The double-quote rewrite is only a compatibility bridge for existing MySQL mapper SQL.
 
 ### Parallel execution configuration
 
-The consumer project's JUnit configuration controls scheduling; SmartTest isolates framework-owned resources once tests run in parallel. Start by running test classes concurrently while keeping cases within each class sequential:
+The consumer project's JUnit configuration controls scheduling; JustTest isolates framework-owned resources once tests run in parallel. Start by running test classes concurrently while keeping cases within each class sequential:
 
 ```properties
 # src/test/resources/junit-platform.properties
@@ -63,22 +63,22 @@ junit.jupiter.execution.parallel.mode.classes.default=concurrent
 
 After verifying that application static state, external shared resources, and asynchronous threads are safe, set `mode.default` to `concurrent` to run cases within the same class concurrently. Normal tests do not need `@Execution`; use `@Execution(ExecutionMode.SAME_THREAD)` only to downgrade an exceptional class that cannot satisfy the concurrency boundaries.
 
-`@TestInstance(PER_CLASS)` cannot be combined with concurrent case execution when JUnit parallel is enabled (`junit.jupiter.execution.parallel.enabled=true`) and cases would run concurrently (`@Execution(CONCURRENT)` or `mode.default=concurrent`). Cases would share one test instance and can race `@SmartMock` field injection. If parallel is disabled, leftover `@Execution` / `mode.default=concurrent` settings are ignored for this check. Use the JUnit default `PER_METHOD` with concurrent cases, or keep `PER_CLASS` with `SAME_THREAD`. Class-level parallelism (`mode.classes.default`) is not case concurrency.
+`@TestInstance(PER_CLASS)` cannot be combined with concurrent case execution when JUnit parallel is enabled (`junit.jupiter.execution.parallel.enabled=true`) and cases would run concurrently (`@Execution(CONCURRENT)` or `mode.default=concurrent`). Cases would share one test instance and can race `@JustMock` field injection. If parallel is disabled, leftover `@Execution` / `mode.default=concurrent` settings are ignored for this check. Use the JUnit default `PER_METHOD` with concurrent cases, or keep `PER_CLASS` with `SAME_THREAD`. Class-level parallelism (`mode.classes.default`) is not case concurrency.
 
 ### Parallel rollout antipatterns
 
-A parallel failure is not automatically a SmartTest isolation failure; first inspect the downstream project's test doubles, static state, and resource lifecycle. The following patterns can make usage errors look like framework flakes:
+A parallel failure is not automatically a JustTest isolation failure; first inspect the downstream project's test doubles, static state, and resource lifecycle. The following patterns can make usage errors look like framework flakes:
 
-1. **Replacing an `@SmartMock` proxy with `ReflectionTestUtils`**
-   - **Wrong:** In `beforeExecute`, use `ReflectionTestUtils` to write a raw Mockito mock into a business bean field, replacing the `ThreadScope` proxy created by `@SmartMock`. Business beans are often singletons, so this pollutes a singleton field and lets other threads or cases see the wrong stub.
-   - **Right:** Stub only the test-class `@SmartMock` field and keep business beans wired to the scoped proxy. Use `StaticMockContext` / `configureStaticMocks` to configure static factory or context gateways per case.
+1. **Replacing an `@JustMock` proxy with `ReflectionTestUtils`**
+   - **Wrong:** In `beforeExecute`, use `ReflectionTestUtils` to write a raw Mockito mock into a business bean field, replacing the `ThreadScope` proxy created by `@JustMock`. Business beans are often singletons, so this pollutes a singleton field and lets other threads or cases see the wrong stub.
+   - **Right:** Stub only the test-class `@JustMock` field and keep business beans wired to the scoped proxy. Use `StaticMockContext` / `configureStaticMocks` to configure static factory or context gateways per case.
 
 2. **Adding a keep-alive flag to the case H2 URL**
    - **Wrong:** Add `DB_CLOSE_DELAY=-1` (or a similar keep-alive flag) to the case URL to hide `already closed`. This only defers the lifecycle problem and can cause memory growth, slower full runs, or OOM.
    - **Right:** Follow the resource boundary described in [#12 (`already closed`)](https://github.com/cyAquarius/just-test/issues/12): when switching cases, unbind thread-bound JDBC/MyBatis holders first, then release the old `DataSource` and rebuild the current case `DataSource`. The template database may use `DB_CLOSE_DELAY=-1` internally for schema cloning (see [#16](https://github.com/cyAquarius/just-test/issues/16)); that is not permission to add it to case URLs. The default case URL contains no `DB_CLOSE_DELAY`.
 
-3. **Expecting SmartTest to repair application static registries**
-   - **Wrong:** Blame SmartTest for concurrency pollution in an application static context, factory, or registry, expect the framework to repair it automatically, or default to adding a global `ContextCreationLock` upstream. SmartTest does not own the isolation or concurrency governance of those application static gateways.
+3. **Expecting JustTest to repair application static registries**
+   - **Wrong:** Blame JustTest for concurrency pollution in an application static context, factory, or registry, expect the framework to repair it automatically, or default to adding a global `ContextCreationLock` upstream. JustTest does not own the isolation or concurrency governance of those application static gateways.
    - **Right:** Use this rollout checklist:
      - Multiple Spring Context warning → check whether `StaticMockContext` / `configureStaticMocks` covers the relevant static context or factory gateway.
      - Diagnose Bean wiring issues such as the Mapper `#0` dual-bean case by name, qualifier, and startup configuration; see [#11](https://github.com/cyAquarius/just-test/issues/11) instead of hiding them with a global lock.
@@ -91,7 +91,7 @@ A parallel failure is not automatically a SmartTest isolation failure; first ins
 
 ## Maven Central
 
-Coordinates use `io.github.cyaquarius`. Java packages remain `com.just.test.smarttest`. Maven Central publishes only `just-test-boot2` and `just-test-boot3` (`just-test-core` is shaded into those JARs). `1.1.0` is the current release coordinate; consumers should depend on Central coordinates. Local `mvn install` remains for developing from this repo.
+Coordinates use `io.github.cyaquarius`. Java packages remain `com.just.test`. Maven Central publishes only `just-test-boot2` and `just-test-boot3` (`just-test-core` is shaded into those JARs). `1.2.0` is the current release coordinate; consumers should depend on Central coordinates. Local `mvn install` remains for developing from this repo.
 
 Java 8 / Boot 2:
 
@@ -99,68 +99,68 @@ Java 8 / Boot 2:
 <dependency>
     <groupId>io.github.cyaquarius</groupId>
     <artifactId>just-test-boot2</artifactId>
-    <version>1.1.0</version>
+    <version>1.2.0</version>
     <scope>test</scope>
 </dependency>
 ```
 
 Java 17 / Boot 3: use `just-test-boot3`. Do not depend on both top-level artifacts. Do not declare `just-test-core` separately — it is shaded into the boot JAR and is not published as its own Central coordinate.
 
-If the company private Maven already proxies Central, only the dependency is needed; if Central is unreachable, proxy Central or upload the boot2/boot3 `1.1.0` artifacts to the private release repo, keeping coordinates `io.github.cyaquarius`.
+If the company private Maven already proxies Central, only the dependency is needed; if Central is unreachable, proxy Central or upload the boot2/boot3 `1.2.0` artifacts to the private release repo, keeping coordinates `io.github.cyaquarius`.
 
-The `enableFeignOkHttp` default (OkHttp off, `FeignContext` kept) is on `main` and will ship in the next patch after published `1.1.0`.
+The `enableFeignOkHttp` default (OkHttp off, `FeignContext` kept) is available in `1.2.0`.
 
-AI-authored tests: follow the in-repo recipe in [docs/ai-smarttest-authoring.md](docs/ai-smarttest-authoring.md).
+AI-authored tests: follow the in-repo recipe in [docs/ai-justtest-authoring.md](docs/ai-justtest-authoring.md).
 
 ## Public API
 
-The stable public API stays under `com.just.test.smarttest`: `annotation` (`@SmartTest`, `@SmartTestProject`, `@CaseSource`, `@SmartMock`, `@BeforeCase`, `@ThreadScopedMock`), `CaseContext`, `SmartTestLifecycle`, and `StaticMockContext`. `SmartTestMarker` and the Boot `SmartTestClassValidationExtension` exist so `@SmartTest` can register JUnit/Spring infrastructure; do not depend on them directly. Engine types live in `com.just.test.smarttest.internal` and are unsupported for consumers even when they remain public for JUnit or Spring registration. When moving an application to Boot 3, migrate its Java EE types to Jakarta as required by Spring Boot 3; Java SE `javax.sql.DataSource` is not part of that migration.
+The stable public API stays under `com.just.test`: `annotation` (`@JustTest`, `@JustTestProject`, `@CaseSource`, `@JustMock`, `@BeforeCase`, `@ThreadScopedMock`), `CaseContext`, `JustTestLifecycle`, and `StaticMockContext`. `JustTestMarker` and the Boot `JustTestClassValidationExtension` exist so `@JustTest` can register JUnit/Spring infrastructure; do not depend on them directly. Engine types live in `com.just.test.internal` and are unsupported for consumers even when they remain public for JUnit or Spring registration. When moving an application to Boot 3, migrate its Java EE types to Jakarta as required by Spring Boot 3; Java SE `javax.sql.DataSource` is not part of that migration.
 
 ## Write a test
 
-For the AI authoring recipe (method-package layout, Java glue, flags, anti-patterns), see [docs/ai-smarttest-authoring.md](docs/ai-smarttest-authoring.md).
+For the AI authoring recipe (method-package layout, Java glue, flags, anti-patterns), see [docs/ai-justtest-authoring.md](docs/ai-justtest-authoring.md).
 
-SmartTest always uses the Spring Boot TestContext. Startup knowledge is split into three layers:
+JustTest always uses the Spring Boot TestContext. Startup knowledge is split into three layers:
 
-1. **Framework-owned:** H2, the transaction manager, `JdbcTemplate`, default component-scan denylist, default Feign OkHttp disable (`feign.okhttp.enabled=false` / Boot 3 `spring.cloud.openfeign.okhttp.enabled=false`; `FeignAutoConfiguration` is not excluded), and (when `mapperPackages` is set) MyBatis `SqlSessionFactory` / `SqlSessionTemplate` / MapperScan bound to SmartTest's DataSource.
+1. **Framework-owned:** H2, the transaction manager, `JdbcTemplate`, default component-scan denylist, default Feign OkHttp disable (`feign.okhttp.enabled=false` / Boot 3 `spring.cloud.openfeign.okhttp.enabled=false`; `FeignAutoConfiguration` is not excluded), and (when `mapperPackages` is set) MyBatis `SqlSessionFactory` / `SqlSessionTemplate` / MapperScan bound to JustTest's DataSource.
 2. **Defaults you may overlay:** `excludeClasses`, `excludeFilters`, `includeFilters`, `excludeAutoConfiguration`, and `enableFeignOkHttp`. You do not need to copy the default denylist.
-3. **Project must declare:** `basePackages` (no guessed business root), `src/test/resources/sql/schema.sql`, and external-dependency mocks on Support via `@SmartMock`. Do not put production DataSource / transaction-manager configuration on the test startup class.
+3. **Project must declare:** `basePackages` (no guessed business root), `src/test/resources/sql/schema.sql`, and external-dependency mocks on Support via `@JustMock`. Do not put production DataSource / transaction-manager configuration on the test startup class.
 
 ```java
-// src/test/java/com/example/smarttest/SmartTestApplication.java
-@SmartTestProject(
+// src/test/java/com/example/justtest/JustTestApplication.java
+@JustTestProject(
     basePackages = "com.example",
     mapperPackages = "com.example.mapper", // optional; omit if the project has no MyBatis
     dataSourceAliases = "masterDataSource", // optional legacy bean names
     transactionManagerAliases = "masterDataTransactionManager"
     // enableFeignOkHttp = true // opt in only if tests need OkHttp Feign (`client` bean)
 )
-public class SmartTestApplication {
+public class JustTestApplication {
 }
 ```
 
-`@SmartTestProject` meta-annotates `@SpringBootConfiguration` and `@EnableAutoConfiguration`. The class body can stay empty. Default scan excludes other `@SpringBootApplication` / `@SpringBootConfiguration` types under `basePackages`, plus `@Controller` / `@RestController` / `@ControllerAdvice` when those annotations exist, `@FeignClient` when OpenFeign is present, and known job/scheduling stereotypes when they can be detected without a hard dependency. Feign OkHttp is off by default (`enableFeignOkHttp` defaults to `false`) because `OkHttpFeignConfiguration` registers a bean named `client` (`okhttp3.OkHttpClient`) that `@Resource` prefers over a type-compatible `EmailClient` field of the same name; `FeignAutoConfiguration` and `FeignContext` stay enabled for Feign clients that live in dependency jars. `dataSource` and `transactionManager` are registered as aliases of the SmartTest primaries when those names are free. Additional names in `dataSourceAliases` / `transactionManagerAliases` are registered the same way for legacy `@Qualifier` / `@Transactional` values; blank entries are ignored, duplicates are discarded, and a name that already exists as a bean definition or alias is left unchanged (SmartTest logs the skip). Setting `mapperPackages` without mybatis-spring fails fast; mybatis-spring without `mapperPackages` does not invent a scan root.
+`@JustTestProject` meta-annotates `@SpringBootConfiguration` and `@EnableAutoConfiguration`. The class body can stay empty. Default scan excludes other `@SpringBootApplication` / `@SpringBootConfiguration` types under `basePackages`, plus `@Controller` / `@RestController` / `@ControllerAdvice` when those annotations exist, `@FeignClient` when OpenFeign is present, and known job/scheduling stereotypes when they can be detected without a hard dependency. Feign OkHttp is off by default (`enableFeignOkHttp` defaults to `false`) because `OkHttpFeignConfiguration` registers a bean named `client` (`okhttp3.OkHttpClient`) that `@Resource` prefers over a type-compatible `EmailClient` field of the same name; `FeignAutoConfiguration` and `FeignContext` stay enabled for Feign clients that live in dependency jars. `dataSource` and `transactionManager` are registered as aliases of the JustTest primaries when those names are free. Additional names in `dataSourceAliases` / `transactionManagerAliases` are registered the same way for legacy `@Qualifier` / `@Transactional` values; blank entries are ignored, duplicates are discarded, and a name that already exists as a bean definition or alias is left unchanged (JustTest logs the skip). Setting `mapperPackages` without mybatis-spring fails fast; mybatis-spring without `mapperPackages` does not invent a scan root.
 
-A hand-written `@SpringBootConfiguration` + `@EnableAutoConfiguration` + `@ComponentScan` startup class still works. Prefer `@SmartTestProject` for new projects.
+A hand-written `@SpringBootConfiguration` + `@EnableAutoConfiguration` + `@ComponentScan` startup class still works. Prefer `@JustTestProject` for new projects.
 
-`SmartTestApplication` is the consumer-owned startup configuration dedicated to SmartTest and needs no `main` method. Put it in a dedicated test package and place every SmartTest class in that package or a child package, for example `com.example.smarttest.order`. Spring Boot finds this nearer test configuration before searching the parent package that contains the production `Application`. Merely placing it under `src/test` does not prevent a conflict because the test classpath contains both production and test classes. Keep ordinary JUnit tests that are not SmartTest outside that tree. The case layout stays Support + method packages; do not invent a second case-root convention.
+`JustTestApplication` is the consumer-owned startup configuration dedicated to JustTest and needs no `main` method. Put it in a dedicated test package and place every JustTest class in that package or a child package, for example `com.example.justtest.order`. Spring Boot finds this nearer test configuration before searching the parent package that contains the production `Application`. Merely placing it under `src/test` does not prevent a conflict because the test classpath contains both production and test classes. Keep ordinary JUnit tests that are not JustTest outside that tree. The case layout stays Support + method packages; do not invent a second case-root convention.
 
-The SmartTest context uses the H2 `DataSource`, transaction manager, and `JdbcTemplate` supplied by the framework. Exclude remaining production persistence configuration with the `test` profile or `excludeClasses` / `excludeFilters`. The framework does not rewrite user Bean `@Primary` metadata or choose between production and test data sources on the consumer's behalf. It also does not auto-mock business clients.
+The JustTest context uses the H2 `DataSource`, transaction manager, and `JdbcTemplate` supplied by the framework. Exclude remaining production persistence configuration with the `test` profile or `excludeClasses` / `excludeFilters`. The framework does not rewrite user Bean `@Primary` metadata or choose between production and test data sources on the consumer's behalf. It also does not auto-mock business clients.
 
 ```java
-// src/test/java/com/example/smarttest/order/OrderSmartTestSupport.java
-abstract class OrderSmartTestSupport implements SmartTestLifecycle {
+// src/test/java/com/example/justtest/order/OrderJustTestSupport.java
+abstract class OrderJustTestSupport implements JustTestLifecycle {
 
     @Autowired
     protected OrderService orderService;
 
-    @SmartMock
+    @JustMock
     protected PricingClient pricingClient;
 }
 
-// src/test/java/com/example/smarttest/order/create/CreateSmartTest.java
-@SmartTest
-class CreateSmartTest extends OrderSmartTestSupport {
+// src/test/java/com/example/justtest/order/create/CreateJustTest.java
+@JustTest
+class CreateJustTest extends OrderJustTestSupport {
 
     @CaseSource
     void createOrder(CaseContext context) {
@@ -169,12 +169,12 @@ class CreateSmartTest extends OrderSmartTestSupport {
 }
 ```
 
-SmartTest does not collect the `@CaseSource` method's Java return value (the method is `void`). Call `context.setResult(...)` when `response.yaml` or `verifyResult` should see a result; omitting it asserts against `null`.
+JustTest does not collect the `@CaseSource` method's Java return value (the method is `void`). Call `context.setResult(...)` when `response.yaml` or `verifyResult` should see a result; omitting it asserts against `null`.
 
-`@SmartTest` already includes the Spring Boot bootstrapper and loads `application-test.yml` through the `test` profile. Do not combine it with `@SpringBootTest` or declare another `@BootstrapWith`. The dedicated test package should expose exactly one `@SpringBootConfiguration`. Use `@ContextConfiguration(classes = SmartTestApplication.class)` only when a test is outside that package hierarchy, several startup configurations are candidates, or that test needs a special configuration.
+`@JustTest` already includes the Spring Boot bootstrapper and loads `application-test.yml` through the `test` profile. Do not combine it with `@SpringBootTest` or declare another `@BootstrapWith`. The dedicated test package should expose exactly one `@SpringBootConfiguration`. Use `@ContextConfiguration(classes = JustTestApplication.class)` only when a test is outside that package hierarchy, several startup configurations are candidates, or that test needs a special configuration.
 
-Use `@SmartMock(name = "beanName")` or `@Qualifier("beanName")` when a type has multiple candidates. Prefer `@SmartMock` when replacing Spring beans; `@MockBean` is not required.
-Do not use `ReflectionTestUtils` to replace an `@SmartMock` `ThreadScope` proxy with a raw Mockito mock in a business bean field; stub only the test-class `@SmartMock` field.
+Use `@JustMock(name = "beanName")` or `@Qualifier("beanName")` when a type has multiple candidates. Prefer `@JustMock` when replacing Spring beans; `@MockBean` is not required.
+Do not use `ReflectionTestUtils` to replace an `@JustMock` `ThreadScope` proxy with a raw Mockito mock in a business bean field; stub only the test-class `@JustMock` field.
 
 If application code obtains Spring through a static gateway, bind that gateway explicitly per case:
 
@@ -187,24 +187,24 @@ public void configureStaticMocks(CaseContext context, StaticMockContext mocks) {
 }
 ```
 
-Unstubbed static methods continue to call their real implementation. Do not close the returned `MockedStatic` manually; SmartTest closes all registrations after user `@AfterEach` on the original case thread.
+Unstubbed static methods continue to call their real implementation. Do not close the returned `MockedStatic` manually; JustTest closes all registrations after user `@AfterEach` on the original case thread.
 
-Boot 2 uses Mockito 4, so static mocks and final-type mocks require the consumer to enable the inline mock maker explicitly, for example by putting `mock-maker-inline` in `src/test/resources/mockito-extensions/org.mockito.plugins.MockMaker` or adding the matching `mockito-inline`. Boot 3 uses Mockito 5, whose default mock maker is inline; consumers that override the MockMaker still own static/final mock support. SmartTest does not select a MockMaker globally, avoiding conflicts with consumer configuration.
+Boot 2 uses Mockito 4, so static mocks and final-type mocks require the consumer to enable the inline mock maker explicitly, for example by putting `mock-maker-inline` in `src/test/resources/mockito-extensions/org.mockito.plugins.MockMaker` or adding the matching `mockito-inline`. Boot 3 uses Mockito 5, whose default mock maker is inline; consumers that override the MockMaker still own static/final mock support. JustTest does not select a MockMaker globally, avoiding conflicts with consumer configuration.
 
-The default case root is the test class package. Case directories are siblings of the `.java` file on the classpath (`{packagePath}/*/*.yaml|yml`). SmartTest does not probe `{packagePath}/{SimpleClassName}/`. A package may contain at most one concrete class that **directly** declares `@SmartTest`; inheriting the marker from a parent is not enough. Abstract Support bases belong in the parent business-class directory, hold shared lifecycle and mocks only, must not be `@SmartTest`, and must not own case YAML. Annotating an abstract Support fails fast. Put one `@CaseSource` method on the concrete class — several `@CaseSource` methods on the same class share every sibling case.
+The default case root is the test class package. Case directories are siblings of the `.java` file on the classpath (`{packagePath}/*/*.yaml|yml`). JustTest does not probe `{packagePath}/{SimpleClassName}/`. A package may contain at most one concrete class that **directly** declares `@JustTest`; inheriting the marker from a parent is not enough. Abstract Support bases belong in the parent business-class directory, hold shared lifecycle and mocks only, must not be `@JustTest`, and must not own case YAML. Annotating an abstract Support fails fast. Put one `@CaseSource` method on the concrete class — several `@CaseSource` methods on the same class share every sibling case.
 
 Recommended tree (co-located under `src/test/java`):
 
 ```text
-src/test/java/com/example/smarttest/order/
-├── OrderSmartTestSupport.java
+src/test/java/com/example/justtest/order/
+├── OrderJustTestSupport.java
 ├── create/
-│   ├── CreateSmartTest.java
+│   ├── CreateJustTest.java
 │   ├── ok/
 │   ├── dup/
 │   └── bad-input/
 └── cancel/
-    ├── CancelSmartTest.java
+    ├── CancelJustTest.java
     └── ok/
 ```
 
@@ -239,7 +239,7 @@ Keep `src/test/resources` for `schema.sql` and `application-test.yml`. YAML can 
 - `expect.yaml`: expected database rows.
 - `expect_exception.yaml`: expected exception type and optional message.
 
-Field suffix flags are stage-specific: `[C]` selects rows in `expect.yaml` and enables unordered List matching in `response.yaml`. Once any List item uses `[C]`, every expected item must be an object with at least one `[C]` field; SmartTest rejects unordered expectations that mix keyed and unkeyed items. `[CN]` applies only to `expect.yaml`, `[F]` applies only to `prepare.yaml`, and the remaining flags apply to the corresponding preparation or assertion stage shown below:
+Field suffix flags are stage-specific: `[C]` selects rows in `expect.yaml` and enables unordered List matching in `response.yaml`. Once any List item uses `[C]`, every expected item must be an object with at least one `[C]` field; JustTest rejects unordered expectations that mix keyed and unkeyed items. `[CN]` applies only to `expect.yaml`, `[F]` applies only to `prepare.yaml`, and the remaining flags apply to the corresponding preparation or assertion stage shown below:
 
 | Flag | Meaning |
 | --- | --- |
@@ -256,13 +256,13 @@ For database expectations, prefer explicit `[C]` fields so the intended row is u
 
 ## Lifecycle
 
-`@SmartTest` is a class-level execution contract: the test class must implement `SmartTestLifecycle`, and every executable test method in the class must use `@CaseSource`. If the class does not implement the interface, or it contains `@Test`, `@RepeatedTest`, `@ParameterizedTest`, `@TestFactory`, or another ordinary JUnit test method, SmartTest fails in `BeforeAll` and asks you to fix the class. Combining `@TestInstance(PER_CLASS)` with concurrent case execution (only when `junit.jupiter.execution.parallel.enabled=true`) also fails in `BeforeAll`. For incremental adoption, leave existing JUnit test classes unchanged and put new cases in a separate `@SmartTest` class; legacy classes without `@SmartTest` are unaffected.
+`@JustTest` is a class-level execution contract: the test class must implement `JustTestLifecycle`, and every executable test method in the class must use `@CaseSource`. If the class does not implement the interface, or it contains `@Test`, `@RepeatedTest`, `@ParameterizedTest`, `@TestFactory`, or another ordinary JUnit test method, JustTest fails in `BeforeAll` and asks you to fix the class. Combining `@TestInstance(PER_CLASS)` with concurrent case execution (only when `junit.jupiter.execution.parallel.enabled=true`) also fails in `BeforeAll`. For incremental adoption, leave existing JUnit test classes unchanged and put new cases in a separate `@JustTest` class; legacy classes without `@JustTest` are unaffected.
 
-`@CaseSource` is itself the test annotation; do not combine it with another JUnit test annotation. For every YAML case SmartTest performs:
+`@CaseSource` is itself the test annotation; do not combine it with another JUnit test annotation. For every YAML case JustTest performs:
 
 1. create an independent JUnit invocation and its `CaseContext`;
 2. bind the case, create and initialize a fresh case database, and load `prepare.yaml`;
-3. reset and prewarm scoped mocks, inject `@SmartMock` fields, and configure case static mocks;
+3. reset and prewarm scoped mocks, inject `@JustMock` fields, and configure case static mocks;
 4. execute user `@BeforeEach` methods;
 5. invoke matching `@BeforeCase("case-name")` methods and `beforeExecute`, execute the test, always call `afterExecute` (even if the test threw), then verify exception, result, and database data. If `afterExecute` itself throws, YAML verification is skipped and that exception is propagated (the original test exception is added as suppressed when present). An exception that is not declared in `expect_exception.yaml` and not handled by `verifyException` is rethrown after `afterExecute` and YAML verification;
 6. execute user `@AfterEach` methods;

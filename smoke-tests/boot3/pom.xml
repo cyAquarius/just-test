@@ -13,11 +13,11 @@
 
     <groupId>com.just.test.smoke</groupId>
     <artifactId>just-test-boot3-consumer-smoke</artifactId>
-    <version>1.1.0</version>
+    <version>1.2.0</version>
 
     <properties>
         <java.version>17</java.version>
-        <just-test.version>1.1.0</just-test.version>
+        <just-test.version>1.2.0</just-test.version>
     </properties>
 
     <dependencies>

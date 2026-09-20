@@ -1,2 +1,2 @@
 org.springframework.test.context.ContextCustomizerFactory=\
-  com.just.test.smarttest.internal.mock.SmartMockContextCustomizerFactory
+  com.just.test.internal.mock.JustMockContextCustomizerFactory

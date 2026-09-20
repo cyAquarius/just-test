@@ -1,2 +1,0 @@
-type: com.just.test.smarttest.lifecycle.expectexception.InvoiceNotFoundException
-message[R]: 'invoice-\d+ not found'
