@@ -48,7 +48,7 @@ classpath 对应 `com/example/smarttest/order/create/{ok,dup,bad-input}/*.yaml|y
 
 规则：
 
-- 一个业务类目录（如 `order/`）下放抽象 `Support`（共享 mock / 生命周期），不计入「一包一个具体类」。
+- 一个业务类目录（如 `order/`）下放抽象 `Support`（共享 mock / 生命周期）。Support **不要**标 `@SmartTest`，**不要**放 case YAML；不计入「一包一个具体类」。
 - 每个业务方法一个子包、一个具体 `@SmartTest` 类、一个 `@CaseSource`。同一类上多个 `@CaseSource` 会共享本包全部 sibling case，不推荐。
 - 同一包有多个具体 `@SmartTest` 类时启动 fail-fast，并列出冲突 FQCN。父包里的抽象 Support 不算。
 - 不要探测 `{package}/{SimpleClassName}/`。类名套娃不是默认布局。
@@ -138,5 +138,5 @@ class CreateSmartTest extends OrderSmartTestSupport {
 - 用 `ReflectionTestUtils` 把 raw Mockito mock 写入业务 Bean，覆盖 `@SmartMock` 的 `ThreadScope` proxy。
 - 在 `@SmartTest` 类或 `@CaseSource` 方法上使用 Spring `@Transactional` / `@Sql`（生命周期早于 case 绑定，框架 fail-fast）。用 `prepare.yaml` / `expect.yaml`。
 - 再叠 `@SpringBootTest`、普通 `@Test`，或不写 `context.setResult` 却期望 `response.yaml` 对上返回值。
-- 再套一层 `{SimpleClassName}/`，或在同一包放多个具体 `@SmartTest` 类。
+- 再套一层 `{SimpleClassName}/`，在同一包放多个具体 `@SmartTest` 类，或给抽象 Support 放 case YAML / 标 `@SmartTest`。
 - 同一类上堆多个 `@CaseSource`，或让多个类共享同一个无差别 `@CaseSource` 自定义根。

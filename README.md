@@ -182,7 +182,7 @@ Unstubbed static methods continue to call their real implementation. Do not clos
 
 Boot 2 uses Mockito 4, so static mocks and final-type mocks require the consumer to enable the inline mock maker explicitly, for example by putting `mock-maker-inline` in `src/test/resources/mockito-extensions/org.mockito.plugins.MockMaker` or adding the matching `mockito-inline`. Boot 3 uses Mockito 5, whose default mock maker is inline; consumers that override the MockMaker still own static/final mock support. SmartTest does not select a MockMaker globally, avoiding conflicts with consumer configuration.
 
-The default case root is the test class package. Case directories are siblings of the `.java` file on the classpath (`{packagePath}/*/*.yaml|yml`). SmartTest does not probe `{packagePath}/{SimpleClassName}/`. A package may contain at most one concrete `@SmartTest` class; abstract Support bases belong in the parent business-class directory and do not count. Put one `@CaseSource` method on that class — several `@CaseSource` methods on the same class share every sibling case.
+The default case root is the test class package. Case directories are siblings of the `.java` file on the classpath (`{packagePath}/*/*.yaml|yml`). SmartTest does not probe `{packagePath}/{SimpleClassName}/`. A package may contain at most one concrete `@SmartTest` class; abstract Support bases belong in the parent business-class directory, hold shared lifecycle and mocks only, must not be `@SmartTest`, and must not own case YAML. Put one `@CaseSource` method on the concrete class — several `@CaseSource` methods on the same class share every sibling case.
 
 Recommended tree (co-located under `src/test/java`):
 
