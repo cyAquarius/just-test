@@ -107,11 +107,15 @@ Java 17 / Boot 3: use `just-test-boot3`. Do not depend on both top-level artifac
 
 If the company private Maven already proxies Central, only the dependency is needed; if Central is unreachable, proxy Central or upload the boot2/boot3 `1.0.0` artifacts to the private release repo, keeping coordinates `io.github.cyaquarius`.
 
+AI-authored tests: follow the in-repo recipe in [docs/ai-smarttest-authoring.md](docs/ai-smarttest-authoring.md).
+
 ## Public API
 
 The stable public API stays under `com.just.test.smarttest`: `annotation` (`@SmartTest`, `@CaseSource`, `@SmartMock`, `@BeforeCase`, `@ThreadScopedMock`), `CaseContext`, `SmartTestLifecycle`, and `StaticMockContext`. `SmartTestMarker` and the Boot `SmartTestClassValidationExtension` exist so `@SmartTest` can register JUnit/Spring infrastructure; do not depend on them directly. Engine types live in `com.just.test.smarttest.internal` and are unsupported for consumers even when they remain public for JUnit or Spring registration. When moving an application to Boot 3, migrate its Java EE types to Jakarta as required by Spring Boot 3; Java SE `javax.sql.DataSource` is not part of that migration.
 
 ## Write a test
+
+For the AI authoring recipe (case directory, class-name layer, Java glue, flags, anti-patterns), see [docs/ai-smarttest-authoring.md](docs/ai-smarttest-authoring.md).
 
 SmartTest always uses the Spring Boot TestContext. The consumer project must provide `src/test/resources/sql/schema.sql` for H2 schema initialization and a dedicated test startup configuration:
 

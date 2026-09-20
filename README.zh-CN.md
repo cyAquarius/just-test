@@ -107,11 +107,15 @@ Java 17 / Boot 3：把 `artifactId` 换成 `just-test-boot3`。不要同时引�
 
 若公司私服已代理 Central，只需声明依赖；若无法访问 Central，请代理 Central，或将 boot2/boot3 的 `1.0.0` 制品上传到私服 release 仓库，并保持坐标为 `io.github.cyaquarius`。
 
+AI 编写用例：按仓库内配方 [docs/ai-smarttest-authoring.md](docs/ai-smarttest-authoring.md)。
+
 ## 公开 API
 
 稳定公开 API 在 `com.just.test.smarttest` 下：`annotation`（`@SmartTest`、`@CaseSource`、`@SmartMock`、`@BeforeCase`、`@ThreadScopedMock`）、`CaseContext`、`SmartTestLifecycle` 和 `StaticMockContext`。`SmartTestMarker` 与 Boot 模块的 `SmartTestClassValidationExtension` 只供 `@SmartTest` 注册 JUnit/Spring 基础设施，不要直接依赖。引擎类型放在 `com.just.test.smarttest.internal`，即便因 JUnit / Spring 注册而保持 public，也不对消费方提供兼容承诺。迁移到 Boot 3 时，消费工程自身使用的 Java EE 类型仍需按 Spring Boot 3 规则迁移到 Jakarta。Java SE 的 `javax.sql.DataSource` 不属于 Jakarta 迁移范围。
 
 ## 编写测试
+
+AI 编写配方（用例目录、类名层、Java glue、Flag、反模式）见 [docs/ai-smarttest-authoring.md](docs/ai-smarttest-authoring.md)。
 
 SmartTest 统一使用 Spring Boot TestContext。消费项目必须提供 `src/test/resources/sql/schema.sql`，用于初始化 H2 表结构，并提供专用测试启动配置：
 
