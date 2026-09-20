@@ -28,6 +28,7 @@ Boot 2 线保留最后一个正式版本 2.7.18 和真实 Java 8 基线；Boot 3
 ## SmartTest 提供的能力
 
 - `@SmartTest` 配置 Spring Test、H2、`JdbcTemplate` 与事务管理器，使被测服务可以按正常事务行为执行；不存在 `refresh` scope 时会注册一个替代实现，使使用 `@RefreshScope` 或 `@Scope("refresh")` 的业务 Bean 无需 Spring Cloud refresh 基础设施即可加载，但测试不提供真实的 refresh 语义。
+- `@SmartTestProject` 是推荐的消费方启动注解：空类加上 `basePackages`（以及可选的 `mapperPackages`）即可组合 `@SpringBootConfiguration`、`@EnableAutoConfiguration`、默认组件扫描排除、可选的 MyBatis→SmartTest 数据源装配，以及 `dataSource` / `transactionManager` 别名。已有手写启动类可继续使用。
 - `@CaseSource` 发现 YAML 用例，并为每个 case 创建完整的 JUnit test-template invocation；测试方法和标准单测生命周期方法均可注入 `CaseContext`。
 - 通过 `prepare.yaml`、`response.yaml`、`expect.yaml`、`expect_exception.yaml` 完成数据准备以及结果、数据库和异常验证。
 - `@SmartMock` 创建线程作用域 Mockito mock；同类型多 Bean 时，显式 `name` 只命中类型兼容的 Bean；如果现有 Bean 类型无法解析（例如 `FactoryBean` 隐藏了对象类型），仍会使用名称回退。名称相同但类型无关的 Bean 不会被替换，错误的显式名称仍会以缺少候选 Bean 的错误失败。
@@ -90,7 +91,7 @@ junit.jupiter.execution.parallel.mode.classes.default=concurrent
 
 ## Maven Central
 
-坐标为 `io.github.cyaquarius`。Java 包名仍是 `com.just.test.smarttest`。Maven Central **只发布** `just-test-boot2` 与 `just-test-boot3`（`just-test-core` 打进这两个 JAR，不单独上架）。`1.0.2` 已发布到 Maven Central，消费方应使用 Central 坐标。本地 `mvn install` 仍用于基于本仓库 SNAPSHOT 树开发。
+坐标为 `io.github.cyaquarius`。Java 包名仍是 `com.just.test.smarttest`。Maven Central **只发布** `just-test-boot2` 与 `just-test-boot3`（`just-test-core` 打进这两个 JAR，不单独上架）。`1.1.0` 是当前发布坐标，消费方应使用 Central 坐标。本地 `mvn install` 仍用于基于本仓库开发。
 
 Java 8 / Boot 2：
 
@@ -98,45 +99,48 @@ Java 8 / Boot 2：
 <dependency>
     <groupId>io.github.cyaquarius</groupId>
     <artifactId>just-test-boot2</artifactId>
-    <version>1.0.2</version>
+    <version>1.1.0</version>
     <scope>test</scope>
 </dependency>
 ```
 
 Java 17 / Boot 3：把 `artifactId` 换成 `just-test-boot3`。不要同时引入两个顶层 artifact。不要单独声明 `just-test-core`——它已打进 boot JAR，且没有独立的 Central 坐标。
 
-若公司私服已代理 Central，只需声明依赖；若无法访问 Central，请代理 Central，或将 boot2/boot3 的 `1.0.2` 制品上传到私服 release 仓库，并保持坐标为 `io.github.cyaquarius`。
+若公司私服已代理 Central，只需声明依赖；若无法访问 Central，请代理 Central，或将 boot2/boot3 的 `1.1.0` 制品上传到私服 release 仓库，并保持坐标为 `io.github.cyaquarius`。
 
 AI 编写用例：按仓库内配方 [docs/ai-smarttest-authoring.md](docs/ai-smarttest-authoring.md)。
 
 ## 公开 API
 
-稳定公开 API 在 `com.just.test.smarttest` 下：`annotation`（`@SmartTest`、`@CaseSource`、`@SmartMock`、`@BeforeCase`、`@ThreadScopedMock`）、`CaseContext`、`SmartTestLifecycle` 和 `StaticMockContext`。`SmartTestMarker` 与 Boot 模块的 `SmartTestClassValidationExtension` 只供 `@SmartTest` 注册 JUnit/Spring 基础设施，不要直接依赖。引擎类型放在 `com.just.test.smarttest.internal`，即便因 JUnit / Spring 注册而保持 public，也不对消费方提供兼容承诺。迁移到 Boot 3 时，消费工程自身使用的 Java EE 类型仍需按 Spring Boot 3 规则迁移到 Jakarta。Java SE 的 `javax.sql.DataSource` 不属于 Jakarta 迁移范围。
+稳定公开 API 在 `com.just.test.smarttest` 下：`annotation`（`@SmartTest`、`@SmartTestProject`、`@CaseSource`、`@SmartMock`、`@BeforeCase`、`@ThreadScopedMock`）、`CaseContext`、`SmartTestLifecycle` 和 `StaticMockContext`。`SmartTestMarker` 与 Boot 模块的 `SmartTestClassValidationExtension` 只供 `@SmartTest` 注册 JUnit/Spring 基础设施，不要直接依赖。引擎类型放在 `com.just.test.smarttest.internal`，即便因 JUnit / Spring 注册而保持 public，也不对消费方提供兼容承诺。迁移到 Boot 3 时，消费工程自身使用的 Java EE 类型仍需按 Spring Boot 3 规则迁移到 Jakarta。Java SE 的 `javax.sql.DataSource` 不属于 Jakarta 迁移范围。
 
 ## 编写测试
 
 AI 编写配方（方法包布局、Java glue、Flag、反模式）见 [docs/ai-smarttest-authoring.md](docs/ai-smarttest-authoring.md)。
 
-SmartTest 统一使用 Spring Boot TestContext。消费项目必须提供 `src/test/resources/sql/schema.sql`，用于初始化 H2 表结构，并提供专用测试启动配置：
+SmartTest 统一使用 Spring Boot TestContext。启动知识分成三层：
+
+1. **框架拥有：** H2、事务管理器、`JdbcTemplate`、默认组件扫描 denylist，以及（声明了 `mapperPackages` 时）绑定 SmartTest DataSource 的 MyBatis `SqlSessionFactory` / `SqlSessionTemplate` / MapperScan。
+2. **默认可覆盖：** `excludeClasses`、`excludeFilters`、`includeFilters`、`excludeAutoConfiguration`。消费方不必复制默认 denylist。
+3. **项目必须声明：** `basePackages`（不猜测业务根包）、`src/test/resources/sql/schema.sql`，以及 Support 上的 `@SmartMock`。不要把生产 DataSource / 事务管理器配置放到测试启动类上。
 
 ```java
 // src/test/java/com/example/smarttest/SmartTestApplication.java
-@SpringBootConfiguration
-@EnableAutoConfiguration
-@ComponentScan(
+@SmartTestProject(
     basePackages = "com.example",
-    excludeFilters = @ComponentScan.Filter(
-        type = FilterType.ASSIGNABLE_TYPE,
-        classes = Application.class
-    )
+    mapperPackages = "com.example.mapper" // 可选；没有 MyBatis 时省略
 )
 public class SmartTestApplication {
 }
 ```
 
-`SmartTestApplication` 是消费工程专用于 SmartTest 的测试启动配置，不需要 `main` 方法。将它放入独立测试包，并将所有 SmartTest 测试类放在该包或其子包下，例如 `com.example.smarttest.order`。Spring Boot 会先发现这个更近的测试配置，不会继续搜索父包中的生产 `Application`；仅放在 `src/test` 并不能避免两个启动类冲突，因为测试 classpath 同时包含生产类和测试类。扫描业务根包时还应像示例一样排除生产启动类，避免其配置被组件扫描重新加载；业务组件扫描及其他排除规则、Mapper 装配和项目级外部依赖 Mock 均由消费工程在这里定义。
+`@SmartTestProject` 元注解组合 `@SpringBootConfiguration` 与 `@EnableAutoConfiguration`，类体可以为空。默认扫描会排除 `basePackages` 下的其他 `@SpringBootApplication` / `@SpringBootConfiguration`，并在注解存在时排除 `@Controller` / `@RestController` / `@ControllerAdvice`；classpath 上有 OpenFeign 时排除 `@FeignClient`；能安全探测到的 Job / 调度刻板类型也会排除。`dataSource` 与 `transactionManager` 在名称未被占用时注册为 SmartTest 主 Bean 的别名。声明了 `mapperPackages` 但缺少 mybatis-spring 会 fail-fast；有 MyBatis 但未声明 `mapperPackages` 时不会猜测扫描根。
 
-SmartTest Context 使用框架提供的 H2 `DataSource`、事务管理器和 `JdbcTemplate`。测试启动配置不得同时加载生产 `DataSource`、事务管理器或其他数据库基础设施配置；请通过 `test` profile 或组件扫描排除这些生产配置。框架内部会精确连接自身 H2，但不会改写用户 Bean 的 `@Primary` 属性，也不会替测试选择生产与测试数据源。
+手写 `@SpringBootConfiguration` + `@EnableAutoConfiguration` + `@ComponentScan` 启动类仍然有效。新项目请优先使用 `@SmartTestProject`。
+
+`SmartTestApplication` 是消费工程专用于 SmartTest 的测试启动配置，不需要 `main` 方法。将它放入独立测试包，并将所有 SmartTest 测试类放在该包或其子包下，例如 `com.example.smarttest.order`。Spring Boot 会先发现这个更近的测试配置，不会继续搜索父包中的生产 `Application`；仅放在 `src/test` 并不能避免两个启动类冲突，因为测试 classpath 同时包含生产类和测试类。非 SmartTest 的普通 JUnit 测试放在该树之外。用例目录仍是 Support + 方法包，不要另造一套 case 根约定。
+
+SmartTest Context 使用框架提供的 H2 `DataSource`、事务管理器和 `JdbcTemplate`。其余生产持久化配置请用 `test` profile 或 `excludeClasses` / `excludeFilters` 排除。框架不会改写用户 Bean 的 `@Primary` 属性，也不会替测试选择生产与测试数据源，更不会自动 mock 业务 Client。
 
 ```java
 // src/test/java/com/example/smarttest/order/OrderSmartTestSupport.java

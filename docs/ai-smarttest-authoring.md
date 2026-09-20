@@ -10,8 +10,8 @@ SmartTest 面向 **YAML 用例 + 薄 Java glue**，不是手写 assert 堆。本
 
 | 消费工程 | Maven Central |
 | --- | --- |
-| Java 8 / Spring Boot 2 | `io.github.cyaquarius:just-test-boot2:1.0.2` |
-| Java 17 / Spring Boot 3 | `io.github.cyaquarius:just-test-boot3:1.0.2` |
+| Java 8 / Spring Boot 2 | `io.github.cyaquarius:just-test-boot2:1.1.0` |
+| Java 17 / Spring Boot 3 | `io.github.cyaquarius:just-test-boot3:1.1.0` |
 
 不要同时引入两个顶层 artifact。不要单独声明 `just-test-core`：它已 shade 进 boot JAR，Central 不上架。
 
@@ -20,10 +20,21 @@ SmartTest 面向 **YAML 用例 + 薄 Java glue**，不是手写 assert 堆。本
 消费工程必须提供：
 
 1. `src/test/resources/sql/schema.sql`，用于初始化 H2。
-2. 专用 `SmartTestApplication`（`@SpringBootConfiguration` + `@EnableAutoConfiguration` + `@ComponentScan`，扫描时排除生产 `Application`）。放入独立测试包，所有 `@SmartTest` 类放在该包或其子包。
+2. 专用 `SmartTestApplication`，推荐薄注解形式：
+
+```java
+@SmartTestProject(
+    basePackages = "com.example",
+    mapperPackages = "com.example.mapper" // 可选
+)
+public class SmartTestApplication {
+}
+```
+
+放入独立测试包，所有 `@SmartTest` 类放在该包或其子包。框架拥有默认扫描 denylist 与（可选）MyBatis 装配；项目只声明 `basePackages` / 差异过滤器。外部依赖 Mock 放在 Support 的 `@SmartMock` 上，不要指望启动注解自动 mock。手写 `@SpringBootConfiguration` 启动类仍可用。
 3. `@SmartTest` 已包含 Boot TestContext 与 `test` profile；不要再叠 `@SpringBootTest` 或 `@BootstrapWith`。启动配置不得加载生产 `DataSource` / 事务管理器。
 
-完整启动类示例见 README「编写测试」。
+三层职责（框架拥有 / 默认可覆盖 / 项目必须声明）见 README「编写测试」。用例目录仍是 Support + 方法包，不要改成别的 case 根。
 
 ## 用例目录：业务类目录 + 方法包
 
@@ -114,7 +125,7 @@ class CreateSmartTest extends OrderSmartTestSupport {
 - `@CaseSource` 方法是 `void`。框架**不**采集 Java 返回值；`response.yaml` / `verifyResult` 只看 `context.setResult(...)`。漏写按 `null` 断言。
 - 外部依赖在 `beforeExecute` 或 `@BeforeCase("case-name")` 里 stub；不要把未定义返回值交给业务 fail-open。
 - 替换 Spring Bean 用 `@SmartMock`；静态 Context / 工厂入口用 `configureStaticMocks` + `StaticMockContext`。
-- 稳定公开 API 仅限 `annotation`、`CaseContext`、`SmartTestLifecycle`、`StaticMockContext`，以及 Boot 模块的 `@SmartTest`。不要依赖 `com.just.test.smarttest.internal`，也不要直接使用 `SmartTestClassValidationExtension`。
+- 稳定公开 API 仅限 `annotation`、`CaseContext`、`SmartTestLifecycle`、`StaticMockContext`，以及 Boot 模块的 `@SmartTest` / `@SmartTestProject`。不要依赖 `com.just.test.smarttest.internal`，也不要直接使用 `SmartTestClassValidationExtension`。
 
 ## Flag 速查
 
