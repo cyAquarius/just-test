@@ -44,11 +44,11 @@ public class CaseTemplateInvocationContextProvider implements TestTemplateInvoca
         boolean caseSource = context.getTestMethod()
                 .map(method -> method.isAnnotationPresent(CaseSource.class))
                 .orElse(false);
-        if (caseSource && !AnnotatedElementUtils.hasAnnotation(
-                context.getRequiredTestClass(), SmartTestMarker.class)) {
+        if (caseSource && !hasDirectSmartTestMarker(context.getRequiredTestClass())) {
             throw new ExtensionConfigurationException(String.format(
                     "[SmartTest] %s uses @CaseSource without @SmartTest. "
-                            + "Add @SmartTest to the test class or use a standard JUnit test annotation.",
+                            + "Add @SmartTest to the concrete test class; abstract Support / base "
+                            + "classes must not carry @SmartTest.",
                     context.getRequiredTestClass().getName()));
         }
         return caseSource;
@@ -65,7 +65,7 @@ public class CaseTemplateInvocationContextProvider implements TestTemplateInvoca
         Package testPackage = testClass.getPackage();
         String packageName = testPackage == null ? "" : testPackage.getName();
         String packagePath = packageName.replace('.', '/');
-        rejectMultipleConcreteSmartTestClasses(packageName, packagePath);
+        rejectInvalidSmartTestClasses(packageName, packagePath);
 
         CaseSource annotation = context.getRequiredTestMethod().getAnnotation(CaseSource.class);
         String configuredRoot = annotation.value().trim();
@@ -91,20 +91,28 @@ public class CaseTemplateInvocationContextProvider implements TestTemplateInvoca
                 .collect(Collectors.toList());
     }
 
-    private void rejectMultipleConcreteSmartTestClasses(String packageName, String packagePath) {
-        List<String> concreteClasses = findConcreteSmartTestClassNames(packageName, packagePath);
-        if (concreteClasses.size() <= 1) {
+    private void rejectInvalidSmartTestClasses(String packageName, String packagePath) {
+        PackageSmartTestScan scan = scanPackageSmartTestClasses(packageName, packagePath);
+        if (!scan.abstractClassNames.isEmpty()) {
+            throw new ExtensionConfigurationException(String.format(
+                    "[SmartTest] Package %s has abstract @SmartTest class(es): %s. "
+                            + "Abstract classes must not carry @SmartTest; put it on the concrete "
+                            + "method-package test class.",
+                    displayPackageName(packageName),
+                    String.join(", ", scan.abstractClassNames)));
+        }
+        if (scan.concreteClassNames.size() <= 1) {
             return;
         }
         throw new ExtensionConfigurationException(String.format(
                 "[SmartTest] Package %s has multiple concrete @SmartTest classes: %s. "
                         + "Expected one concrete @SmartTest class per package, with case directories "
                         + "as siblings under the test class package.",
-                packageName.isEmpty() ? "<default>" : packageName,
-                String.join(", ", concreteClasses)));
+                displayPackageName(packageName),
+                String.join(", ", scan.concreteClassNames)));
     }
 
-    private List<String> findConcreteSmartTestClassNames(String packageName, String packagePath) {
+    private PackageSmartTestScan scanPackageSmartTestClasses(String packageName, String packagePath) {
         try {
             PathMatchingResourcePatternResolver resolver = new PathMatchingResourcePatternResolver();
             MetadataReaderFactory metadataReaderFactory = new CachingMetadataReaderFactory(resolver);
@@ -112,26 +120,33 @@ public class CaseTemplateInvocationContextProvider implements TestTemplateInvoca
                     ? "classpath*:*.class"
                     : "classpath*:" + packagePath + "/*.class";
             Resource[] resources = resolver.getResources(pattern);
-            Set<String> names = new TreeSet<String>();
+            Set<String> abstractNames = new TreeSet<String>();
+            Set<String> concreteNames = new TreeSet<String>();
             for (Resource resource : resources) {
                 if (!resource.isReadable()) {
                     continue;
                 }
                 MetadataReader reader = metadataReaderFactory.getMetadataReader(resource);
                 ClassMetadata metadata = reader.getClassMetadata();
-                if (!metadata.isConcrete()) {
-                    continue;
-                }
                 if (!hasSmartTestMarker(reader)) {
                     continue;
                 }
-                names.add(metadata.getClassName());
+                if (metadata.isInterface()) {
+                    continue;
+                }
+                if (metadata.isAbstract()) {
+                    abstractNames.add(metadata.getClassName());
+                    continue;
+                }
+                concreteNames.add(metadata.getClassName());
             }
-            return new ArrayList<String>(names);
+            return new PackageSmartTestScan(
+                    new ArrayList<String>(abstractNames),
+                    new ArrayList<String>(concreteNames));
         } catch (Exception e) {
             throw new ExtensionConfigurationException(
                     "[SmartTest] Failed to scan @SmartTest classes in package "
-                            + (packageName.isEmpty() ? "<default>" : packageName),
+                            + displayPackageName(packageName),
                     e);
         }
     }
@@ -139,6 +154,14 @@ public class CaseTemplateInvocationContextProvider implements TestTemplateInvoca
     private boolean hasSmartTestMarker(MetadataReader reader) {
         return reader.getAnnotationMetadata().hasAnnotation(SmartTestMarker.class.getName())
                 || reader.getAnnotationMetadata().hasMetaAnnotation(SmartTestMarker.class.getName());
+    }
+
+    private boolean hasDirectSmartTestMarker(Class<?> testClass) {
+        return AnnotatedElementUtils.isAnnotated(testClass, SmartTestMarker.class);
+    }
+
+    private static String displayPackageName(String packageName) {
+        return packageName.isEmpty() ? "<default>" : packageName;
     }
 
     private Set<String> findCaseNames(String caseRoot) {
@@ -179,6 +202,16 @@ public class CaseTemplateInvocationContextProvider implements TestTemplateInvoca
 
     private String joinPath(String parent, String child) {
         return parent.isEmpty() ? child : parent + "/" + child;
+    }
+
+    private static final class PackageSmartTestScan {
+        private final List<String> abstractClassNames;
+        private final List<String> concreteClassNames;
+
+        private PackageSmartTestScan(List<String> abstractClassNames, List<String> concreteClassNames) {
+            this.abstractClassNames = abstractClassNames;
+            this.concreteClassNames = concreteClassNames;
+        }
     }
 
     private static final class CaseInvocationContext implements TestTemplateInvocationContext {

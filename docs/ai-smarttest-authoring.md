@@ -10,8 +10,8 @@ SmartTest 面向 **YAML 用例 + 薄 Java glue**，不是手写 assert 堆。本
 
 | 消费工程 | Maven Central |
 | --- | --- |
-| Java 8 / Spring Boot 2 | `io.github.cyaquarius:just-test-boot2:1.0.1` |
-| Java 17 / Spring Boot 3 | `io.github.cyaquarius:just-test-boot3:1.0.1` |
+| Java 8 / Spring Boot 2 | `io.github.cyaquarius:just-test-boot2:1.0.2` |
+| Java 17 / Spring Boot 3 | `io.github.cyaquarius:just-test-boot3:1.0.2` |
 
 不要同时引入两个顶层 artifact。不要单独声明 `just-test-core`：它已 shade 进 boot JAR，Central 不上架。
 
@@ -48,9 +48,9 @@ classpath 对应 `com/example/smarttest/order/create/{ok,dup,bad-input}/*.yaml|y
 
 规则：
 
-- 一个业务类目录（如 `order/`）下放抽象 `Support`（共享 mock / 生命周期）。Support **不要**标 `@SmartTest`，**不要**放 case YAML；不计入「一包一个具体类」。
-- 每个业务方法一个子包、一个具体 `@SmartTest` 类、一个 `@CaseSource`。同一类上多个 `@CaseSource` 会共享本包全部 sibling case，不推荐。
-- 同一包有多个具体 `@SmartTest` 类时启动 fail-fast，并列出冲突 FQCN。父包里的抽象 Support 不算。
+- 一个业务类目录（如 `order/`）下放抽象 `Support`（共享 mock / 生命周期）。Support **不要**标 `@SmartTest`，**不要**放 case YAML；不计入「一包一个具体类」。抽象类上标 `@SmartTest` 会 fail-fast 并列出 FQCN。
+- 每个业务方法一个子包、一个**自身标注** `@SmartTest` 的具体类、一个 `@CaseSource`。同一类上多个 `@CaseSource` 会共享本包全部 sibling case，不推荐。
+- 同一包有多个**直接标注** `@SmartTest` 的具体类时启动 fail-fast，并列出冲突 FQCN。父包里的抽象 Support 不算。仅从 Support 继承 marker、具体类自身未标注，不能准入。
 - 不要探测 `{package}/{SimpleClassName}/`。类名套娃不是默认布局。
 - `@CaseSource("custom-root")` 解析为 `{packagePath}/{custom-root}/`；根为空同样 fail-fast，不会静默回退。
 
@@ -110,7 +110,7 @@ class CreateSmartTest extends OrderSmartTestSupport {
 
 要点：
 
-- 具体测试类必须 `@SmartTest` + `implements SmartTestLifecycle`（可经由父包 Support）；可执行方法只能一个 `@CaseSource`，不要混 `@Test`。
+- 具体测试类必须**自身**标注 `@SmartTest`，并 `implements SmartTestLifecycle`（生命周期与 mock 可经由父包 Support 继承；`@SmartTest` 不能写在 Support / 抽象基类上）；可执行方法只能一个 `@CaseSource`，不要混 `@Test`。
 - `@CaseSource` 方法是 `void`。框架**不**采集 Java 返回值；`response.yaml` / `verifyResult` 只看 `context.setResult(...)`。漏写按 `null` 断言。
 - 外部依赖在 `beforeExecute` 或 `@BeforeCase("case-name")` 里 stub；不要把未定义返回值交给业务 fail-open。
 - 替换 Spring Bean 用 `@SmartMock`；静态 Context / 工厂入口用 `configureStaticMocks` + `StaticMockContext`。

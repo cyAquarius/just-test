@@ -6,7 +6,7 @@
 
     <groupId>io.github.cyaquarius</groupId>
     <artifactId>just-test-parent</artifactId>
-    <version>1.0.1</version>
+    <version>1.0.2</version>
     <packaging>pom</packaging>
 
     <name>just-test parent</name>

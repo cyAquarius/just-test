@@ -90,7 +90,7 @@ A parallel failure is not automatically a SmartTest isolation failure; first ins
 
 ## Maven Central
 
-Coordinates use `io.github.cyaquarius`. Java packages remain `com.just.test.smarttest`. Maven Central publishes only `just-test-boot2` and `just-test-boot3` (`just-test-core` is shaded into those JARs). `1.0.1` is published on Maven Central; consumers should depend on Central coordinates. Local `mvn install` remains for developing from this repo’s SNAPSHOT tree.
+Coordinates use `io.github.cyaquarius`. Java packages remain `com.just.test.smarttest`. Maven Central publishes only `just-test-boot2` and `just-test-boot3` (`just-test-core` is shaded into those JARs). `1.0.2` is published on Maven Central; consumers should depend on Central coordinates. Local `mvn install` remains for developing from this repo’s SNAPSHOT tree.
 
 Java 8 / Boot 2:
 
@@ -98,14 +98,14 @@ Java 8 / Boot 2:
 <dependency>
     <groupId>io.github.cyaquarius</groupId>
     <artifactId>just-test-boot2</artifactId>
-    <version>1.0.1</version>
+    <version>1.0.2</version>
     <scope>test</scope>
 </dependency>
 ```
 
 Java 17 / Boot 3: use `just-test-boot3`. Do not depend on both top-level artifacts. Do not declare `just-test-core` separately — it is shaded into the boot JAR and is not published as its own Central coordinate.
 
-If the company private Maven already proxies Central, only the dependency is needed; if Central is unreachable, proxy Central or upload the boot2/boot3 `1.0.1` artifacts to the private release repo, keeping coordinates `io.github.cyaquarius`.
+If the company private Maven already proxies Central, only the dependency is needed; if Central is unreachable, proxy Central or upload the boot2/boot3 `1.0.2` artifacts to the private release repo, keeping coordinates `io.github.cyaquarius`.
 
 AI-authored tests: follow the in-repo recipe in [docs/ai-smarttest-authoring.md](docs/ai-smarttest-authoring.md).
 
@@ -182,7 +182,7 @@ Unstubbed static methods continue to call their real implementation. Do not clos
 
 Boot 2 uses Mockito 4, so static mocks and final-type mocks require the consumer to enable the inline mock maker explicitly, for example by putting `mock-maker-inline` in `src/test/resources/mockito-extensions/org.mockito.plugins.MockMaker` or adding the matching `mockito-inline`. Boot 3 uses Mockito 5, whose default mock maker is inline; consumers that override the MockMaker still own static/final mock support. SmartTest does not select a MockMaker globally, avoiding conflicts with consumer configuration.
 
-The default case root is the test class package. Case directories are siblings of the `.java` file on the classpath (`{packagePath}/*/*.yaml|yml`). SmartTest does not probe `{packagePath}/{SimpleClassName}/`. A package may contain at most one concrete `@SmartTest` class; abstract Support bases belong in the parent business-class directory, hold shared lifecycle and mocks only, must not be `@SmartTest`, and must not own case YAML. Put one `@CaseSource` method on the concrete class — several `@CaseSource` methods on the same class share every sibling case.
+The default case root is the test class package. Case directories are siblings of the `.java` file on the classpath (`{packagePath}/*/*.yaml|yml`). SmartTest does not probe `{packagePath}/{SimpleClassName}/`. A package may contain at most one concrete class that **directly** declares `@SmartTest`; inheriting the marker from a parent is not enough. Abstract Support bases belong in the parent business-class directory, hold shared lifecycle and mocks only, must not be `@SmartTest`, and must not own case YAML. Annotating an abstract Support fails fast. Put one `@CaseSource` method on the concrete class — several `@CaseSource` methods on the same class share every sibling case.
 
 Recommended tree (co-located under `src/test/java`):
 
