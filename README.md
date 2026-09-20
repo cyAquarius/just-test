@@ -28,6 +28,7 @@ The matrix is the standalone build and validation baseline for both product line
 ## What SmartTest provides
 
 - `@SmartTest` configures Spring Test, H2, `JdbcTemplate`, and a transaction manager so application services can exercise their normal transaction behavior; it registers a `refresh` scope stand-in when none exists, so business beans using `@RefreshScope` or `@Scope("refresh")` can load without Spring Cloud refresh infrastructure, but tests do not get real refresh semantics.
+- `@SmartTestProject` is the recommended consumer startup annotation: an empty class with `basePackages` (and optional `mapperPackages`) gets `@SpringBootConfiguration`, `@EnableAutoConfiguration`, opinionated component-scan excludes, optional MyBatis wiring to SmartTest's DataSource, and `dataSource` / `transactionManager` aliases. Existing hand-written startup classes keep working.
 - `@CaseSource` discovers YAML cases and creates one full JUnit test-template invocation per case, with `CaseContext` available to the test and standard per-test lifecycle methods.
 - `prepare.yaml`, `response.yaml`, `expect.yaml`, and `expect_exception.yaml` cover data setup and result, database, and exception verification.
 - `@SmartMock` creates a thread-scoped Mockito mock. When several beans share a type, an explicit `name` wins only for a type-compatible bean; if an existing bean's type cannot be resolved (for example, a `FactoryBean` hides its object type), name fallback still applies. A same-named bean of an unrelated type is not replaced, and a wrong explicit name fails with a missing-candidate error.
@@ -90,7 +91,7 @@ A parallel failure is not automatically a SmartTest isolation failure; first ins
 
 ## Maven Central
 
-Coordinates use `io.github.cyaquarius`. Java packages remain `com.just.test.smarttest`. Maven Central publishes only `just-test-boot2` and `just-test-boot3` (`just-test-core` is shaded into those JARs). `1.0.2` is published on Maven Central; consumers should depend on Central coordinates. Local `mvn install` remains for developing from this repo’s SNAPSHOT tree.
+Coordinates use `io.github.cyaquarius`. Java packages remain `com.just.test.smarttest`. Maven Central publishes only `just-test-boot2` and `just-test-boot3` (`just-test-core` is shaded into those JARs). `1.1.0` is the current release coordinate; consumers should depend on Central coordinates. Local `mvn install` remains for developing from this repo.
 
 Java 8 / Boot 2:
 
@@ -98,45 +99,48 @@ Java 8 / Boot 2:
 <dependency>
     <groupId>io.github.cyaquarius</groupId>
     <artifactId>just-test-boot2</artifactId>
-    <version>1.0.2</version>
+    <version>1.1.0</version>
     <scope>test</scope>
 </dependency>
 ```
 
 Java 17 / Boot 3: use `just-test-boot3`. Do not depend on both top-level artifacts. Do not declare `just-test-core` separately — it is shaded into the boot JAR and is not published as its own Central coordinate.
 
-If the company private Maven already proxies Central, only the dependency is needed; if Central is unreachable, proxy Central or upload the boot2/boot3 `1.0.2` artifacts to the private release repo, keeping coordinates `io.github.cyaquarius`.
+If the company private Maven already proxies Central, only the dependency is needed; if Central is unreachable, proxy Central or upload the boot2/boot3 `1.1.0` artifacts to the private release repo, keeping coordinates `io.github.cyaquarius`.
 
 AI-authored tests: follow the in-repo recipe in [docs/ai-smarttest-authoring.md](docs/ai-smarttest-authoring.md).
 
 ## Public API
 
-The stable public API stays under `com.just.test.smarttest`: `annotation` (`@SmartTest`, `@CaseSource`, `@SmartMock`, `@BeforeCase`, `@ThreadScopedMock`), `CaseContext`, `SmartTestLifecycle`, and `StaticMockContext`. `SmartTestMarker` and the Boot `SmartTestClassValidationExtension` exist so `@SmartTest` can register JUnit/Spring infrastructure; do not depend on them directly. Engine types live in `com.just.test.smarttest.internal` and are unsupported for consumers even when they remain public for JUnit or Spring registration. When moving an application to Boot 3, migrate its Java EE types to Jakarta as required by Spring Boot 3; Java SE `javax.sql.DataSource` is not part of that migration.
+The stable public API stays under `com.just.test.smarttest`: `annotation` (`@SmartTest`, `@SmartTestProject`, `@CaseSource`, `@SmartMock`, `@BeforeCase`, `@ThreadScopedMock`), `CaseContext`, `SmartTestLifecycle`, and `StaticMockContext`. `SmartTestMarker` and the Boot `SmartTestClassValidationExtension` exist so `@SmartTest` can register JUnit/Spring infrastructure; do not depend on them directly. Engine types live in `com.just.test.smarttest.internal` and are unsupported for consumers even when they remain public for JUnit or Spring registration. When moving an application to Boot 3, migrate its Java EE types to Jakarta as required by Spring Boot 3; Java SE `javax.sql.DataSource` is not part of that migration.
 
 ## Write a test
 
 For the AI authoring recipe (method-package layout, Java glue, flags, anti-patterns), see [docs/ai-smarttest-authoring.md](docs/ai-smarttest-authoring.md).
 
-SmartTest always uses the Spring Boot TestContext. The consumer project must provide `src/test/resources/sql/schema.sql` for H2 schema initialization and a dedicated test startup configuration:
+SmartTest always uses the Spring Boot TestContext. Startup knowledge is split into three layers:
+
+1. **Framework-owned:** H2, the transaction manager, `JdbcTemplate`, default component-scan denylist, and (when `mapperPackages` is set) MyBatis `SqlSessionFactory` / `SqlSessionTemplate` / MapperScan bound to SmartTest's DataSource.
+2. **Defaults you may overlay:** `excludeClasses`, `excludeFilters`, `includeFilters`, and `excludeAutoConfiguration`. You do not need to copy the default denylist.
+3. **Project must declare:** `basePackages` (no guessed business root), `src/test/resources/sql/schema.sql`, and external-dependency mocks on Support via `@SmartMock`. Do not put production DataSource / transaction-manager configuration on the test startup class.
 
 ```java
 // src/test/java/com/example/smarttest/SmartTestApplication.java
-@SpringBootConfiguration
-@EnableAutoConfiguration
-@ComponentScan(
+@SmartTestProject(
     basePackages = "com.example",
-    excludeFilters = @ComponentScan.Filter(
-        type = FilterType.ASSIGNABLE_TYPE,
-        classes = Application.class
-    )
+    mapperPackages = "com.example.mapper" // optional; omit if the project has no MyBatis
 )
 public class SmartTestApplication {
 }
 ```
 
-`SmartTestApplication` is the consumer-owned startup configuration dedicated to SmartTest and needs no `main` method. Put it in a dedicated test package and place every SmartTest class in that package or a child package, for example `com.example.smarttest.order`. Spring Boot finds this nearer test configuration before searching the parent package that contains the production `Application`. Merely placing it under `src/test` does not prevent a conflict because the test classpath contains both production and test classes. When scanning the application root package, exclude the production startup class as shown so component scanning does not load its configuration again. The consumer owns any additional component-scan exclusions, mapper wiring, and project-level external-dependency mocks.
+`@SmartTestProject` meta-annotates `@SpringBootConfiguration` and `@EnableAutoConfiguration`. The class body can stay empty. Default scan excludes other `@SpringBootApplication` / `@SpringBootConfiguration` types under `basePackages`, plus `@Controller` / `@RestController` / `@ControllerAdvice` when those annotations exist, `@FeignClient` when OpenFeign is present, and known job/scheduling stereotypes when they can be detected without a hard dependency. `dataSource` and `transactionManager` are registered as aliases of the SmartTest primaries when those names are free. Setting `mapperPackages` without mybatis-spring fails fast; mybatis-spring without `mapperPackages` does not invent a scan root.
 
-The SmartTest context uses the H2 `DataSource`, transaction manager, and `JdbcTemplate` supplied by the framework. Its test startup configuration must not also load production `DataSource`, transaction-manager, or other database-infrastructure configurations; exclude them with the `test` profile or component-scan filters. The framework wires its own infrastructure explicitly, but does not rewrite user Bean `@Primary` metadata or choose between production and test data sources on the consumer's behalf.
+A hand-written `@SpringBootConfiguration` + `@EnableAutoConfiguration` + `@ComponentScan` startup class still works. Prefer `@SmartTestProject` for new projects.
+
+`SmartTestApplication` is the consumer-owned startup configuration dedicated to SmartTest and needs no `main` method. Put it in a dedicated test package and place every SmartTest class in that package or a child package, for example `com.example.smarttest.order`. Spring Boot finds this nearer test configuration before searching the parent package that contains the production `Application`. Merely placing it under `src/test` does not prevent a conflict because the test classpath contains both production and test classes. Keep ordinary JUnit tests that are not SmartTest outside that tree. The case layout stays Support + method packages; do not invent a second case-root convention.
+
+The SmartTest context uses the H2 `DataSource`, transaction manager, and `JdbcTemplate` supplied by the framework. Exclude remaining production persistence configuration with the `test` profile or `excludeClasses` / `excludeFilters`. The framework does not rewrite user Bean `@Primary` metadata or choose between production and test data sources on the consumer's behalf. It also does not auto-mock business clients.
 
 ```java
 // src/test/java/com/example/smarttest/order/OrderSmartTestSupport.java

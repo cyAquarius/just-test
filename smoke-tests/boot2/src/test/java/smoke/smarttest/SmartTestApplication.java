@@ -1,9 +1,7 @@
 package smoke.smarttest;
 
-import org.springframework.boot.SpringBootConfiguration;
-import org.springframework.boot.autoconfigure.EnableAutoConfiguration;
+import com.just.test.smarttest.annotation.SmartTestProject;
 
-@SpringBootConfiguration
-@EnableAutoConfiguration
+@SmartTestProject(basePackages = "smoke.smarttest")
 class SmartTestApplication {
 }

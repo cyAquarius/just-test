@@ -6,7 +6,8 @@
  * {@link com.just.test.smarttest.context.CaseContext}、
  * {@link com.just.test.smarttest.lifecycle.SmartTestLifecycle}、
  * {@link com.just.test.smarttest.mock.StaticMockContext}
- * 以及 Boot 模块的 {@code @SmartTest}（及其元注解校验扩展）。</p>
+ * 以及 Boot 模块的 {@code @SmartTest} / {@code @SmartTestProject}
+ * （及其元注解校验扩展）。</p>
  *
  * <p>为满足 JUnit {@code @ExtendWith}、Spring {@code spring.factories}
  * 与 {@code @Configuration} 注册，部分类型必须保持 public；
