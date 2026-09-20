@@ -115,7 +115,7 @@ The stable public API stays under `com.just.test.smarttest`: `annotation` (`@Sma
 
 ## Write a test
 
-For the AI authoring recipe (case directory, class-name layer, Java glue, flags, anti-patterns), see [docs/ai-smarttest-authoring.md](docs/ai-smarttest-authoring.md).
+For the AI authoring recipe (one business method per class, co-located YAML, class-name layer, Java glue, flags, anti-patterns), see [docs/ai-smarttest-authoring.md](docs/ai-smarttest-authoring.md).
 
 SmartTest always uses the Spring Boot TestContext. The consumer project must provide `src/test/resources/sql/schema.sql` for H2 schema initialization and a dedicated test startup configuration:
 
@@ -139,9 +139,9 @@ public class SmartTestApplication {
 The SmartTest context uses the H2 `DataSource`, transaction manager, and `JdbcTemplate` supplied by the framework. Its test startup configuration must not also load production `DataSource`, transaction-manager, or other database-infrastructure configurations; exclude them with the `test` profile or component-scan filters. The framework wires its own infrastructure explicitly, but does not rewrite user Bean `@Primary` metadata or choose between production and test data sources on the consumer's behalf.
 
 ```java
-// src/test/java/com/example/smarttest/order/OrderServiceSmartTest.java
+// src/test/java/com/example/smarttest/order/OrderCreateSmartTest.java
 @SmartTest
-class OrderServiceSmartTest implements SmartTestLifecycle {
+class OrderCreateSmartTest implements SmartTestLifecycle {
 
     @Autowired
     private OrderService orderService;
@@ -150,7 +150,7 @@ class OrderServiceSmartTest implements SmartTestLifecycle {
     private PricingClient pricingClient;
 
     @CaseSource
-    void createOrder(CaseContext context) {
+    void create(CaseContext context) {
         context.setResult(orderService.create(context.getLong("customerId")));
     }
 }
@@ -180,18 +180,17 @@ Boot 2 uses Mockito 4, so static mocks and final-type mocks require the consumer
 
 The class-name layer is required. Discovery is unchanged: SmartTest probes only the classpath path `{package}/{SimpleClassName}/{case}/` (default `{packagePath}/{SimpleClassName}/*/*.yaml|yml`). It does not scan package-level YAML.
 
-**Recommended default** for humans and AI: put case YAML beside the test class under `src/test/java`, so you do not jump between the `java` and `resources` trees:
+**Recommended default** for humans and AI: one business method → one `@SmartTest` class → one `@CaseSource` method → N case directories under that class name. Put the YAML beside the test class under `src/test/java`, so you do not jump between the `java` and `resources` trees:
 
 ```text
-src/test/java/com/example/smarttest/order/OrderServiceSmartTest.java
-src/test/java/com/example/smarttest/order/OrderServiceSmartTest/
-└── create-order/
-    ├── request.yaml
-    ├── prepare.yaml
-    ├── response.yaml
-    ├── expect.yaml
-    └── expect_exception.yaml
+src/test/java/com/example/smarttest/order/
+├── OrderCreateSmartTest.java
+├── OrderCreateSmartTest/{ok,dup,bad-input}/
+├── OrderCancelSmartTest.java
+└── OrderCancelSmartTest/{ok,not-found,already-done}/
 ```
+
+Each class has a single `@CaseSource` method. Several `@CaseSource` methods on one class all discover every sibling case under that class root, unless each method sets its own `@CaseSource` root. Do not do that for AI/human clarity; split by business method instead.
 
 Maven does not copy YAML from `src/test/java` unless you include it in `testResources`. Keep `src/test/resources` for `sql/schema.sql`, `application-test.yml`, and other shared fixtures (and as an optional alternate for cases):
 
@@ -215,7 +214,7 @@ Maven does not copy YAML from `src/test/java` unless you include it in `testReso
 A resources-only mirror still works and is secondary. The classpath path is the same:
 
 ```text
-src/test/resources/com/example/smarttest/order/OrderServiceSmartTest/create-order/
+src/test/resources/com/example/smarttest/order/OrderCreateSmartTest/{ok,dup,bad-input}/
 ```
 
 `@CaseSource("custom-root")` is the explicit escape hatch and resolves to `{packagePath}/{custom-root}/`. A missing class-named or custom root fails with `No YAML case directories found`; there is no silent fallback to the package directory.

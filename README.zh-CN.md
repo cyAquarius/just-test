@@ -115,7 +115,7 @@ AI 编写用例：按仓库内配方 [docs/ai-smarttest-authoring.md](docs/ai-sm
 
 ## 编写测试
 
-AI 编写配方（用例目录、类名层、Java glue、Flag、反模式）见 [docs/ai-smarttest-authoring.md](docs/ai-smarttest-authoring.md)。
+AI 编写配方（一个业务方法一个类、YAML 同目录、类名层、Java glue、Flag、反模式）见 [docs/ai-smarttest-authoring.md](docs/ai-smarttest-authoring.md)。
 
 SmartTest 统一使用 Spring Boot TestContext。消费项目必须提供 `src/test/resources/sql/schema.sql`，用于初始化 H2 表结构，并提供专用测试启动配置：
 
@@ -139,9 +139,9 @@ public class SmartTestApplication {
 SmartTest Context 使用框架提供的 H2 `DataSource`、事务管理器和 `JdbcTemplate`。测试启动配置不得同时加载生产 `DataSource`、事务管理器或其他数据库基础设施配置；请通过 `test` profile 或组件扫描排除这些生产配置。框架内部会精确连接自身 H2，但不会改写用户 Bean 的 `@Primary` 属性，也不会替测试选择生产与测试数据源。
 
 ```java
-// src/test/java/com/example/smarttest/order/OrderServiceSmartTest.java
+// src/test/java/com/example/smarttest/order/OrderCreateSmartTest.java
 @SmartTest
-class OrderServiceSmartTest implements SmartTestLifecycle {
+class OrderCreateSmartTest implements SmartTestLifecycle {
 
     @Autowired
     private OrderService orderService;
@@ -150,7 +150,7 @@ class OrderServiceSmartTest implements SmartTestLifecycle {
     private PricingClient pricingClient;
 
     @CaseSource
-    void createOrder(CaseContext context) {
+    void create(CaseContext context) {
         context.setResult(orderService.create(context.getLong("customerId")));
     }
 }
@@ -180,18 +180,17 @@ Boot 2 使用 Mockito 4，静态 Mock 或 final 类型 Mock 要求消费工程�
 
 类名这一层是必选契约。发现路径不变：框架只探测 classpath 上的 `{package}/{SimpleClassName}/{case}/`（默认 `{packagePath}/{SimpleClassName}/*/*.yaml|yml`），不会扫描包级 YAML。
 
-**人类和 AI 的推荐默认**：把 case YAML 放在 `src/test/java` 里、紧挨测试类，避免在 `java` 与 `resources` 两棵树之间跳：
+**人类和 AI 的推荐默认**：一个业务方法 → 一个 `@SmartTest` 类 → 一个 `@CaseSource` 方法 → 该类名下 N 个 case 目录。YAML 放在 `src/test/java` 里、紧挨测试类，避免在 `java` 与 `resources` 两棵树之间跳：
 
 ```text
-src/test/java/com/example/smarttest/order/OrderServiceSmartTest.java
-src/test/java/com/example/smarttest/order/OrderServiceSmartTest/
-└── create-order/
-    ├── request.yaml
-    ├── prepare.yaml
-    ├── response.yaml
-    ├── expect.yaml
-    └── expect_exception.yaml
+src/test/java/com/example/smarttest/order/
+├── OrderCreateSmartTest.java
+├── OrderCreateSmartTest/{ok,dup,bad-input}/
+├── OrderCancelSmartTest.java
+└── OrderCancelSmartTest/{ok,not-found,already-done}/
 ```
+
+每个类只有一个 `@CaseSource` 方法。同一个类上写多个 `@CaseSource` 时，每个方法默认都会发现该类名根下的全部 sibling case，除非各自声明不同的 `@CaseSource` 根。为了人类和 AI 可读，不要这样写，按业务方法拆类。
 
 Maven 默认不会从 `src/test/java` 拷 YAML，需要写进 `testResources`。`src/test/resources` 留给 `sql/schema.sql`、`application-test.yml` 等共享夹具（也可作为 case 的备选位置）：
 
@@ -215,7 +214,7 @@ Maven 默认不会从 `src/test/java` 拷 YAML，需要写进 `testResources`。
 只放 `src/test/resources` 的镜像布局仍然可用，但是次要选项。classpath 路径相同：
 
 ```text
-src/test/resources/com/example/smarttest/order/OrderServiceSmartTest/create-order/
+src/test/resources/com/example/smarttest/order/OrderCreateSmartTest/{ok,dup,bad-input}/
 ```
 
 `@CaseSource("custom-root")` 是显式逃生口，解析为 `{packagePath}/{custom-root}/`。类名根或自定义根缺失时直接以 `No YAML case directories found` 失败，不会静默回退到包目录。

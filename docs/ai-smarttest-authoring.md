@@ -25,21 +25,21 @@ SmartTest 面向 **YAML 用例 + 薄 Java glue**，不是手写 assert 堆。本
 
 完整启动类示例见 README「编写测试」。
 
-## 用例目录（推荐与测试类同目录）
+## 用例目录（一个业务方法一个类，YAML 同目录）
 
 发现路径不变：`{package}/{SimpleClassName}/{case}/`。类名层是必选锚点，没有包级回退。
 
-**默认写在测试类旁边**（人类和 AI 都按这个来，避免在 `java` / `resources` 之间跳）：
+**推荐默认**（人类和 AI 都按这个来）：一个业务方法 → 一个 `@SmartTest` 类 → 一个 `@CaseSource` 方法 → 该类名下 N 个 case 目录。YAML 写在测试类旁边，避免在 `java` / `resources` 之间跳：
 
 ```text
-src/test/java/com/example/smarttest/order/OrderServiceSmartTest.java
-src/test/java/com/example/smarttest/order/OrderServiceSmartTest/create-order/
-├── request.yaml
-├── prepare.yaml
-├── response.yaml
-├── expect.yaml
-└── expect_exception.yaml
+src/test/java/com/example/smarttest/order/
+├── OrderCreateSmartTest.java
+├── OrderCreateSmartTest/{ok,dup,bad-input}/
+├── OrderCancelSmartTest.java
+└── OrderCancelSmartTest/{ok,not-found,already-done}/
 ```
+
+每个类只有一个 `@CaseSource`。同一个类上写多个 `@CaseSource` 时，每个方法默认都会发现该类名根下的全部 sibling case，除非各自声明不同的 `@CaseSource` 根。不要这样写，按业务方法拆类。
 
 消费工程要让 Maven 把 `src/test/java` 里的 yaml 拷进测试 classpath：
 
@@ -71,9 +71,9 @@ src/test/java/com/example/smarttest/order/OrderServiceSmartTest/create-order/
 ## Java glue
 
 ```java
-// src/test/java/com/example/smarttest/order/OrderServiceSmartTest.java
+// src/test/java/com/example/smarttest/order/OrderCreateSmartTest.java
 @SmartTest
-class OrderServiceSmartTest implements SmartTestLifecycle {
+class OrderCreateSmartTest implements SmartTestLifecycle {
 
     @Autowired
     private OrderService orderService;
@@ -87,13 +87,13 @@ class OrderServiceSmartTest implements SmartTestLifecycle {
                 .thenReturn(context.getObject("quote", Quote.class));
     }
 
-    @BeforeCase("create-order-rejected")
-    void stubRejected() {
+    @BeforeCase("dup")
+    void stubDuplicate() {
         when(pricingClient.quote(anyLong())).thenThrow(new PricingUnavailableException());
     }
 
     @CaseSource
-    void createOrder(CaseContext context) {
+    void create(CaseContext context) {
         context.setResult(orderService.create(context.getLong("customerId")));
     }
 }
@@ -101,6 +101,7 @@ class OrderServiceSmartTest implements SmartTestLifecycle {
 
 要点：
 
+- 一个业务方法一个 `@SmartTest` 类、一个 `@CaseSource`、类名下 N 个 case 目录。不要在一个类上堆多个 `@CaseSource`。
 - 类必须 `@SmartTest` + `implements SmartTestLifecycle`；可执行方法只能 `@CaseSource`，不要混 `@Test`。
 - `@CaseSource` 方法是 `void`。框架**不**采集 Java 返回值；`response.yaml` / `verifyResult` 只看 `context.setResult(...)`。漏写按 `null` 断言。
 - 外部依赖在 `beforeExecute` 或 `@BeforeCase("case-name")` 里 stub；不要把未定义返回值交给业务 fail-open。
@@ -129,5 +130,6 @@ class OrderServiceSmartTest implements SmartTestLifecycle {
 - 用 `ReflectionTestUtils` 把 raw Mockito mock 写入业务 Bean，覆盖 `@SmartMock` 的 `ThreadScope` proxy。
 - 在 `@SmartTest` 类或 `@CaseSource` 方法上使用 Spring `@Transactional` / `@Sql`（生命周期早于 case 绑定，框架 fail-fast）。用 `prepare.yaml` / `expect.yaml`。
 - 再叠 `@SpringBootTest`、普通 `@Test`，或不写 `context.setResult` 却期望 `response.yaml` 对上返回值。
+- 一个服务一个测试类、多个 `@CaseSource`：默认每个方法都会跑该类名根下的全部 sibling case。
 - 把 YAML 直接堆在包目录、省略类名层，或让多个类共享同一个无差别 `@CaseSource` 自定义根。
 - 把 YAML 放在测试类旁边，却不在 POM 里把 `src/test/java` 的 `**/*.yaml|yml` 配进 `testResources`。
