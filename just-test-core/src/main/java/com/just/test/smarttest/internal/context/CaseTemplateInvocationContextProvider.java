@@ -68,37 +68,17 @@ public class CaseTemplateInvocationContextProvider implements TestTemplateInvoca
                 : joinPath(packagePath, configuredRoot);
 
         Set<String> caseNames = findCaseNames(caseRoot);
-        if (caseNames.isEmpty() && configuredRoot.isEmpty()) {
-            caseRoot = packagePath;
-            caseNames = findCaseNames(caseRoot);
-            if (!caseNames.isEmpty()) {
-                warnPackageRootFallback(testClass, caseRoot, defaultRoot);
-            }
-        }
         if (caseNames.isEmpty()) {
             throw new ExtensionConfigurationException(String.format(
-                    "[SmartTest] No YAML case directories found: testClass=%s, caseRoot=%s",
+                    "[SmartTest] No YAML case directories found: testClass=%s, caseRoot=%s. "
+                            + "Expected child directories with *.yaml or *.yml under that class-named "
+                            + "or @CaseSource root; package-level YAML is not scanned.",
                     testClass.getName(), caseRoot));
         }
 
-        final String resolvedRoot = caseRoot;
         return caseNames.stream()
-                .map(caseName -> toCaseContext(caseName, resolvedRoot))
+                .map(caseName -> toCaseContext(caseName, caseRoot))
                 .collect(Collectors.toList());
-    }
-
-    /**
-     * 包级 YAML 回退警告；保持非致命。契约测试可覆盖以断言文案包含已解析的包根。
-     */
-    void warnPackageRootFallback(Class<?> testClass, String caseRoot, String defaultRoot) {
-        log.warn(formatPackageRootFallbackWarning(testClass, caseRoot, defaultRoot));
-    }
-
-    static String formatPackageRootFallbackWarning(Class<?> testClass, String caseRoot, String defaultRoot) {
-        return "[SmartTest] Class-named case directory is missing for " + testClass.getName()
-                + "; falling back to package-level YAML root '" + caseRoot + "'. "
-                + "This can pick up YAML from sibling test classes in the same package. "
-                + "Create '" + defaultRoot + "' or set @CaseSource to an explicit root.";
     }
 
     private Set<String> findCaseNames(String caseRoot) {

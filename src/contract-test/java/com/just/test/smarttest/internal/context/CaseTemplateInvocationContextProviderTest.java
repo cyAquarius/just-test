@@ -9,7 +9,6 @@ import org.junit.jupiter.api.extension.ExtensionConfigurationException;
 import org.junit.jupiter.api.extension.ExtensionContext;
 
 import java.lang.reflect.Method;
-import java.util.ArrayList;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -22,12 +21,8 @@ import static org.mockito.Mockito.when;
 class CaseTemplateInvocationContextProviderTest {
 
     @Test
-    void prefersTestClassDirectoryAndLoadsClasspathResources() throws Exception {
-        ExtensionContext context = mock(ExtensionContext.class);
-        Method method = Fixture.class.getDeclaredMethod("caseMethod", CaseContext.class);
-        doReturn(Fixture.class).when(context).getRequiredTestClass();
-        when(context.getRequiredTestMethod()).thenReturn(method);
-        when(context.getTestMethod()).thenReturn(java.util.Optional.of(method));
+    void discoversCasesUnderClassNamedRoot() throws Exception {
+        ExtensionContext context = mockContext(Fixture.class, "caseMethod");
 
         CaseTemplateInvocationContextProvider provider = new CaseTemplateInvocationContextProvider();
         List<CaseContext> cases = provider.discoverCases(context);
@@ -39,35 +34,43 @@ class CaseTemplateInvocationContextProviderTest {
     }
 
     @Test
-    void fallsBackToPackageRootWhenClassNamedDirectoryIsMissing() throws Exception {
-        ExtensionContext context = mock(ExtensionContext.class);
-        Method method = PackageRootCases.MissingClassDirectory.class
-                .getDeclaredMethod("caseMethod", CaseContext.class);
-        doReturn(PackageRootCases.MissingClassDirectory.class).when(context).getRequiredTestClass();
-        when(context.getRequiredTestMethod()).thenReturn(method);
-        when(context.getTestMethod()).thenReturn(java.util.Optional.of(method));
+    void failsFastWhenClassNamedDirectoryIsMissingAndDoesNotPickUpPackageYaml() throws Exception {
+        ExtensionContext context = mockContext(PackageRootCases.MissingClassDirectory.class, "caseMethod");
+        String expectedRoot = "com/just/test/smarttest/internal/context/packageroot/MissingClassDirectory";
 
-        String packageRoot = "com/just/test/smarttest/internal/context/packageroot";
-        final List<String> warnings = new ArrayList<String>();
-        CaseTemplateInvocationContextProvider provider = new CaseTemplateInvocationContextProvider() {
-            @Override
-            void warnPackageRootFallback(Class<?> testClass, String caseRoot, String defaultRoot) {
-                super.warnPackageRootFallback(testClass, caseRoot, defaultRoot);
-                warnings.add(formatPackageRootFallbackWarning(testClass, caseRoot, defaultRoot));
-            }
-        };
+        ExtensionConfigurationException failure = assertThrows(ExtensionConfigurationException.class,
+                () -> new CaseTemplateInvocationContextProvider().discoverCases(context));
 
-        List<CaseContext> cases = provider.discoverCases(context);
+        assertTrue(failure.getMessage().contains("No YAML case directories found"), failure.getMessage());
+        assertTrue(failure.getMessage().contains(expectedRoot), failure.getMessage());
+        assertTrue(failure.getMessage().contains(PackageRootCases.MissingClassDirectory.class.getName()),
+                failure.getMessage());
+    }
 
-        assertEquals(2, cases.size());
-        assertEquals("legacy-case", cases.get(0).getCaseName());
-        assertEquals("sibling-case", cases.get(1).getCaseName());
-        assertEquals(packageRoot + "/legacy-case", cases.get(0).getCasePath());
-        assertEquals(packageRoot + "/sibling-case", cases.get(1).getCasePath());
-        assertEquals(1, warnings.size());
-        assertTrue(warnings.get(0).contains(packageRoot),
-                "WARN should mention the resolved package root: " + warnings.get(0));
-        assertTrue(warnings.get(0).contains(PackageRootCases.MissingClassDirectory.class.getName()));
+    @Test
+    void discoversCasesUnderExplicitCaseSourceRoot() throws Exception {
+        ExtensionContext context = mockContext(PackageRootCases.CustomRoot.class, "caseMethod");
+
+        List<CaseContext> cases = new CaseTemplateInvocationContextProvider().discoverCases(context);
+
+        assertEquals(1, cases.size());
+        assertEquals("explicit-case", cases.get(0).getCaseName());
+        assertEquals(
+                "com/just/test/smarttest/internal/context/packageroot/custom-root/explicit-case",
+                cases.get(0).getCasePath());
+        assertEquals(11, cases.get(0).getInt("value"));
+    }
+
+    @Test
+    void failsFastWhenExplicitCaseSourceRootIsMissingAndDoesNotPickUpPackageYaml() throws Exception {
+        ExtensionContext context = mockContext(PackageRootCases.MissingCustomRoot.class, "caseMethod");
+        String expectedRoot = "com/just/test/smarttest/internal/context/packageroot/missing-custom-root";
+
+        ExtensionConfigurationException failure = assertThrows(ExtensionConfigurationException.class,
+                () -> new CaseTemplateInvocationContextProvider().discoverCases(context));
+
+        assertTrue(failure.getMessage().contains("No YAML case directories found"), failure.getMessage());
+        assertTrue(failure.getMessage().contains(expectedRoot), failure.getMessage());
     }
 
     @Test
@@ -81,6 +84,15 @@ class CaseTemplateInvocationContextProviderTest {
                 () -> new CaseTemplateInvocationContextProvider().supportsTestTemplate(context));
 
         assertTrue(failure.getMessage().contains("uses @CaseSource without @SmartTest"));
+    }
+
+    private static ExtensionContext mockContext(Class<?> testClass, String methodName) throws Exception {
+        ExtensionContext context = mock(ExtensionContext.class);
+        Method method = testClass.getDeclaredMethod(methodName, CaseContext.class);
+        doReturn(testClass).when(context).getRequiredTestClass();
+        when(context.getRequiredTestMethod()).thenReturn(method);
+        when(context.getTestMethod()).thenReturn(java.util.Optional.of(method));
+        return context;
     }
 
     @SmartTest

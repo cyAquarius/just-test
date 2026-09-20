@@ -177,7 +177,7 @@ public void configureStaticMocks(CaseContext context, StaticMockContext mocks) {
 
 Boot 2 使用 Mockito 4，静态 Mock 或 final 类型 Mock 要求消费工程显式启用 inline mock maker，例如在 `src/test/resources/mockito-extensions/org.mockito.plugins.MockMaker` 写入 `mock-maker-inline`，或引入版本一致的 `mockito-inline`。Boot 3 使用 Mockito 5，其默认 mock maker 已是 inline；若消费工程覆盖了 MockMaker，仍需自行保证静态/final Mock 能力。SmartTest 不会全局指定 MockMaker，避免覆盖消费工程已有配置。
 
-默认目录位于测试类包名与简单类名之下：
+类名这一层是必选契约。默认只探测 `{packagePath}/{SimpleClassName}/*/*.yaml|yml`，不会扫描包级 YAML。
 
 ```text
 src/test/resources/com/example/smarttest/order/OrderServiceSmartTest/
@@ -189,7 +189,9 @@ src/test/resources/com/example/smarttest/order/OrderServiceSmartTest/
     └── expect_exception.yaml
 ```
 
-`@CaseSource("custom-root")` 可指定测试类包下的自定义根目录。默认类名目录不存在时，仍兼容旧的包级用例目录，并打出 WARN：该回退可能拾取同一包下其他测试类的 YAML。
+`@CaseSource("custom-root")` 是显式逃生口，解析为 `{packagePath}/{custom-root}/`。类名根或自定义根缺失时直接以 `No YAML case directories found` 失败，不会静默回退到包目录。
+
+YAML 按测试 classpath 解析，因此既可以放在 `src/test/resources`，也可以通过 `testResources` 把 `**/*.yaml`（以及 `**/*.yml`）映射进去，把用例与测试类一起放在 `src/test/java`。
 
 ## YAML 文件与 Flag
 

@@ -177,7 +177,7 @@ Unstubbed static methods continue to call their real implementation. Do not clos
 
 Boot 2 uses Mockito 4, so static mocks and final-type mocks require the consumer to enable the inline mock maker explicitly, for example by putting `mock-maker-inline` in `src/test/resources/mockito-extensions/org.mockito.plugins.MockMaker` or adding the matching `mockito-inline`. Boot 3 uses Mockito 5, whose default mock maker is inline; consumers that override the MockMaker still own static/final mock support. SmartTest does not select a MockMaker globally, avoiding conflicts with consumer configuration.
 
-By default, cases live below the test class package and simple name:
+The class-name layer is required. By default SmartTest probes only `{packagePath}/{SimpleClassName}/*/*.yaml|yml`; it does not scan package-level YAML.
 
 ```text
 src/test/resources/com/example/smarttest/order/OrderServiceSmartTest/
@@ -189,7 +189,9 @@ src/test/resources/com/example/smarttest/order/OrderServiceSmartTest/
     └── expect_exception.yaml
 ```
 
-`@CaseSource("custom-root")` uses a custom root below the test class package. If the default class-name directory is absent, SmartTest remains compatible with the older package-level case layout and logs a warning, because that fallback can pick up YAML from sibling test classes in the same package.
+`@CaseSource("custom-root")` is the explicit escape hatch and resolves to `{packagePath}/{custom-root}/`. A missing class-named or custom root fails with `No YAML case directories found`; there is no silent fallback to the package directory.
+
+YAML is resolved from the test classpath, so cases may live under `src/test/resources` or be co-located next to the test class under `src/test/java` if the consumer maps `**/*.yaml` (and `**/*.yml`) into `testResources`.
 
 ## YAML files and flags
 
