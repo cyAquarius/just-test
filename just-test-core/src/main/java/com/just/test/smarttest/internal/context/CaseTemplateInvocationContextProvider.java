@@ -16,6 +16,7 @@ import org.springframework.core.annotation.AnnotatedElementUtils;
 import org.springframework.core.io.Resource;
 import org.springframework.core.io.support.PathMatchingResourcePatternResolver;
 
+import java.lang.reflect.Modifier;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
@@ -60,25 +61,92 @@ public class CaseTemplateInvocationContextProvider implements TestTemplateInvoca
         Class<?> testClass = context.getRequiredTestClass();
         Package testPackage = testClass.getPackage();
         String packagePath = testPackage == null ? "" : testPackage.getName().replace('.', '/');
+        rejectMultipleConcreteSmartTests(testClass, packagePath);
+
         CaseSource annotation = context.getRequiredTestMethod().getAnnotation(CaseSource.class);
         String configuredRoot = annotation.value().trim();
-        String defaultRoot = joinPath(packagePath, testClass.getSimpleName());
         String caseRoot = configuredRoot.isEmpty()
-                ? defaultRoot
+                ? packagePath
                 : joinPath(packagePath, configuredRoot);
 
         Set<String> caseNames = findCaseNames(caseRoot);
         if (caseNames.isEmpty()) {
             throw new ExtensionConfigurationException(String.format(
                     "[SmartTest] No YAML case directories found: testClass=%s, caseRoot=%s. "
-                            + "Expected child directories with *.yaml or *.yml under that class-named "
-                            + "or @CaseSource root; package-level YAML is not scanned.",
+                            + "Expected child directories with *.yaml or *.yml under the test class "
+                            + "package (default) or the explicit @CaseSource root. "
+                            + "There is no silent fallback to a class-named subdirectory.",
                     testClass.getName(), caseRoot));
         }
 
         return caseNames.stream()
                 .map(caseName -> toCaseContext(caseName, caseRoot))
                 .collect(Collectors.toList());
+    }
+
+    private void rejectMultipleConcreteSmartTests(Class<?> testClass, String packagePath) {
+        if (packagePath.isEmpty()) {
+            return;
+        }
+        Set<String> concreteNames = findConcreteSmartTestClassNames(testClass, packagePath);
+        if (concreteNames.size() <= 1) {
+            return;
+        }
+        throw new ExtensionConfigurationException(String.format(
+                "[SmartTest] Package %s contains multiple concrete @SmartTest classes: %s. "
+                        + "Case root is the test class package; keep one concrete @SmartTest per package "
+                        + "(abstract support bases are allowed). Move extra classes into their own method packages.",
+                testClass.getPackage().getName(),
+                String.join(", ", concreteNames)));
+    }
+
+    private Set<String> findConcreteSmartTestClassNames(Class<?> testClass, String packagePath) {
+        try {
+            ClassLoader classLoader = resolveClassLoader(testClass);
+            PathMatchingResourcePatternResolver resolver = new PathMatchingResourcePatternResolver(classLoader);
+            Resource[] resources = resolver.getResources("classpath*:" + packagePath + "/*.class");
+            String packageName = testClass.getPackage().getName();
+            Set<String> names = new TreeSet<String>();
+            for (Resource resource : resources) {
+                String filename = resource.getFilename();
+                if (filename == null || !filename.endsWith(".class") || filename.contains("$")) {
+                    continue;
+                }
+                if ("package-info.class".equals(filename) || "module-info.class".equals(filename)) {
+                    continue;
+                }
+                String className = packageName + "." + filename.substring(0, filename.length() - 6);
+                Class<?> candidate;
+                try {
+                    candidate = Class.forName(className, false, classLoader);
+                } catch (ClassNotFoundException e) {
+                    continue;
+                } catch (LinkageError e) {
+                    continue;
+                }
+                int modifiers = candidate.getModifiers();
+                if (Modifier.isAbstract(modifiers) || candidate.isInterface()
+                        || candidate.isEnum() || candidate.isAnnotation()) {
+                    continue;
+                }
+                if (AnnotatedElementUtils.hasAnnotation(candidate, SmartTestMarker.class)) {
+                    names.add(candidate.getName());
+                }
+            }
+            return names;
+        } catch (Exception e) {
+            throw new ExtensionConfigurationException(
+                    "[SmartTest] Failed to scan package for @SmartTest classes: " + packagePath, e);
+        }
+    }
+
+    private ClassLoader resolveClassLoader(Class<?> testClass) {
+        ClassLoader classLoader = testClass.getClassLoader();
+        if (classLoader != null) {
+            return classLoader;
+        }
+        classLoader = Thread.currentThread().getContextClassLoader();
+        return classLoader != null ? classLoader : ClassLoader.getSystemClassLoader();
     }
 
     private Set<String> findCaseNames(String caseRoot) {

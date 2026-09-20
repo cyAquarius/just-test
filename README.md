@@ -115,7 +115,7 @@ The stable public API stays under `com.just.test.smarttest`: `annotation` (`@Sma
 
 ## Write a test
 
-For the AI authoring recipe (case directory, class-name layer, Java glue, flags, anti-patterns), see [docs/ai-smarttest-authoring.md](docs/ai-smarttest-authoring.md).
+For the AI authoring recipe (method-package layout, package case root, Java glue, flags, anti-patterns), see [docs/ai-smarttest-authoring.md](docs/ai-smarttest-authoring.md).
 
 SmartTest always uses the Spring Boot TestContext. The consumer project must provide `src/test/resources/sql/schema.sql` for H2 schema initialization and a dedicated test startup configuration:
 
@@ -139,17 +139,22 @@ public class SmartTestApplication {
 The SmartTest context uses the H2 `DataSource`, transaction manager, and `JdbcTemplate` supplied by the framework. Its test startup configuration must not also load production `DataSource`, transaction-manager, or other database-infrastructure configurations; exclude them with the `test` profile or component-scan filters. The framework wires its own infrastructure explicitly, but does not rewrite user Bean `@Primary` metadata or choose between production and test data sources on the consumer's behalf.
 
 ```java
-@SmartTest
-class OrderServiceSmartTest implements SmartTestLifecycle {
+// src/test/java/com/example/smarttest/order/OrderSmartTestSupport.java
+abstract class OrderSmartTestSupport implements SmartTestLifecycle {
 
     @Autowired
-    private OrderService orderService;
+    protected OrderService orderService;
 
     @SmartMock
-    private PricingClient pricingClient;
+    protected PricingClient pricingClient;
+}
+
+// src/test/java/com/example/smarttest/order/create/CreateSmartTest.java
+@SmartTest
+class CreateSmartTest extends OrderSmartTestSupport {
 
     @CaseSource
-    void createOrder(CaseContext context) {
+    void create(CaseContext context) {
         context.setResult(orderService.create(context.getLong("customerId")));
     }
 }
@@ -177,21 +182,40 @@ Unstubbed static methods continue to call their real implementation. Do not clos
 
 Boot 2 uses Mockito 4, so static mocks and final-type mocks require the consumer to enable the inline mock maker explicitly, for example by putting `mock-maker-inline` in `src/test/resources/mockito-extensions/org.mockito.plugins.MockMaker` or adding the matching `mockito-inline`. Boot 3 uses Mockito 5, whose default mock maker is inline; consumers that override the MockMaker still own static/final mock support. SmartTest does not select a MockMaker globally, avoiding conflicts with consumer configuration.
 
-The class-name layer is required. By default SmartTest probes only `{packagePath}/{SimpleClassName}/*/*.yaml|yml`; it does not scan package-level YAML.
+The recommended default is **one business-class directory, one method package, one concrete `@SmartTest` class, one `@CaseSource` method**. Case directories are siblings of that test class. The case root is the test class package (`{packagePath}/`), not `{packagePath}/{SimpleClassName}/`.
 
 ```text
-src/test/resources/com/example/smarttest/order/OrderServiceSmartTest/
-└── create-order/
-    ├── request.yaml
-    ├── prepare.yaml
-    ├── response.yaml
-    ├── expect.yaml
-    └── expect_exception.yaml
+src/test/java/com/example/smarttest/order/     ← business-class directory
+├── OrderSmartTestSupport.java                 ← abstract base (shared mocks/lifecycle)
+├── create/                                    ← method package
+│   ├── CreateSmartTest.java                   ← one @CaseSource; extends Support
+│   ├── ok/                                    ← case dirs as SIBLINGS of the .java file
+│   ├── dup/
+│   └── bad-input/
+└── cancel/
+    ├── CancelSmartTest.java
+    ├── ok/
+    └── ...
 ```
 
-`@CaseSource("custom-root")` is the explicit escape hatch and resolves to `{packagePath}/{custom-root}/`. A missing class-named or custom root fails with `No YAML case directories found`; there is no silent fallback to the package directory.
+Put `schema.sql` (and `application-test.yml`) in `src/test/resources`. Co-locate case YAML under `src/test/java` and map it onto the test classpath:
 
-YAML is resolved from the test classpath, so cases may live under `src/test/resources` or be co-located next to the test class under `src/test/java` if the consumer maps `**/*.yaml` (and `**/*.yml`) into `testResources`.
+```xml
+<testResources>
+    <testResource>
+        <directory>src/test/java</directory>
+        <includes>
+            <include>**/*.yaml</include>
+            <include>**/*.yml</include>
+        </includes>
+    </testResource>
+    <testResource>
+        <directory>src/test/resources</directory>
+    </testResource>
+</testResources>
+```
+
+Default discovery is `{packagePath}/*/*.yaml|yml`. A package may contain only one concrete (non-abstract) `@SmartTest` class; extra concrete classes fail fast with their names listed. Abstract Support bases in that package are allowed. Do not put several `@CaseSource` methods on one class — they would share the same package case root and run the same sibling cases. `@CaseSource("custom-root")` is the explicit escape hatch and resolves to `{packagePath}/{custom-root}/` (including a legacy class-named directory if you name it). A missing package or custom root fails with `No YAML case directories found`; there is no silent fallback that guesses a class-named subdirectory and then the package.
 
 ## YAML files and flags
 

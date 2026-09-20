@@ -9,7 +9,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-final class ParallelClassCoordinator {
+public final class ParallelClassCoordinator {
 
     private static final AtomicInteger ACTIVE_CLASSES = new AtomicInteger();
     private static final AtomicInteger MAX_ACTIVE_CLASSES = new AtomicInteger();
@@ -21,7 +21,7 @@ final class ParallelClassCoordinator {
     private ParallelClassCoordinator() {
     }
 
-    static void overlap(String expectedMarker, String actualMarker) throws Exception {
+    public static void overlap(String expectedMarker, String actualMarker) throws Exception {
         int active = ACTIVE_CLASSES.incrementAndGet();
         MAX_ACTIVE_CLASSES.accumulateAndGet(active, Math::max);
         EXECUTION_THREADS.add(Thread.currentThread().getName());
@@ -33,7 +33,7 @@ final class ParallelClassCoordinator {
         }
     }
 
-    static void assertClassesOverlapped() {
+    public static void assertClassesOverlapped() {
         assertTrue(MAX_ACTIVE_CLASSES.get() >= 2,
                 "SmartTest classes did not execute overlapping cases");
         assertTrue(EXECUTION_THREADS.size() >= 2,

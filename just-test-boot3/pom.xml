@@ -56,6 +56,13 @@
         <testSourceDirectory>${project.basedir}/../src/contract-test/java</testSourceDirectory>
         <testResources>
             <testResource>
+                <directory>${project.basedir}/../src/contract-test/java</directory>
+                <includes>
+                    <include>**/*.yaml</include>
+                    <include>**/*.yml</include>
+                </includes>
+            </testResource>
+            <testResource>
                 <directory>${project.basedir}/../src/contract-test/resources</directory>
             </testResource>
         </testResources>
