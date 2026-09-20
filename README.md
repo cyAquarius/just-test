@@ -28,7 +28,7 @@ The matrix is the standalone build and validation baseline for both product line
 ## What SmartTest provides
 
 - `@SmartTest` configures Spring Test, H2, `JdbcTemplate`, and a transaction manager so application services can exercise their normal transaction behavior; it registers a `refresh` scope stand-in when none exists, so business beans using `@RefreshScope` or `@Scope("refresh")` can load without Spring Cloud refresh infrastructure, but tests do not get real refresh semantics.
-- `@SmartTestProject` is the recommended consumer startup annotation: an empty class with `basePackages` (and optional `mapperPackages`) gets `@SpringBootConfiguration`, `@EnableAutoConfiguration`, opinionated component-scan excludes, optional MyBatis wiring to SmartTest's DataSource, and `dataSource` / `transactionManager` aliases. Existing hand-written startup classes keep working.
+- `@SmartTestProject` is the recommended consumer startup annotation: an empty class with `basePackages` (and optional `mapperPackages`) gets `@SpringBootConfiguration`, `@EnableAutoConfiguration`, opinionated component-scan excludes, optional MyBatis wiring to SmartTest's DataSource, and `dataSource` / `transactionManager` aliases (plus optional legacy names via `dataSourceAliases` / `transactionManagerAliases`). Existing hand-written startup classes keep working.
 - `@CaseSource` discovers YAML cases and creates one full JUnit test-template invocation per case, with `CaseContext` available to the test and standard per-test lifecycle methods.
 - `prepare.yaml`, `response.yaml`, `expect.yaml`, and `expect_exception.yaml` cover data setup and result, database, and exception verification.
 - `@SmartMock` creates a thread-scoped Mockito mock. When several beans share a type, an explicit `name` wins only for a type-compatible bean; if an existing bean's type cannot be resolved (for example, a `FactoryBean` hides its object type), name fallback still applies. A same-named bean of an unrelated type is not replaced, and a wrong explicit name fails with a missing-candidate error.
@@ -128,13 +128,15 @@ SmartTest always uses the Spring Boot TestContext. Startup knowledge is split in
 // src/test/java/com/example/smarttest/SmartTestApplication.java
 @SmartTestProject(
     basePackages = "com.example",
-    mapperPackages = "com.example.mapper" // optional; omit if the project has no MyBatis
+    mapperPackages = "com.example.mapper", // optional; omit if the project has no MyBatis
+    dataSourceAliases = "masterDataSource", // optional legacy bean names
+    transactionManagerAliases = "masterDataTransactionManager"
 )
 public class SmartTestApplication {
 }
 ```
 
-`@SmartTestProject` meta-annotates `@SpringBootConfiguration` and `@EnableAutoConfiguration`. The class body can stay empty. Default scan excludes other `@SpringBootApplication` / `@SpringBootConfiguration` types under `basePackages`, plus `@Controller` / `@RestController` / `@ControllerAdvice` when those annotations exist, `@FeignClient` when OpenFeign is present, and known job/scheduling stereotypes when they can be detected without a hard dependency. `dataSource` and `transactionManager` are registered as aliases of the SmartTest primaries when those names are free. Setting `mapperPackages` without mybatis-spring fails fast; mybatis-spring without `mapperPackages` does not invent a scan root.
+`@SmartTestProject` meta-annotates `@SpringBootConfiguration` and `@EnableAutoConfiguration`. The class body can stay empty. Default scan excludes other `@SpringBootApplication` / `@SpringBootConfiguration` types under `basePackages`, plus `@Controller` / `@RestController` / `@ControllerAdvice` when those annotations exist, `@FeignClient` when OpenFeign is present, and known job/scheduling stereotypes when they can be detected without a hard dependency. `dataSource` and `transactionManager` are registered as aliases of the SmartTest primaries when those names are free. Additional names in `dataSourceAliases` / `transactionManagerAliases` are registered the same way for legacy `@Qualifier` / `@Transactional` values; blank entries are ignored, duplicates are discarded, and a name that already exists as a bean definition or alias is left unchanged (SmartTest logs the skip). Setting `mapperPackages` without mybatis-spring fails fast; mybatis-spring without `mapperPackages` does not invent a scan root.
 
 A hand-written `@SpringBootConfiguration` + `@EnableAutoConfiguration` + `@ComponentScan` startup class still works. Prefer `@SmartTestProject` for new projects.
 

@@ -28,7 +28,7 @@ Boot 2 线保留最后一个正式版本 2.7.18 和真实 Java 8 基线；Boot 3
 ## SmartTest 提供的能力
 
 - `@SmartTest` 配置 Spring Test、H2、`JdbcTemplate` 与事务管理器，使被测服务可以按正常事务行为执行；不存在 `refresh` scope 时会注册一个替代实现，使使用 `@RefreshScope` 或 `@Scope("refresh")` 的业务 Bean 无需 Spring Cloud refresh 基础设施即可加载，但测试不提供真实的 refresh 语义。
-- `@SmartTestProject` 是推荐的消费方启动注解：空类加上 `basePackages`（以及可选的 `mapperPackages`）即可组合 `@SpringBootConfiguration`、`@EnableAutoConfiguration`、默认组件扫描排除、可选的 MyBatis→SmartTest 数据源装配，以及 `dataSource` / `transactionManager` 别名。已有手写启动类可继续使用。
+- `@SmartTestProject` 是推荐的消费方启动注解：空类加上 `basePackages`（以及可选的 `mapperPackages`）即可组合 `@SpringBootConfiguration`、`@EnableAutoConfiguration`、默认组件扫描排除、可选的 MyBatis→SmartTest 数据源装配，以及 `dataSource` / `transactionManager` 别名（还可用 `dataSourceAliases` / `transactionManagerAliases` 声明存量 Bean 名）。已有手写启动类可继续使用。
 - `@CaseSource` 发现 YAML 用例，并为每个 case 创建完整的 JUnit test-template invocation；测试方法和标准单测生命周期方法均可注入 `CaseContext`。
 - 通过 `prepare.yaml`、`response.yaml`、`expect.yaml`、`expect_exception.yaml` 完成数据准备以及结果、数据库和异常验证。
 - `@SmartMock` 创建线程作用域 Mockito mock；同类型多 Bean 时，显式 `name` 只命中类型兼容的 Bean；如果现有 Bean 类型无法解析（例如 `FactoryBean` 隐藏了对象类型），仍会使用名称回退。名称相同但类型无关的 Bean 不会被替换，错误的显式名称仍会以缺少候选 Bean 的错误失败。
@@ -128,13 +128,15 @@ SmartTest 统一使用 Spring Boot TestContext。启动知识分成三层：
 // src/test/java/com/example/smarttest/SmartTestApplication.java
 @SmartTestProject(
     basePackages = "com.example",
-    mapperPackages = "com.example.mapper" // 可选；没有 MyBatis 时省略
+    mapperPackages = "com.example.mapper", // 可选；没有 MyBatis 时省略
+    dataSourceAliases = "masterDataSource", // 可选的存量 Bean 名
+    transactionManagerAliases = "masterDataTransactionManager"
 )
 public class SmartTestApplication {
 }
 ```
 
-`@SmartTestProject` 元注解组合 `@SpringBootConfiguration` 与 `@EnableAutoConfiguration`，类体可以为空。默认扫描会排除 `basePackages` 下的其他 `@SpringBootApplication` / `@SpringBootConfiguration`，并在注解存在时排除 `@Controller` / `@RestController` / `@ControllerAdvice`；classpath 上有 OpenFeign 时排除 `@FeignClient`；能安全探测到的 Job / 调度刻板类型也会排除。`dataSource` 与 `transactionManager` 在名称未被占用时注册为 SmartTest 主 Bean 的别名。声明了 `mapperPackages` 但缺少 mybatis-spring 会 fail-fast；有 MyBatis 但未声明 `mapperPackages` 时不会猜测扫描根。
+`@SmartTestProject` 元注解组合 `@SpringBootConfiguration` 与 `@EnableAutoConfiguration`，类体可以为空。默认扫描会排除 `basePackages` 下的其他 `@SpringBootApplication` / `@SpringBootConfiguration`，并在注解存在时排除 `@Controller` / `@RestController` / `@ControllerAdvice`；classpath 上有 OpenFeign 时排除 `@FeignClient`；能安全探测到的 Job / 调度刻板类型也会排除。`dataSource` 与 `transactionManager` 在名称未被占用时注册为 SmartTest 主 Bean 的别名。`dataSourceAliases` / `transactionManagerAliases` 按同样规则为存量 `@Qualifier` / `@Transactional` 注册额外别名：空白项忽略、重复项去重，目标名已有 Bean 定义或别名时不覆盖（会打出跳过诊断日志）。声明了 `mapperPackages` 但缺少 mybatis-spring 会 fail-fast；有 MyBatis 但未声明 `mapperPackages` 时不会猜测扫描根。
 
 手写 `@SpringBootConfiguration` + `@EnableAutoConfiguration` + `@ComponentScan` 启动类仍然有效。新项目请优先使用 `@SmartTestProject`。
 
