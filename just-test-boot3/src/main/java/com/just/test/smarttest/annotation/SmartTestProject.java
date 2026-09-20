@@ -18,8 +18,9 @@ import java.lang.annotation.Target;
  * {@link SpringBootConfiguration}、{@link EnableAutoConfiguration} 以及框架默认的
  * 组件扫描 / 可选 MyBatis 装配。
  *
- * <p>框架拥有默认 denylist（生产启动类、Web/API 边界、classpath 上的 Feign / 调度刻板类型）
- * 与 SmartTest DataSource 别名；项目只声明差异：{@code basePackages}、可选
+ * <p>框架拥有默认 denylist（生产启动类、Web/API 边界、classpath 上的 Feign / 调度刻板类型）、
+ * 默认关闭 Feign OkHttp（保留 {@code FeignAutoConfiguration} / {@code FeignContext}），
+ * 以及 SmartTest DataSource 别名；项目只声明差异：{@code basePackages}、可选
  * {@code mapperPackages}、可选的 {@code dataSourceAliases} / {@code transactionManagerAliases}，
  * 以及需要叠加的 include/exclude。外部依赖 Mock 仍放在 Support 的
  * {@link SmartMock} 上，本注解不会自动 mock 业务 Client。</p>
@@ -93,6 +94,19 @@ public @interface SmartTestProject {
      * 额外的组件扫描包含过滤器，叠加在默认 {@code @Component} 匹配之上。
      */
     ComponentScan.Filter[] includeFilters() default {};
+
+    /**
+     * 是否启用 Feign 的 OkHttp HTTP 客户端子配置。默认 {@code false}：向测试
+     * Environment 写入 {@code feign.okhttp.enabled=false}（Boot 3 另写
+     * {@code spring.cloud.openfeign.okhttp.enabled=false}），从而跳过
+     * {@code OkHttpFeignConfiguration} 注册名为 {@code client} 的
+     * {@code OkHttpClient}，避免与 {@code @Resource private XxxClient client}
+     * 按字段名注入冲突。
+     *
+     * <p>不会排除 {@code FeignAutoConfiguration}：{@code FeignContext} 仍会装配，
+     * 供依赖包中的 Feign Client 使用。设为 {@code true} 时不强制关闭 OkHttp。</p>
+     */
+    boolean enableFeignOkHttp() default false;
 
     /**
      * 额外排除的自动配置，对应 {@link EnableAutoConfiguration#exclude()}。
