@@ -90,7 +90,7 @@ junit.jupiter.execution.parallel.mode.classes.default=concurrent
 
 ## Maven Central
 
-坐标为 `io.github.cyaquarius`。Java 包名仍是 `com.just.test.smarttest`。Maven Central **只发布** `just-test-boot2` 与 `just-test-boot3`（`just-test-core` 打进这两个 JAR，不单独上架）。`1.0.0` 已发布到 Maven Central，消费方应使用 Central 坐标。本地 `mvn install` 仍用于基于本仓库 SNAPSHOT 树开发。
+坐标为 `io.github.cyaquarius`。Java 包名仍是 `com.just.test.smarttest`。Maven Central **只发布** `just-test-boot2` 与 `just-test-boot3`（`just-test-core` 打进这两个 JAR，不单独上架）。`1.0.1` 已发布到 Maven Central，消费方应使用 Central 坐标。本地 `mvn install` 仍用于基于本仓库 SNAPSHOT 树开发。
 
 Java 8 / Boot 2：
 
@@ -98,14 +98,14 @@ Java 8 / Boot 2：
 <dependency>
     <groupId>io.github.cyaquarius</groupId>
     <artifactId>just-test-boot2</artifactId>
-    <version>1.0.0</version>
+    <version>1.0.1</version>
     <scope>test</scope>
 </dependency>
 ```
 
 Java 17 / Boot 3：把 `artifactId` 换成 `just-test-boot3`。不要同时引入两个顶层 artifact。不要单独声明 `just-test-core`——它已打进 boot JAR，且没有独立的 Central 坐标。
 
-若公司私服已代理 Central，只需声明依赖；若无法访问 Central，请代理 Central，或将 boot2/boot3 的 `1.0.0` 制品上传到私服 release 仓库，并保持坐标为 `io.github.cyaquarius`。
+若公司私服已代理 Central，只需声明依赖；若无法访问 Central，请代理 Central，或将 boot2/boot3 的 `1.0.1` 制品上传到私服 release 仓库，并保持坐标为 `io.github.cyaquarius`。
 
 AI 编写用例：按仓库内配方 [docs/ai-smarttest-authoring.md](docs/ai-smarttest-authoring.md)。
 
