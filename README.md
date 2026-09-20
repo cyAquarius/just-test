@@ -90,7 +90,7 @@ A parallel failure is not automatically a SmartTest isolation failure; first ins
 
 ## Maven Central
 
-Coordinates use `io.github.cyaquarius`. Java packages remain `com.just.test.smarttest`. Maven Central publishes only `just-test-boot2` and `just-test-boot3` (`just-test-core` is shaded into those JARs). `1.0.0` is published on Maven Central; consumers should depend on Central coordinates. Local `mvn install` remains for developing from this repo’s SNAPSHOT tree.
+Coordinates use `io.github.cyaquarius`. Java packages remain `com.just.test.smarttest`. Maven Central publishes only `just-test-boot2` and `just-test-boot3` (`just-test-core` is shaded into those JARs). `1.0.1` is published on Maven Central; consumers should depend on Central coordinates. Local `mvn install` remains for developing from this repo’s SNAPSHOT tree.
 
 Java 8 / Boot 2:
 
@@ -98,14 +98,14 @@ Java 8 / Boot 2:
 <dependency>
     <groupId>io.github.cyaquarius</groupId>
     <artifactId>just-test-boot2</artifactId>
-    <version>1.0.0</version>
+    <version>1.0.1</version>
     <scope>test</scope>
 </dependency>
 ```
 
 Java 17 / Boot 3: use `just-test-boot3`. Do not depend on both top-level artifacts. Do not declare `just-test-core` separately — it is shaded into the boot JAR and is not published as its own Central coordinate.
 
-If the company private Maven already proxies Central, only the dependency is needed; if Central is unreachable, proxy Central or upload the boot2/boot3 `1.0.0` artifacts to the private release repo, keeping coordinates `io.github.cyaquarius`.
+If the company private Maven already proxies Central, only the dependency is needed; if Central is unreachable, proxy Central or upload the boot2/boot3 `1.0.1` artifacts to the private release repo, keeping coordinates `io.github.cyaquarius`.
 
 AI-authored tests: follow the in-repo recipe in [docs/ai-smarttest-authoring.md](docs/ai-smarttest-authoring.md).
 

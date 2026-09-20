@@ -10,8 +10,8 @@ SmartTest 面向 **YAML 用例 + 薄 Java glue**，不是手写 assert 堆。本
 
 | 消费工程 | Maven Central |
 | --- | --- |
-| Java 8 / Spring Boot 2 | `io.github.cyaquarius:just-test-boot2:1.0.0` |
-| Java 17 / Spring Boot 3 | `io.github.cyaquarius:just-test-boot3:1.0.0` |
+| Java 8 / Spring Boot 2 | `io.github.cyaquarius:just-test-boot2:1.0.1` |
+| Java 17 / Spring Boot 3 | `io.github.cyaquarius:just-test-boot3:1.0.1` |
 
 不要同时引入两个顶层 artifact。不要单独声明 `just-test-core`：它已 shade 进 boot JAR，Central 不上架。
 
