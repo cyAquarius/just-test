@@ -2,9 +2,17 @@ package com.just.test.smarttest.internal.project;
 
 import org.junit.jupiter.api.Test;
 import org.springframework.core.annotation.AnnotationAttributes;
+import org.springframework.core.env.MapPropertySource;
+import org.springframework.core.env.PropertySource;
+import org.springframework.core.env.StandardEnvironment;
 import org.springframework.util.ClassUtils;
 
+import java.util.Collections;
+
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -66,5 +74,72 @@ class SmartTestProjectRegistrarTest {
         };
 
         SmartTestProjectRegistrar.requireMyBatisSpringIfNeeded(new String[0], hiding);
+    }
+
+    @Test
+    void defaultDisablesFeignOkHttpAndOverridesExistingTrue() {
+        StandardEnvironment environment = new StandardEnvironment();
+        environment.getPropertySources().addFirst(new MapPropertySource(
+                "application", Collections.<String, Object>singletonMap(
+                        SmartTestProjectFeignOkHttp.BOOT2_OKHTTP_ENABLED, "true")));
+        AnnotationAttributes attributes = feignOkHttpAttributes(false);
+
+        SmartTestProjectFeignOkHttp.apply(environment, attributes);
+
+        assertEquals(Boolean.FALSE,
+                environment.getProperty(SmartTestProjectFeignOkHttp.BOOT2_OKHTTP_ENABLED, Boolean.class));
+        assertEquals(Boolean.FALSE,
+                environment.getProperty(SmartTestProjectFeignOkHttp.BOOT3_OKHTTP_ENABLED, Boolean.class));
+        assertTrue(environment.getPropertySources()
+                .contains(SmartTestProjectFeignOkHttp.PROPERTY_SOURCE_NAME));
+    }
+
+    @Test
+    void optInLeavesFeignOkHttpEnabledUntouched() {
+        StandardEnvironment environment = new StandardEnvironment();
+        environment.getPropertySources().addFirst(new MapPropertySource(
+                "application", Collections.<String, Object>singletonMap(
+                        SmartTestProjectFeignOkHttp.BOOT2_OKHTTP_ENABLED, "true")));
+        AnnotationAttributes attributes = feignOkHttpAttributes(true);
+
+        SmartTestProjectFeignOkHttp.apply(environment, attributes);
+
+        assertEquals(Boolean.TRUE,
+                environment.getProperty(SmartTestProjectFeignOkHttp.BOOT2_OKHTTP_ENABLED, Boolean.class));
+        assertNull(environment.getProperty(SmartTestProjectFeignOkHttp.BOOT3_OKHTTP_ENABLED));
+        assertFalse(environment.getPropertySources()
+                .contains(SmartTestProjectFeignOkHttp.PROPERTY_SOURCE_NAME));
+    }
+
+    @Test
+    void disableIsIdempotent() {
+        StandardEnvironment environment = new StandardEnvironment();
+        SmartTestProjectFeignOkHttp.disableOkHttp(environment);
+        SmartTestProjectFeignOkHttp.disableOkHttp(environment);
+        assertEquals(1, countPropertySource(environment, SmartTestProjectFeignOkHttp.PROPERTY_SOURCE_NAME));
+    }
+
+    @Test
+    void failsFastWhenEnvironmentIsNotConfigurable() {
+        IllegalStateException failure = assertThrows(IllegalStateException.class,
+                () -> SmartTestProjectFeignOkHttp.disableOkHttp(null));
+        assertTrue(failure.getMessage().contains("cannot disable Feign OkHttp"));
+        assertTrue(failure.getMessage().contains("client"));
+    }
+
+    private static AnnotationAttributes feignOkHttpAttributes(boolean enableFeignOkHttp) {
+        AnnotationAttributes attributes = new AnnotationAttributes();
+        attributes.put(SmartTestProjectFeignOkHttp.ATTRIBUTE, enableFeignOkHttp);
+        return attributes;
+    }
+
+    private static int countPropertySource(StandardEnvironment environment, String name) {
+        int count = 0;
+        for (PropertySource<?> source : environment.getPropertySources()) {
+            if (name.equals(source.getName())) {
+                count++;
+            }
+        }
+        return count;
     }
 }

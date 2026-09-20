@@ -17,8 +17,8 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * 处理 {@code @SmartTestProject}：默认扫描排除、可选 MyBatis 装配、
- * 默认及声明的数据源 / 事务管理器别名。
+ * 处理 {@code @SmartTestProject}：默认扫描排除、默认关闭 Feign OkHttp、
+ * 可选 MyBatis 装配、默认及声明的数据源 / 事务管理器别名。
  *
  * <p>不对消费方提供兼容承诺。由 Boot 模块的 {@code @SmartTestProject} 通过
  * {@code @Import} 注册，因此必须保持 public。</p>
@@ -52,6 +52,7 @@ public class SmartTestProjectRegistrar implements ImportBeanDefinitionRegistrar,
     public void registerBeanDefinitions(AnnotationMetadata importingClassMetadata,
                                         BeanDefinitionRegistry registry) {
         AnnotationAttributes attributes = resolveAttributes(importingClassMetadata);
+        SmartTestProjectFeignOkHttp.apply(environment, attributes);
         String[] basePackages = requiredBasePackages(attributes);
         String[] mapperPackages = trimAll(attributes.getStringArray("mapperPackages"));
         requireMyBatisSpringIfNeeded(mapperPackages, classLoader);

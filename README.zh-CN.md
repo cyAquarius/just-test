@@ -28,7 +28,7 @@ Boot 2 线保留最后一个正式版本 2.7.18 和真实 Java 8 基线；Boot 3
 ## SmartTest 提供的能力
 
 - `@SmartTest` 配置 Spring Test、H2、`JdbcTemplate` 与事务管理器，使被测服务可以按正常事务行为执行；不存在 `refresh` scope 时会注册一个替代实现，使使用 `@RefreshScope` 或 `@Scope("refresh")` 的业务 Bean 无需 Spring Cloud refresh 基础设施即可加载，但测试不提供真实的 refresh 语义。
-- `@SmartTestProject` 是推荐的消费方启动注解：空类加上 `basePackages`（以及可选的 `mapperPackages`）即可组合 `@SpringBootConfiguration`、`@EnableAutoConfiguration`、默认组件扫描排除、可选的 MyBatis→SmartTest 数据源装配，以及 `dataSource` / `transactionManager` 别名（还可用 `dataSourceAliases` / `transactionManagerAliases` 声明存量 Bean 名）。已有手写启动类可继续使用。
+- `@SmartTestProject` 是推荐的消费方启动注解：空类加上 `basePackages`（以及可选的 `mapperPackages`）即可组合 `@SpringBootConfiguration`、`@EnableAutoConfiguration`、默认组件扫描排除、可选的 MyBatis→SmartTest 数据源装配，以及 `dataSource` / `transactionManager` 别名（还可用 `dataSourceAliases` / `transactionManagerAliases` 声明存量 Bean 名）。默认还会写入 `feign.okhttp.enabled=false`（Boot 3 另写 `spring.cloud.openfeign.okhttp.enabled=false`），避免 OkHttp Feign 注册名为 `client` 的 Bean 与 `@Resource private XxxClient client` 按字段名冲突；`FeignAutoConfiguration` / `FeignContext` 仍保留给依赖包中的 Feign Client。需要 OkHttp 时设 `enableFeignOkHttp = true`。已有手写启动类可继续使用。
 - `@CaseSource` 发现 YAML 用例，并为每个 case 创建完整的 JUnit test-template invocation；测试方法和标准单测生命周期方法均可注入 `CaseContext`。
 - 通过 `prepare.yaml`、`response.yaml`、`expect.yaml`、`expect_exception.yaml` 完成数据准备以及结果、数据库和异常验证。
 - `@SmartMock` 创建线程作用域 Mockito mock；同类型多 Bean 时，显式 `name` 只命中类型兼容的 Bean；如果现有 Bean 类型无法解析（例如 `FactoryBean` 隐藏了对象类型），仍会使用名称回退。名称相同但类型无关的 Bean 不会被替换，错误的显式名称仍会以缺少候选 Bean 的错误失败。
@@ -108,6 +108,8 @@ Java 17 / Boot 3：把 `artifactId` 换成 `just-test-boot3`。不要同时引�
 
 若公司私服已代理 Central，只需声明依赖；若无法访问 Central，请代理 Central，或将 boot2/boot3 的 `1.1.0` 制品上传到私服 release 仓库，并保持坐标为 `io.github.cyaquarius`。
 
+`enableFeignOkHttp` 默认关闭 OkHttp、保留 `FeignContext` 的行为已在 `main` 上，将随 1.1.0 之后的下一个 patch 发布。
+
 AI 编写用例：按仓库内配方 [docs/ai-smarttest-authoring.md](docs/ai-smarttest-authoring.md)。
 
 ## 公开 API
@@ -120,8 +122,8 @@ AI 编写配方（方法包布局、Java glue、Flag、反模式）见 [docs/ai-
 
 SmartTest 统一使用 Spring Boot TestContext。启动知识分成三层：
 
-1. **框架拥有：** H2、事务管理器、`JdbcTemplate`、默认组件扫描 denylist，以及（声明了 `mapperPackages` 时）绑定 SmartTest DataSource 的 MyBatis `SqlSessionFactory` / `SqlSessionTemplate` / MapperScan。
-2. **默认可覆盖：** `excludeClasses`、`excludeFilters`、`includeFilters`、`excludeAutoConfiguration`。消费方不必复制默认 denylist。
+1. **框架拥有：** H2、事务管理器、`JdbcTemplate`、默认组件扫描 denylist、默认关闭 Feign OkHttp（`feign.okhttp.enabled=false` / Boot 3 的 `spring.cloud.openfeign.okhttp.enabled=false`；**不**排除 `FeignAutoConfiguration`），以及（声明了 `mapperPackages` 时）绑定 SmartTest DataSource 的 MyBatis `SqlSessionFactory` / `SqlSessionTemplate` / MapperScan。
+2. **默认可覆盖：** `excludeClasses`、`excludeFilters`、`includeFilters`、`excludeAutoConfiguration`、`enableFeignOkHttp`。消费方不必复制默认 denylist。
 3. **项目必须声明：** `basePackages`（不猜测业务根包）、`src/test/resources/sql/schema.sql`，以及 Support 上的 `@SmartMock`。不要把生产 DataSource / 事务管理器配置放到测试启动类上。
 
 ```java
@@ -131,12 +133,13 @@ SmartTest 统一使用 Spring Boot TestContext。启动知识分成三层：
     mapperPackages = "com.example.mapper", // 可选；没有 MyBatis 时省略
     dataSourceAliases = "masterDataSource", // 可选的存量 Bean 名
     transactionManagerAliases = "masterDataTransactionManager"
+    // enableFeignOkHttp = true // 仅在测试需要 OkHttp Feign（`client` Bean）时开启
 )
 public class SmartTestApplication {
 }
 ```
 
-`@SmartTestProject` 元注解组合 `@SpringBootConfiguration` 与 `@EnableAutoConfiguration`，类体可以为空。默认扫描会排除 `basePackages` 下的其他 `@SpringBootApplication` / `@SpringBootConfiguration`，并在注解存在时排除 `@Controller` / `@RestController` / `@ControllerAdvice`；classpath 上有 OpenFeign 时排除 `@FeignClient`；能安全探测到的 Job / 调度刻板类型也会排除。`dataSource` 与 `transactionManager` 在名称未被占用时注册为 SmartTest 主 Bean 的别名。`dataSourceAliases` / `transactionManagerAliases` 按同样规则为存量 `@Qualifier` / `@Transactional` 注册额外别名：空白项忽略、重复项去重，目标名已有 Bean 定义或别名时不覆盖（会打出跳过诊断日志）。声明了 `mapperPackages` 但缺少 mybatis-spring 会 fail-fast；有 MyBatis 但未声明 `mapperPackages` 时不会猜测扫描根。
+`@SmartTestProject` 元注解组合 `@SpringBootConfiguration` 与 `@EnableAutoConfiguration`，类体可以为空。默认扫描会排除 `basePackages` 下的其他 `@SpringBootApplication` / `@SpringBootConfiguration`，并在注解存在时排除 `@Controller` / `@RestController` / `@ControllerAdvice`；classpath 上有 OpenFeign 时排除 `@FeignClient`；能安全探测到的 Job / 调度刻板类型也会排除。Feign OkHttp 默认关闭（`enableFeignOkHttp` 默认为 `false`）：`OkHttpFeignConfiguration` 会注册名为 `client` 的 `OkHttpClient`，`@Resource` 会按字段名优先命中它，从而与 `EmailClient client` 这类写法冲突；`FeignAutoConfiguration` 与 `FeignContext` 仍会装配，供依赖包中的 Feign Client 使用。`dataSource` 与 `transactionManager` 在名称未被占用时注册为 SmartTest 主 Bean 的别名。`dataSourceAliases` / `transactionManagerAliases` 按同样规则为存量 `@Qualifier` / `@Transactional` 注册额外别名：空白项忽略、重复项去重，目标名已有 Bean 定义或别名时不覆盖（会打出跳过诊断日志）。声明了 `mapperPackages` 但缺少 mybatis-spring 会 fail-fast；有 MyBatis 但未声明 `mapperPackages` 时不会猜测扫描根。
 
 手写 `@SpringBootConfiguration` + `@EnableAutoConfiguration` + `@ComponentScan` 启动类仍然有效。新项目请优先使用 `@SmartTestProject`。
 

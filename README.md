@@ -28,7 +28,7 @@ The matrix is the standalone build and validation baseline for both product line
 ## What SmartTest provides
 
 - `@SmartTest` configures Spring Test, H2, `JdbcTemplate`, and a transaction manager so application services can exercise their normal transaction behavior; it registers a `refresh` scope stand-in when none exists, so business beans using `@RefreshScope` or `@Scope("refresh")` can load without Spring Cloud refresh infrastructure, but tests do not get real refresh semantics.
-- `@SmartTestProject` is the recommended consumer startup annotation: an empty class with `basePackages` (and optional `mapperPackages`) gets `@SpringBootConfiguration`, `@EnableAutoConfiguration`, opinionated component-scan excludes, optional MyBatis wiring to SmartTest's DataSource, and `dataSource` / `transactionManager` aliases (plus optional legacy names via `dataSourceAliases` / `transactionManagerAliases`). Existing hand-written startup classes keep working.
+- `@SmartTestProject` is the recommended consumer startup annotation: an empty class with `basePackages` (and optional `mapperPackages`) gets `@SpringBootConfiguration`, `@EnableAutoConfiguration`, opinionated component-scan excludes, optional MyBatis wiring to SmartTest's DataSource, and `dataSource` / `transactionManager` aliases (plus optional legacy names via `dataSourceAliases` / `transactionManagerAliases`). By default it also sets `feign.okhttp.enabled=false` (and Boot 3's `spring.cloud.openfeign.okhttp.enabled=false`) so OkHttp Feign does not register a bean named `client` that collides with `@Resource private XxxClient client`; `FeignAutoConfiguration` / `FeignContext` remain for Feign clients in dependency jars. Set `enableFeignOkHttp = true` to opt in. Existing hand-written startup classes keep working.
 - `@CaseSource` discovers YAML cases and creates one full JUnit test-template invocation per case, with `CaseContext` available to the test and standard per-test lifecycle methods.
 - `prepare.yaml`, `response.yaml`, `expect.yaml`, and `expect_exception.yaml` cover data setup and result, database, and exception verification.
 - `@SmartMock` creates a thread-scoped Mockito mock. When several beans share a type, an explicit `name` wins only for a type-compatible bean; if an existing bean's type cannot be resolved (for example, a `FactoryBean` hides its object type), name fallback still applies. A same-named bean of an unrelated type is not replaced, and a wrong explicit name fails with a missing-candidate error.
@@ -108,6 +108,8 @@ Java 17 / Boot 3: use `just-test-boot3`. Do not depend on both top-level artifac
 
 If the company private Maven already proxies Central, only the dependency is needed; if Central is unreachable, proxy Central or upload the boot2/boot3 `1.1.0` artifacts to the private release repo, keeping coordinates `io.github.cyaquarius`.
 
+The `enableFeignOkHttp` default (OkHttp off, `FeignContext` kept) is on `main` and will ship in the next patch after published `1.1.0`.
+
 AI-authored tests: follow the in-repo recipe in [docs/ai-smarttest-authoring.md](docs/ai-smarttest-authoring.md).
 
 ## Public API
@@ -120,8 +122,8 @@ For the AI authoring recipe (method-package layout, Java glue, flags, anti-patte
 
 SmartTest always uses the Spring Boot TestContext. Startup knowledge is split into three layers:
 
-1. **Framework-owned:** H2, the transaction manager, `JdbcTemplate`, default component-scan denylist, and (when `mapperPackages` is set) MyBatis `SqlSessionFactory` / `SqlSessionTemplate` / MapperScan bound to SmartTest's DataSource.
-2. **Defaults you may overlay:** `excludeClasses`, `excludeFilters`, `includeFilters`, and `excludeAutoConfiguration`. You do not need to copy the default denylist.
+1. **Framework-owned:** H2, the transaction manager, `JdbcTemplate`, default component-scan denylist, default Feign OkHttp disable (`feign.okhttp.enabled=false` / Boot 3 `spring.cloud.openfeign.okhttp.enabled=false`; `FeignAutoConfiguration` is not excluded), and (when `mapperPackages` is set) MyBatis `SqlSessionFactory` / `SqlSessionTemplate` / MapperScan bound to SmartTest's DataSource.
+2. **Defaults you may overlay:** `excludeClasses`, `excludeFilters`, `includeFilters`, `excludeAutoConfiguration`, and `enableFeignOkHttp`. You do not need to copy the default denylist.
 3. **Project must declare:** `basePackages` (no guessed business root), `src/test/resources/sql/schema.sql`, and external-dependency mocks on Support via `@SmartMock`. Do not put production DataSource / transaction-manager configuration on the test startup class.
 
 ```java
@@ -131,12 +133,13 @@ SmartTest always uses the Spring Boot TestContext. Startup knowledge is split in
     mapperPackages = "com.example.mapper", // optional; omit if the project has no MyBatis
     dataSourceAliases = "masterDataSource", // optional legacy bean names
     transactionManagerAliases = "masterDataTransactionManager"
+    // enableFeignOkHttp = true // opt in only if tests need OkHttp Feign (`client` bean)
 )
 public class SmartTestApplication {
 }
 ```
 
-`@SmartTestProject` meta-annotates `@SpringBootConfiguration` and `@EnableAutoConfiguration`. The class body can stay empty. Default scan excludes other `@SpringBootApplication` / `@SpringBootConfiguration` types under `basePackages`, plus `@Controller` / `@RestController` / `@ControllerAdvice` when those annotations exist, `@FeignClient` when OpenFeign is present, and known job/scheduling stereotypes when they can be detected without a hard dependency. `dataSource` and `transactionManager` are registered as aliases of the SmartTest primaries when those names are free. Additional names in `dataSourceAliases` / `transactionManagerAliases` are registered the same way for legacy `@Qualifier` / `@Transactional` values; blank entries are ignored, duplicates are discarded, and a name that already exists as a bean definition or alias is left unchanged (SmartTest logs the skip). Setting `mapperPackages` without mybatis-spring fails fast; mybatis-spring without `mapperPackages` does not invent a scan root.
+`@SmartTestProject` meta-annotates `@SpringBootConfiguration` and `@EnableAutoConfiguration`. The class body can stay empty. Default scan excludes other `@SpringBootApplication` / `@SpringBootConfiguration` types under `basePackages`, plus `@Controller` / `@RestController` / `@ControllerAdvice` when those annotations exist, `@FeignClient` when OpenFeign is present, and known job/scheduling stereotypes when they can be detected without a hard dependency. Feign OkHttp is off by default (`enableFeignOkHttp` defaults to `false`) because `OkHttpFeignConfiguration` registers a bean named `client` (`okhttp3.OkHttpClient`) that `@Resource` prefers over a type-compatible `EmailClient` field of the same name; `FeignAutoConfiguration` and `FeignContext` stay enabled for Feign clients that live in dependency jars. `dataSource` and `transactionManager` are registered as aliases of the SmartTest primaries when those names are free. Additional names in `dataSourceAliases` / `transactionManagerAliases` are registered the same way for legacy `@Qualifier` / `@Transactional` values; blank entries are ignored, duplicates are discarded, and a name that already exists as a bean definition or alias is left unchanged (SmartTest logs the skip). Setting `mapperPackages` without mybatis-spring fails fast; mybatis-spring without `mapperPackages` does not invent a scan root.
 
 A hand-written `@SpringBootConfiguration` + `@EnableAutoConfiguration` + `@ComponentScan` startup class still works. Prefer `@SmartTestProject` for new projects.
 
