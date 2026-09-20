@@ -15,6 +15,10 @@ import org.slf4j.LoggerFactory;
 import org.springframework.core.annotation.AnnotatedElementUtils;
 import org.springframework.core.io.Resource;
 import org.springframework.core.io.support.PathMatchingResourcePatternResolver;
+import org.springframework.core.type.ClassMetadata;
+import org.springframework.core.type.classreading.CachingMetadataReaderFactory;
+import org.springframework.core.type.classreading.MetadataReader;
+import org.springframework.core.type.classreading.MetadataReaderFactory;
 
 import java.util.ArrayList;
 import java.util.Collections;
@@ -59,26 +63,82 @@ public class CaseTemplateInvocationContextProvider implements TestTemplateInvoca
     List<CaseContext> discoverCases(ExtensionContext context) {
         Class<?> testClass = context.getRequiredTestClass();
         Package testPackage = testClass.getPackage();
-        String packagePath = testPackage == null ? "" : testPackage.getName().replace('.', '/');
+        String packageName = testPackage == null ? "" : testPackage.getName();
+        String packagePath = packageName.replace('.', '/');
+        rejectMultipleConcreteSmartTestClasses(packageName, packagePath);
+
         CaseSource annotation = context.getRequiredTestMethod().getAnnotation(CaseSource.class);
         String configuredRoot = annotation.value().trim();
-        String defaultRoot = joinPath(packagePath, testClass.getSimpleName());
         String caseRoot = configuredRoot.isEmpty()
-                ? defaultRoot
+                ? packagePath
                 : joinPath(packagePath, configuredRoot);
 
         Set<String> caseNames = findCaseNames(caseRoot);
         if (caseNames.isEmpty()) {
             throw new ExtensionConfigurationException(String.format(
                     "[SmartTest] No YAML case directories found: testClass=%s, caseRoot=%s. "
-                            + "Expected child directories with *.yaml or *.yml under that class-named "
-                            + "or @CaseSource root; package-level YAML is not scanned.",
-                    testClass.getName(), caseRoot));
+                            + "Expected case directories as siblings under the test class package "
+                            + "(classpath %s/{case}/*.yaml|yml), or under an explicit @CaseSource root. "
+                            + "Default discovery uses the test class package as the case root and does not "
+                            + "probe {package}/{SimpleClassName}/.",
+                    testClass.getName(),
+                    caseRoot,
+                    packagePath.isEmpty() ? "<package>" : packagePath));
         }
 
         return caseNames.stream()
                 .map(caseName -> toCaseContext(caseName, caseRoot))
                 .collect(Collectors.toList());
+    }
+
+    private void rejectMultipleConcreteSmartTestClasses(String packageName, String packagePath) {
+        List<String> concreteClasses = findConcreteSmartTestClassNames(packageName, packagePath);
+        if (concreteClasses.size() <= 1) {
+            return;
+        }
+        throw new ExtensionConfigurationException(String.format(
+                "[SmartTest] Package %s has multiple concrete @SmartTest classes: %s. "
+                        + "Expected one concrete @SmartTest class per package, with case directories "
+                        + "as siblings under the test class package.",
+                packageName.isEmpty() ? "<default>" : packageName,
+                String.join(", ", concreteClasses)));
+    }
+
+    private List<String> findConcreteSmartTestClassNames(String packageName, String packagePath) {
+        try {
+            PathMatchingResourcePatternResolver resolver = new PathMatchingResourcePatternResolver();
+            MetadataReaderFactory metadataReaderFactory = new CachingMetadataReaderFactory(resolver);
+            String pattern = packagePath.isEmpty()
+                    ? "classpath*:*.class"
+                    : "classpath*:" + packagePath + "/*.class";
+            Resource[] resources = resolver.getResources(pattern);
+            Set<String> names = new TreeSet<String>();
+            for (Resource resource : resources) {
+                if (!resource.isReadable()) {
+                    continue;
+                }
+                MetadataReader reader = metadataReaderFactory.getMetadataReader(resource);
+                ClassMetadata metadata = reader.getClassMetadata();
+                if (!metadata.isConcrete()) {
+                    continue;
+                }
+                if (!hasSmartTestMarker(reader)) {
+                    continue;
+                }
+                names.add(metadata.getClassName());
+            }
+            return new ArrayList<String>(names);
+        } catch (Exception e) {
+            throw new ExtensionConfigurationException(
+                    "[SmartTest] Failed to scan @SmartTest classes in package "
+                            + (packageName.isEmpty() ? "<default>" : packageName),
+                    e);
+        }
+    }
+
+    private boolean hasSmartTestMarker(MetadataReader reader) {
+        return reader.getAnnotationMetadata().hasAnnotation(SmartTestMarker.class.getName())
+                || reader.getAnnotationMetadata().hasMetaAnnotation(SmartTestMarker.class.getName());
     }
 
     private Set<String> findCaseNames(String caseRoot) {

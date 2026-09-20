@@ -115,7 +115,7 @@ AI 编写用例：按仓库内配方 [docs/ai-smarttest-authoring.md](docs/ai-sm
 
 ## 编写测试
 
-AI 编写配方（用例目录、类名层、Java glue、Flag、反模式）见 [docs/ai-smarttest-authoring.md](docs/ai-smarttest-authoring.md)。
+AI 编写配方（方法包布局、Java glue、Flag、反模式）见 [docs/ai-smarttest-authoring.md](docs/ai-smarttest-authoring.md)。
 
 SmartTest 统一使用 Spring Boot TestContext。消费项目必须提供 `src/test/resources/sql/schema.sql`，用于初始化 H2 表结构，并提供专用测试启动配置：
 
@@ -139,14 +139,19 @@ public class SmartTestApplication {
 SmartTest Context 使用框架提供的 H2 `DataSource`、事务管理器和 `JdbcTemplate`。测试启动配置不得同时加载生产 `DataSource`、事务管理器或其他数据库基础设施配置；请通过 `test` profile 或组件扫描排除这些生产配置。框架内部会精确连接自身 H2，但不会改写用户 Bean 的 `@Primary` 属性，也不会替测试选择生产与测试数据源。
 
 ```java
-@SmartTest
-class OrderServiceSmartTest implements SmartTestLifecycle {
+// src/test/java/com/example/smarttest/order/OrderSmartTestSupport.java
+abstract class OrderSmartTestSupport implements SmartTestLifecycle {
 
     @Autowired
-    private OrderService orderService;
+    protected OrderService orderService;
 
     @SmartMock
-    private PricingClient pricingClient;
+    protected PricingClient pricingClient;
+}
+
+// src/test/java/com/example/smarttest/order/create/CreateSmartTest.java
+@SmartTest
+class CreateSmartTest extends OrderSmartTestSupport {
 
     @CaseSource
     void createOrder(CaseContext context) {
@@ -177,21 +182,45 @@ public void configureStaticMocks(CaseContext context, StaticMockContext mocks) {
 
 Boot 2 使用 Mockito 4，静态 Mock 或 final 类型 Mock 要求消费工程显式启用 inline mock maker，例如在 `src/test/resources/mockito-extensions/org.mockito.plugins.MockMaker` 写入 `mock-maker-inline`，或引入版本一致的 `mockito-inline`。Boot 3 使用 Mockito 5，其默认 mock maker 已是 inline；若消费工程覆盖了 MockMaker，仍需自行保证静态/final Mock 能力。SmartTest 不会全局指定 MockMaker，避免覆盖消费工程已有配置。
 
-类名这一层是必选契约。默认只探测 `{packagePath}/{SimpleClassName}/*/*.yaml|yml`，不会扫描包级 YAML。
+默认 case 根是测试类所在包。case 目录是 classpath 上 `.java` 的同级兄弟（`{packagePath}/*/*.yaml|yml`）。框架不会探测 `{packagePath}/{SimpleClassName}/`。同一包内最多一个具体 `@SmartTest` 类；抽象 Support 基类放在父级业务类目录，不计入该限制。一个测试类只放一个 `@CaseSource` 方法——同一类上多个 `@CaseSource` 会共享本包全部 sibling case。
+
+推荐树（与测试类一起放在 `src/test/java`）：
 
 ```text
-src/test/resources/com/example/smarttest/order/OrderServiceSmartTest/
-└── create-order/
-    ├── request.yaml
-    ├── prepare.yaml
-    ├── response.yaml
-    ├── expect.yaml
-    └── expect_exception.yaml
+src/test/java/com/example/smarttest/order/
+├── OrderSmartTestSupport.java
+├── create/
+│   ├── CreateSmartTest.java
+│   ├── ok/
+│   ├── dup/
+│   └── bad-input/
+└── cancel/
+    ├── CancelSmartTest.java
+    └── ok/
 ```
 
-`@CaseSource("custom-root")` 是显式逃生口，解析为 `{packagePath}/{custom-root}/`。类名根或自定义根缺失时直接以 `No YAML case directories found` 失败，不会静默回退到包目录。
+每个 case 目录按需要放 `request.yaml`、`prepare.yaml`、`response.yaml`、`expect.yaml`、`expect_exception.yaml`。
 
-YAML 按测试 classpath 解析，因此既可以放在 `src/test/resources`，也可以通过 `testResources` 把 `**/*.yaml`（以及 `**/*.yml`）映射进去，把用例与测试类一起放在 `src/test/java`。
+把这些 YAML 映射进测试 classpath：
+
+```xml
+<testResources>
+    <testResource>
+        <directory>src/test/java</directory>
+        <includes>
+            <include>**/*.yaml</include>
+            <include>**/*.yml</include>
+        </includes>
+    </testResource>
+    <testResource>
+        <directory>src/test/resources</directory>
+    </testResource>
+</testResources>
+```
+
+`src/test/resources` 留给 `schema.sql` 和 `application-test.yml`。YAML 也可以按同一包路径放在 `src/test/resources`；发现路径不变。
+
+`@CaseSource("custom-root")` 是显式逃生口，解析为 `{packagePath}/{custom-root}/`。本包根或自定义根缺失时直接以 `No YAML case directories found` 失败，并说明期望的 sibling 布局；不会静默回退到类名目录或其他根。
 
 ## YAML 文件与 Flag
 
