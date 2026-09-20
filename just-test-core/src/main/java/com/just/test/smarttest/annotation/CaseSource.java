@@ -31,6 +31,7 @@ public @interface CaseSource {
      * 显式值解析为 {@code {packagePath}/{value}/}。
      * 不会探测 {@code {packagePath}/{SimpleClassName}/}，也不会静默回退到其他根。
      * 同一包内不得有多个具体（非 abstract）{@code @SmartTest} 类。
+     * 抽象 Support / 基类不得标注 {@code @SmartTest}；具体测试类必须自身直接标注。
      */
     String value() default "";
 }

@@ -90,7 +90,7 @@ junit.jupiter.execution.parallel.mode.classes.default=concurrent
 
 ## Maven Central
 
-坐标为 `io.github.cyaquarius`。Java 包名仍是 `com.just.test.smarttest`。Maven Central **只发布** `just-test-boot2` 与 `just-test-boot3`（`just-test-core` 打进这两个 JAR，不单独上架）。`1.0.1` 已发布到 Maven Central，消费方应使用 Central 坐标。本地 `mvn install` 仍用于基于本仓库 SNAPSHOT 树开发。
+坐标为 `io.github.cyaquarius`。Java 包名仍是 `com.just.test.smarttest`。Maven Central **只发布** `just-test-boot2` 与 `just-test-boot3`（`just-test-core` 打进这两个 JAR，不单独上架）。`1.0.2` 已发布到 Maven Central，消费方应使用 Central 坐标。本地 `mvn install` 仍用于基于本仓库 SNAPSHOT 树开发。
 
 Java 8 / Boot 2：
 
@@ -98,14 +98,14 @@ Java 8 / Boot 2：
 <dependency>
     <groupId>io.github.cyaquarius</groupId>
     <artifactId>just-test-boot2</artifactId>
-    <version>1.0.1</version>
+    <version>1.0.2</version>
     <scope>test</scope>
 </dependency>
 ```
 
 Java 17 / Boot 3：把 `artifactId` 换成 `just-test-boot3`。不要同时引入两个顶层 artifact。不要单独声明 `just-test-core`——它已打进 boot JAR，且没有独立的 Central 坐标。
 
-若公司私服已代理 Central，只需声明依赖；若无法访问 Central，请代理 Central，或将 boot2/boot3 的 `1.0.1` 制品上传到私服 release 仓库，并保持坐标为 `io.github.cyaquarius`。
+若公司私服已代理 Central，只需声明依赖；若无法访问 Central，请代理 Central，或将 boot2/boot3 的 `1.0.2` 制品上传到私服 release 仓库，并保持坐标为 `io.github.cyaquarius`。
 
 AI 编写用例：按仓库内配方 [docs/ai-smarttest-authoring.md](docs/ai-smarttest-authoring.md)。
 
@@ -182,7 +182,7 @@ public void configureStaticMocks(CaseContext context, StaticMockContext mocks) {
 
 Boot 2 使用 Mockito 4，静态 Mock 或 final 类型 Mock 要求消费工程显式启用 inline mock maker，例如在 `src/test/resources/mockito-extensions/org.mockito.plugins.MockMaker` 写入 `mock-maker-inline`，或引入版本一致的 `mockito-inline`。Boot 3 使用 Mockito 5，其默认 mock maker 已是 inline；若消费工程覆盖了 MockMaker，仍需自行保证静态/final Mock 能力。SmartTest 不会全局指定 MockMaker，避免覆盖消费工程已有配置。
 
-默认 case 根是测试类所在包。case 目录是 classpath 上 `.java` 的同级兄弟（`{packagePath}/*/*.yaml|yml`）。框架不会探测 `{packagePath}/{SimpleClassName}/`。同一包内最多一个具体 `@SmartTest` 类；抽象 Support 基类放在父级业务类目录，只放共享生命周期和 mock，不要标 `@SmartTest`，也不要放 case YAML。一个具体测试类只放一个 `@CaseSource` 方法——同一类上多个 `@CaseSource` 会共享本包全部 sibling case。
+默认 case 根是测试类所在包。case 目录是 classpath 上 `.java` 的同级兄弟（`{packagePath}/*/*.yaml|yml`）。框架不会探测 `{packagePath}/{SimpleClassName}/`。同一包内最多一个**自身直接标注** `@SmartTest` 的具体类；仅从父类继承 marker 不能准入。抽象 Support 基类放在父级业务类目录，只放共享生命周期和 mock，不要标 `@SmartTest`，也不要放 case YAML；抽象类上标 `@SmartTest` 会 fail-fast。一个具体测试类只放一个 `@CaseSource` 方法——同一类上多个 `@CaseSource` 会共享本包全部 sibling case。
 
 推荐树（与测试类一起放在 `src/test/java`）：
 

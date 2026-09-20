@@ -13,6 +13,10 @@ import org.springframework.test.context.ContextConfiguration;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.when;
 
+/**
+ * Shared mocks/lifecycle for pricing method packages. Abstract Support is not a
+ * {@code @SmartTest} class and must not own case YAML.
+ */
 @ContextConfiguration(classes = DemoConfiguration.class)
 public abstract class PricingSmartTestSupport implements SmartTestLifecycle {
 

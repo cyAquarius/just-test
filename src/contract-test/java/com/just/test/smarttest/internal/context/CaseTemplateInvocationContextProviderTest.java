@@ -1,13 +1,14 @@
 package com.just.test.smarttest.internal.context;
 
 import com.just.test.smarttest.annotation.CaseSource;
-import com.just.test.smarttest.annotation.SmartTest;
 import com.just.test.smarttest.context.CaseContext;
 import com.just.test.smarttest.internal.context.caseroot.abstractparent.child.ConcreteChildCases;
+import com.just.test.smarttest.internal.context.caseroot.abstractsame.AbstractSamePackageSupport;
 import com.just.test.smarttest.internal.context.caseroot.abstractsame.ConcreteSamePackageCases;
 import com.just.test.smarttest.internal.context.caseroot.classnamed.ClassNamedRootCases;
 import com.just.test.smarttest.internal.context.caseroot.custom.CustomRootCases;
 import com.just.test.smarttest.internal.context.caseroot.defaultdiscovery.DefaultDiscoveryCases;
+import com.just.test.smarttest.internal.context.caseroot.inheritedmarker.child.UnannotatedChildCases;
 import com.just.test.smarttest.internal.context.caseroot.missingcustom.MissingCustomRootCases;
 import com.just.test.smarttest.internal.context.caseroot.multi.FirstConcreteCases;
 import com.just.test.smarttest.internal.context.caseroot.multi.SecondConcreteCases;
@@ -107,22 +108,28 @@ class CaseTemplateInvocationContextProviderTest {
     }
 
     @Test
-    void ignoresAbstractSmartTestInTheSamePackage() throws Exception {
+    void failsFastWhenAbstractClassInTheSamePackageHasSmartTest() throws Exception {
         ExtensionContext context = mockContext(ConcreteSamePackageCases.class, "caseMethod");
 
-        List<CaseContext> cases = new CaseTemplateInvocationContextProvider().discoverCases(context);
+        ExtensionConfigurationException failure = assertThrows(ExtensionConfigurationException.class,
+                () -> new CaseTemplateInvocationContextProvider().discoverCases(context));
 
-        assertEquals(1, cases.size());
-        assertEquals("ok", cases.get(0).getCaseName());
-        assertEquals(3, cases.get(0).getInt("value"));
+        assertTrue(failure.getMessage().contains("abstract @SmartTest class"), failure.getMessage());
+        assertTrue(failure.getMessage().contains(AbstractSamePackageSupport.class.getName()),
+                failure.getMessage());
+        assertTrue(failure.getMessage().contains("must not carry @SmartTest"), failure.getMessage());
+        assertTrue(failure.getMessage().contains("concrete method-package test class"),
+                failure.getMessage());
     }
 
     @Test
-    void ignoresAbstractSmartTestInAParentPackage() throws Exception {
+    void discoversCasesWhenUnannotatedSupportLivesInAParentPackage() throws Exception {
         ExtensionContext context = mockContext(ConcreteChildCases.class, "caseMethod");
 
-        List<CaseContext> cases = new CaseTemplateInvocationContextProvider().discoverCases(context);
+        CaseTemplateInvocationContextProvider provider = new CaseTemplateInvocationContextProvider();
+        List<CaseContext> cases = provider.discoverCases(context);
 
+        assertTrue(provider.supportsTestTemplate(context));
         assertEquals(1, cases.size());
         assertEquals("ok", cases.get(0).getCaseName());
         assertEquals(5, cases.get(0).getInt("value"));
@@ -139,6 +146,23 @@ class CaseTemplateInvocationContextProviderTest {
                 () -> new CaseTemplateInvocationContextProvider().supportsTestTemplate(context));
 
         assertTrue(failure.getMessage().contains("uses @CaseSource without @SmartTest"));
+        assertTrue(failure.getMessage().contains("concrete test class"), failure.getMessage());
+        assertTrue(failure.getMessage().contains("must not carry @SmartTest"), failure.getMessage());
+    }
+
+    @Test
+    void rejectsConcreteClassThatOnlyInheritsSmartTestFromAbstractSupport() throws Exception {
+        ExtensionContext context = mockContext(UnannotatedChildCases.class, "caseMethod");
+
+        ExtensionConfigurationException failure = assertThrows(ExtensionConfigurationException.class,
+                () -> new CaseTemplateInvocationContextProvider().supportsTestTemplate(context));
+
+        assertTrue(failure.getMessage().contains("uses @CaseSource without @SmartTest"),
+                failure.getMessage());
+        assertTrue(failure.getMessage().contains(UnannotatedChildCases.class.getName()),
+                failure.getMessage());
+        assertTrue(failure.getMessage().contains("concrete test class"), failure.getMessage());
+        assertTrue(failure.getMessage().contains("must not carry @SmartTest"), failure.getMessage());
     }
 
     private static ExtensionContext mockContext(Class<?> testClass, String methodName) throws Exception {
