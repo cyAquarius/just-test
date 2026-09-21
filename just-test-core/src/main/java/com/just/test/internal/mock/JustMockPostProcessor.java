@@ -205,7 +205,7 @@ class JustMockPostProcessor implements BeanFactoryPostProcessor {
         if (!registry.containsBeanDefinition(beanName) && !beanFactory.containsSingleton(beanName)) {
             return definition.getType();
         }
-        Class<?> targetType = beanFactory.getType(beanName, false);
+        Class<?> targetType = safeBeanType(beanFactory, beanName);
         if (targetType == null || !definition.getType().isAssignableFrom(targetType)) {
             return definition.getType();
         }
@@ -368,8 +368,20 @@ class JustMockPostProcessor implements BeanFactoryPostProcessor {
 
     private boolean isTypeCompatible(ConfigurableListableBeanFactory beanFactory,
                                      String beanName, JustMockDefinition definition) {
-        Class<?> beanType = beanFactory.getType(beanName, false);
+        Class<?> beanType = safeBeanType(beanFactory, beanName);
         return beanType == null || definition.getType().isAssignableFrom(beanType);
+    }
+
+    /**
+     * FeignClientFactoryBean 等类型可能不在测试 classpath；eager class-load 会抛
+     * {@code CannotLoadBeanClassException}，这里按“类型未知”处理以免挡住替换。
+     */
+    private static Class<?> safeBeanType(ConfigurableListableBeanFactory beanFactory, String beanName) {
+        try {
+            return beanFactory.getType(beanName, false);
+        } catch (RuntimeException ex) {
+            return null;
+        }
     }
 
     private String findExistingBeanDefinition(BeanDefinitionRegistry registry,

@@ -29,11 +29,21 @@ class ExplicitJustMockWinsJustTest implements JustTestLifecycle {
 
     @CaseSource
     void explicitJustMockWinsOverAutoFeignMock(CaseContext context) {
-        assertEquals(1, applicationContext.getBeanNamesForType(DemoFeignClient.class).length);
+        assertEquals(1, countLogicalBeans(applicationContext, DemoFeignClient.class));
         when(demoFeignClient.ping()).thenReturn("from-just-mock");
         assertEquals("from-just-mock", demoFeignGateway.ping());
         assertSame(demoFeignClient, currentTarget(applicationContext.getBean(DemoFeignClient.class)));
         context.setResult("from-just-mock");
+    }
+
+    private static int countLogicalBeans(ApplicationContext context, Class<?> type) {
+        int count = 0;
+        for (String name : context.getBeanNamesForType(type)) {
+            if (!name.startsWith("scopedTarget.")) {
+                count++;
+            }
+        }
+        return count;
     }
 
     private static Object currentTarget(Object bean) {

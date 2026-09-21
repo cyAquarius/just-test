@@ -52,7 +52,7 @@ public final class JustTestProjectFeignAutoMock {
         this.excludeClassNames = classNames(excludes);
     }
 
-    static void register(BeanDefinitionRegistry registry, String[] basePackages, Class<?>[] excludes) {
+    public static void register(BeanDefinitionRegistry registry, String[] basePackages, Class<?>[] excludes) {
         if (registry.containsBeanDefinition(BEAN_NAME)) {
             return;
         }
@@ -162,7 +162,12 @@ public final class JustTestProjectFeignAutoMock {
         if (factoryType != null && isFeignClient(factoryType, feignClient)) {
             return factoryType;
         }
-        Class<?> beanType = beanFactory.getType(beanName, false);
+        Class<?> beanType;
+        try {
+            beanType = beanFactory.getType(beanName, false);
+        } catch (RuntimeException ex) {
+            return null;
+        }
         if (beanType != null && isFeignClient(beanType, feignClient)) {
             return beanType;
         }
