@@ -1,2 +1,4 @@
 org.springframework.test.context.ContextCustomizerFactory=\
   com.just.test.internal.mock.JustMockContextCustomizerFactory
+org.springframework.test.context.TestExecutionListener=\
+  com.just.test.internal.lifecycle.JustTestContextLoadTestExecutionListener

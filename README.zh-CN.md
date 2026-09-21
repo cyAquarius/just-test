@@ -33,6 +33,7 @@ Boot 2 线保留最后一个正式版本 2.7.18 和真实 Java 8 基线；Boot 3
 - 通过 `prepare.yaml`、`response.yaml`、`expect.yaml`、`expect_exception.yaml` 完成数据准备以及结果、数据库和异常验证。
 - `@JustMock` 创建线程作用域 Mockito mock；同类型多 Bean 时，显式 `name` 只命中类型兼容的 Bean；如果现有 Bean 类型无法解析（例如 `FactoryBean` 隐藏了对象类型），仍会使用名称回退。名称相同但类型无关的 Bean 不会被替换，错误的显式名称仍会以缺少候选 Bean 的错误失败。
 - `@ThreadScopedMock` 将同一 scoped mock 模型用于标注的 `@Bean` 方法。
+- 若 `@JustMock` / `@ThreadScopedMock` 仍与某个 `*AutoConfiguration` 的同类型 Bean 共存，JustTest 在 Context 启动时 fail-fast 一次（冲突类型、候选 Bean 名、mock / 自动配置来源，以及 `excludeAutoConfiguration` 或删掉多余 mock 的下一步）。框架不会自动 exclude 自动配置、不会静默让 mock 胜出，也不会改 `@Resource` 匹配。JUnit 会中止该测试类，避免每个 YAML `@CaseSource` case 都重新加载同一个失败 Context。
 - `StaticMockContext` 可在每个 case 线程中替换业务静态 Context/工厂入口，并在 case 结束时自动恢复。
 - H2 数据库按 JustTest `ApplicationContext` 与活动 case 隔离；清理后的 DDL 会缓存，默认从模板数据库克隆 schema（可通过 `justtest.schema.clone=false` 禁用）；case 结束时释放对应数据库，schema 初始化失败可重试。对于 MySQL 的 `schema.sql` dump，清理器会剥离常见的 `SHOW CREATE TABLE` 附加语法，例如表级 `ROW_FORMAT`、`UNSIGNED`、`ON UPDATE CURRENT_TIMESTAMP`、列级 `CHARACTER SET` 和 `DEFAULT b'0'`；不宣称覆盖所有 MySQL 方言。
 - MyBatis 测试 SQL 进行受控的 MySQL→H2 改写：`IF(...)` 改为 `CASEWHEN(...)`，`DATE_FORMAT(...)` 改为 `FORMATDATETIME(...)`；`DATE_FORMAT` 改写通过 MyBatis `StatementHandler` 拦截器链执行（与 `IF(...)` → `CASEWHEN(...)` 使用相同路径），因此纯 `JdbcTemplate` SQL 若未经过该拦截器则不会改写。历史双引号字符串仅在已知字符串函数参数和比较运算符右值中兼容。
@@ -91,7 +92,7 @@ junit.jupiter.execution.parallel.mode.classes.default=concurrent
 
 ## Maven Central
 
-坐标为 `io.github.cyaquarius`。Java 包名仍是 `com.just.test`。Maven Central **只发布** `just-test-boot2` 与 `just-test-boot3`（`just-test-core` 打进这两个 JAR，不单独上架）。`1.2.1` 是当前发布坐标，消费方应使用 Central 坐标。本地 `mvn install` 仍用于基于本仓库开发。
+坐标为 `io.github.cyaquarius`。Java 包名仍是 `com.just.test`。Maven Central **只发布** `just-test-boot2` 与 `just-test-boot3`（`just-test-core` 打进这两个 JAR，不单独上架）。`1.2.2` 是当前发布坐标，消费方应使用 Central 坐标。本地 `mvn install` 仍用于基于本仓库开发。
 
 Java 8 / Boot 2：
 
@@ -99,16 +100,16 @@ Java 8 / Boot 2：
 <dependency>
     <groupId>io.github.cyaquarius</groupId>
     <artifactId>just-test-boot2</artifactId>
-    <version>1.2.1</version>
+    <version>1.2.2</version>
     <scope>test</scope>
 </dependency>
 ```
 
 Java 17 / Boot 3：把 `artifactId` 换成 `just-test-boot3`。不要同时引入两个顶层 artifact。不要单独声明 `just-test-core`——它已打进 boot JAR，且没有独立的 Central 坐标。
 
-若公司私服已代理 Central，只需声明依赖；若无法访问 Central，请代理 Central，或将 boot2/boot3 的 `1.2.1` 制品上传到私服 release 仓库，并保持坐标为 `io.github.cyaquarius`。
+若公司私服已代理 Central，只需声明依赖；若无法访问 Central，请代理 Central，或将 boot2/boot3 的 `1.2.2` 制品上传到私服 release 仓库，并保持坐标为 `io.github.cyaquarius`。
 
-`1.2.1` 撤回框架默认关闭 OkHttp，并提供 opt-in 的 `@JustTestProject(autoMockFeignClients)`，仅自动 mock `@FeignClient` 接口。仍保留 `FeignAutoConfiguration` / `FeignContext`，且不整段排除 Feign 自动配置。
+`1.2.2` 在 `@JustMock` / `@ThreadScopedMock` 与某个 `*AutoConfiguration` 的同类型 Bean 共存时 fail-fast，给出类级诊断，而不再让每个 YAML case 重复刷 `NoUniqueBeanDefinitionException`。框架仍然不会自动 exclude 自动配置。`1.2.1` 撤回框架默认关闭 OkHttp，并提供 opt-in 的 `@JustTestProject(autoMockFeignClients)`，仅自动 mock `@FeignClient` 接口。
 
 AI 编写用例：按仓库内配方 [docs/ai-justtest-authoring.md](docs/ai-justtest-authoring.md)。
 
@@ -143,6 +144,8 @@ public class JustTestApplication {
 `@JustTestProject` 元注解组合 `@SpringBootConfiguration` 与 `@EnableAutoConfiguration`，类体可以为空。默认扫描会排除 `basePackages` 下的其他 `@SpringBootApplication` / `@SpringBootConfiguration`，并在注解存在时排除 `@Controller` / `@RestController` / `@ControllerAdvice`；classpath 上有 OpenFeign 时排除 `@FeignClient`；能安全探测到的 Job / 调度刻板类型也会排除。OkHttp / Feign 传输层由项目自行决定：JustTest 不会写入 `feign.okhttp.enabled` 或 `spring.cloud.openfeign.okhttp.enabled`。若 `OkHttpFeignConfiguration` 注册了名为 `client` 的 Bean，与 `@Resource private XxxClient client` 冲突，请在项目中关闭 OkHttp，或重命名 / 使用 `@Resource(name = ...)`。`FeignAutoConfiguration` 与 `FeignContext` 仍会装配。`autoMockFeignClients` 默认为 `false`；设为 `true` 时只发现带 `@FeignClient` 的接口（按注解存在，不按 `*Client` 名字），并注册与 `@JustMock` 相同的线程作用域 Mockito mock。同一类型上显式 `@JustMock` / `@ThreadScopedMock` 优先于自动 mock；`autoMockFeignClientExcludes` 可跳过选定 Feign 类型。Redis、OSS、SDK 等仍需在 Support / MockConfig 上显式 mock。`dataSource` 与 `transactionManager` 在名称未被占用时注册为 JustTest 主 Bean 的别名。`dataSourceAliases` / `transactionManagerAliases` 按同样规则为存量 `@Qualifier` / `@Transactional` 注册额外别名：空白项忽略、重复项去重，目标名已有 Bean 定义或别名时不覆盖（会打出跳过诊断日志）。声明了 `mapperPackages` 但缺少 mybatis-spring 会 fail-fast；有 MyBatis 但未声明 `mapperPackages` 时不会猜测扫描根。
 
 手写 `@SpringBootConfiguration` + `@EnableAutoConfiguration` + `@ComponentScan` 启动类仍然有效。新项目请优先使用 `@JustTestProject`。
+
+从较窄的手写启动类迁到 `@JustTestProject` 会扩大组件扫描和 Boot 自动配置范围，请把项目自己的 `excludeAutoConfiguration` / mock 一并迁过去。JustTest **不会**为了让 mock 胜出而自动 exclude 第三方 `*AutoConfiguration`。
 
 `JustTestApplication` 是消费工程专用于 JustTest 的测试启动配置，不需要 `main` 方法。将它放入独立测试包，并将所有 JustTest 测试类放在该包或其子包下，例如 `com.example.justtest.order`。Spring Boot 会先发现这个更近的测试配置，不会继续搜索父包中的生产 `Application`；仅放在 `src/test` 并不能避免两个启动类冲突，因为测试 classpath 同时包含生产类和测试类。非 JustTest 的普通 JUnit 测试放在该树之外。用例目录仍是 Support + 方法包，不要另造一套 case 根约定。
 

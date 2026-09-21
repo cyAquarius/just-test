@@ -129,6 +129,10 @@ public @interface JustTestProject {
 
     /**
      * 额外排除的自动配置，对应 {@link EnableAutoConfiguration#exclude()}。
+     *
+     * <p>JustTest 不会因为 {@code @JustMock} / {@code @ThreadScopedMock} 与
+     * 同类型自动配置 Bean 冲突而自动 exclude；由项目显式声明。冲突会在
+     * ApplicationContext 启动时 fail-fast，并给出候选来源与下一步建议。</p>
      */
     @AliasFor(annotation = EnableAutoConfiguration.class, attribute = "exclude")
     Class<?>[] excludeAutoConfiguration() default {};
