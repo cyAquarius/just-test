@@ -7,7 +7,7 @@
     <parent>
         <groupId>io.github.cyaquarius</groupId>
         <artifactId>just-test-parent</artifactId>
-        <version>1.2.1</version>
+        <version>1.2.2</version>
     </parent>
 
     <artifactId>just-test-boot3</artifactId>
@@ -50,6 +50,7 @@
         <dependency><groupId>org.mybatis</groupId><artifactId>mybatis-spring</artifactId><version>${mybatis.spring.boot3.version}</version><scope>test</scope></dependency>
         <dependency><groupId>org.slf4j</groupId><artifactId>slf4j-simple</artifactId><scope>test</scope></dependency>
         <dependency><groupId>org.junit.jupiter</groupId><artifactId>junit-jupiter-engine</artifactId><scope>runtime</scope></dependency>
+        <dependency><groupId>org.junit.platform</groupId><artifactId>junit-platform-testkit</artifactId><scope>test</scope></dependency>
     </dependencies>
 
     <build>

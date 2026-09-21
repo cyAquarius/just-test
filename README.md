@@ -33,6 +33,7 @@ The matrix is the standalone build and validation baseline for both product line
 - `prepare.yaml`, `response.yaml`, `expect.yaml`, and `expect_exception.yaml` cover data setup and result, database, and exception verification.
 - `@JustMock` creates a thread-scoped Mockito mock. When several beans share a type, an explicit `name` wins only for a type-compatible bean; if an existing bean's type cannot be resolved (for example, a `FactoryBean` hides its object type), name fallback still applies. A same-named bean of an unrelated type is not replaced, and a wrong explicit name fails with a missing-candidate error.
 - `@ThreadScopedMock` applies the same scoped-mock model to an annotated `@Bean` method.
+- If a `@JustMock` / `@ThreadScopedMock` bean still coexists with a same-type bean from an `*AutoConfiguration`, JustTest fails fast once at context startup (conflicting type, candidate names, mock vs auto-configuration origin, and `excludeAutoConfiguration` / remove-mock next steps). It does not auto-exclude auto-configurations, silently prefer the mock, or change `@Resource` matching. JUnit aborts the test class so YAML `@CaseSource` cases do not each rebuild the same failed context.
 - `StaticMockContext` can replace an application static context/factory gateway per case thread and restores it automatically at case end.
 - The H2 test database is isolated per JustTest `ApplicationContext` and active case; cleaned DDL is cached, and the schema is cloned from a template database by default (disable with `justtest.schema.clone=false`); each case database is released at case end, and schema initialization is retried after failure. For MySQL `schema.sql` dumps, the cleaner strips common `SHOW CREATE TABLE` extras such as table `ROW_FORMAT`, `UNSIGNED`, `ON UPDATE CURRENT_TIMESTAMP`, column `CHARACTER SET`, and `DEFAULT b'0'`; it does not cover every MySQL dialect.
 - MyBatis test SQL receives narrowly scoped MySQL-to-H2 rewrites: `IF(...)` becomes `CASEWHEN(...)`, and `DATE_FORMAT(...)` becomes `FORMATDATETIME(...)`; the `DATE_FORMAT` rewrite runs through the MyBatis `StatementHandler` interceptor path (the same path as `IF(...)` → `CASEWHEN(...)`), so plain `JdbcTemplate` SQL is not rewritten unless it goes through that interceptor. Legacy double-quoted string literals are supported inside known string functions and on the right side of comparison operators.
@@ -91,7 +92,7 @@ A parallel failure is not automatically a JustTest isolation failure; first insp
 
 ## Maven Central
 
-Coordinates use `io.github.cyaquarius`. Java packages remain `com.just.test`. Maven Central publishes only `just-test-boot2` and `just-test-boot3` (`just-test-core` is shaded into those JARs). `1.2.1` is the current release coordinate; consumers should depend on Central coordinates. Local `mvn install` remains for developing from this repo.
+Coordinates use `io.github.cyaquarius`. Java packages remain `com.just.test`. Maven Central publishes only `just-test-boot2` and `just-test-boot3` (`just-test-core` is shaded into those JARs). `1.2.2` is the current release coordinate; consumers should depend on Central coordinates. Local `mvn install` remains for developing from this repo.
 
 Java 8 / Boot 2:
 
@@ -99,16 +100,16 @@ Java 8 / Boot 2:
 <dependency>
     <groupId>io.github.cyaquarius</groupId>
     <artifactId>just-test-boot2</artifactId>
-    <version>1.2.1</version>
+    <version>1.2.2</version>
     <scope>test</scope>
 </dependency>
 ```
 
 Java 17 / Boot 3: use `just-test-boot3`. Do not depend on both top-level artifacts. Do not declare `just-test-core` separately — it is shaded into the boot JAR and is not published as its own Central coordinate.
 
-If the company private Maven already proxies Central, only the dependency is needed; if Central is unreachable, proxy Central or upload the boot2/boot3 `1.2.1` artifacts to the private release repo, keeping coordinates `io.github.cyaquarius`.
+If the company private Maven already proxies Central, only the dependency is needed; if Central is unreachable, proxy Central or upload the boot2/boot3 `1.2.2` artifacts to the private release repo, keeping coordinates `io.github.cyaquarius`.
 
-`1.2.1` withdraws the framework default OkHttp disable and adds opt-in `@JustTestProject(autoMockFeignClients)` for `@FeignClient` interfaces only. It still keeps `FeignAutoConfiguration` / `FeignContext` and does not exclude whole Feign auto-config.
+`1.2.2` fails fast when `@JustMock` / `@ThreadScopedMock` coexists with a same-type bean from an `*AutoConfiguration`, with a class-level diagnostic instead of a repeated `NoUniqueBeanDefinitionException` per YAML case. It still does not auto-exclude auto-configurations. `1.2.1` withdrew the framework default OkHttp disable and added opt-in `@JustTestProject(autoMockFeignClients)` for `@FeignClient` interfaces only.
 
 AI-authored tests: follow the in-repo recipe in [docs/ai-justtest-authoring.md](docs/ai-justtest-authoring.md).
 
@@ -143,6 +144,8 @@ public class JustTestApplication {
 `@JustTestProject` meta-annotates `@SpringBootConfiguration` and `@EnableAutoConfiguration`. The class body can stay empty. Default scan excludes other `@SpringBootApplication` / `@SpringBootConfiguration` types under `basePackages`, plus `@Controller` / `@RestController` / `@ControllerAdvice` when those annotations exist, `@FeignClient` when OpenFeign is present, and known job/scheduling stereotypes when they can be detected without a hard dependency. OkHttp / Feign transport stays a project setting: JustTest does not write `feign.okhttp.enabled` or `spring.cloud.openfeign.okhttp.enabled`. If `OkHttpFeignConfiguration` registers a bean named `client` that collides with `@Resource private XxxClient client`, disable OkHttp in the project or rename / use `@Resource(name = ...)`. `FeignAutoConfiguration` and `FeignContext` stay enabled. `autoMockFeignClients` defaults to `false`; when `true`, JustTest discovers interfaces annotated with `@FeignClient` (annotation presence only; no `*Client` name heuristic) and registers the same thread-scoped Mockito mocks as `@JustMock`. Explicit `@JustMock` / `@ThreadScopedMock` replace those auto mocks for the same type; `autoMockFeignClientExcludes` skips selected Feign types. Redis, OSS, SDKs, and other clients stay explicit mocks on Support / MockConfig. `dataSource` and `transactionManager` are registered as aliases of the JustTest primaries when those names are free. Additional names in `dataSourceAliases` / `transactionManagerAliases` are registered the same way for legacy `@Qualifier` / `@Transactional` values; blank entries are ignored, duplicates are discarded, and a name that already exists as a bean definition or alias is left unchanged (JustTest logs the skip). Setting `mapperPackages` without mybatis-spring fails fast; mybatis-spring without `mapperPackages` does not invent a scan root.
 
 A hand-written `@SpringBootConfiguration` + `@EnableAutoConfiguration` + `@ComponentScan` startup class still works. Prefer `@JustTestProject` for new projects.
+
+Migrating a narrow hand-written startup class to `@JustTestProject` widens component scan and Boot auto-configuration. Move the project's `excludeAutoConfiguration` / mock declarations with that wider surface. JustTest will not auto-exclude third-party `*AutoConfiguration` classes to make a mock win.
 
 `JustTestApplication` is the consumer-owned startup configuration dedicated to JustTest and needs no `main` method. Put it in a dedicated test package and place every JustTest class in that package or a child package, for example `com.example.justtest.order`. Spring Boot finds this nearer test configuration before searching the parent package that contains the production `Application`. Merely placing it under `src/test` does not prevent a conflict because the test classpath contains both production and test classes. Keep ordinary JUnit tests that are not JustTest outside that tree. The case layout stays Support + method packages; do not invent a second case-root convention.
 

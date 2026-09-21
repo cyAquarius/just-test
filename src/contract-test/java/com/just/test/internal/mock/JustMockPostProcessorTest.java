@@ -1,6 +1,7 @@
 package com.just.test.internal.mock;
 
 import com.just.test.annotation.JustMock;
+import com.just.test.annotation.ThreadScopedMock;
 import com.just.test.demo.project.fixtures.feign.DemoFeignClient;
 import com.just.test.demo.project.fixtures.feign.DemoLocalClient;
 import com.just.test.demo.project.fixtures.feign.ExcludedFeignClient;
@@ -15,7 +16,12 @@ import org.springframework.beans.factory.support.AutowireCandidateQualifier;
 import org.springframework.beans.factory.support.BeanDefinitionBuilder;
 import org.springframework.beans.factory.support.DefaultListableBeanFactory;
 import org.springframework.beans.factory.support.GenericBeanDefinition;
+import org.springframework.context.annotation.AnnotationConfigApplicationContext;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.ContextAnnotationAutowireCandidateResolver;
+
+import static org.mockito.Mockito.mock;
 
 import java.lang.annotation.ElementType;
 import java.lang.annotation.Retention;
@@ -42,6 +48,54 @@ class JustMockPostProcessorTest {
                 () -> process(beanFactory, field(TestFields.class, "client")));
 
         assertTrue(failure.getMessage().contains("Multiple beans"));
+    }
+
+    @Test
+    void failsWhenJustMockLeavesAutoConfigurationBeanOfSameType() {
+        DefaultListableBeanFactory beanFactory = beanFactory();
+        registerCandidate(beanFactory, "projectMock", false, true, null);
+        beanFactory.registerBeanDefinition("dataAudit", autoConfigurationClient());
+
+        IllegalStateException failure = assertThrows(IllegalStateException.class,
+                () -> process(beanFactory, field(TestFields.class, "namedProjectMock")));
+
+        assertTrue(failure.getMessage().contains("Conflicting beans of type"));
+        assertTrue(failure.getMessage().contains(SampleClient.class.getName()));
+        assertTrue(failure.getMessage().contains("projectMock"));
+        assertTrue(failure.getMessage().contains("@JustMock"));
+        assertTrue(failure.getMessage().contains("dataAudit"));
+        assertTrue(failure.getMessage().contains("LogAutoConfiguration"));
+        assertTrue(failure.getMessage().contains("excludeAutoConfiguration"));
+        assertTrue(failure.getMessage().contains("remove the redundant"));
+    }
+
+    @Test
+    void replacesSoleAutoConfigurationBeanWithoutConflict() {
+        DefaultListableBeanFactory beanFactory = beanFactory();
+        beanFactory.registerBeanDefinition("dataAudit", autoConfigurationClient());
+
+        process(beanFactory, field(TestFields.class, "client"));
+
+        assertTrue(beanFactory.containsBeanDefinition("scopedTarget.dataAudit"));
+        assertEquals(1, countLogicalBeansOfType(beanFactory, SampleClient.class));
+    }
+
+    @Test
+    void failsWhenThreadScopedMockCoexistsWithAutoConfigurationBean() {
+        AnnotationConfigApplicationContext context = new AnnotationConfigApplicationContext();
+        context.register(ThreadScopedMockConfig.class, SampleLogAutoConfiguration.class);
+        context.addBeanFactoryPostProcessor(new JustMockPostProcessor(Collections.emptySet()));
+
+        IllegalStateException failure = assertThrows(IllegalStateException.class, context::refresh);
+        try {
+            assertTrue(failure.getMessage().contains("Conflicting beans of type"));
+            assertTrue(failure.getMessage().contains(SampleClient.class.getName()));
+            assertTrue(failure.getMessage().contains("@ThreadScopedMock"));
+            assertTrue(failure.getMessage().contains("SampleLogAutoConfiguration"));
+            assertTrue(failure.getMessage().contains("excludeAutoConfiguration"));
+        } finally {
+            context.close();
+        }
     }
 
     @Test
@@ -349,6 +403,14 @@ class JustMockPostProcessorTest {
         beanFactory.registerBeanDefinition(beanName, definition);
     }
 
+    private AbstractBeanDefinition autoConfigurationClient() {
+        AbstractBeanDefinition definition = BeanDefinitionBuilder
+                .genericBeanDefinition(SampleClient.class).getBeanDefinition();
+        definition.setResourceDescription(
+                "class path resource [com/acme/LogAutoConfiguration.class]");
+        return definition;
+    }
+
     private int countLogicalBeansOfType(DefaultListableBeanFactory beanFactory, Class<?> type) {
         int count = 0;
         for (String name : beanFactory.getBeanNamesForType(type, true, false)) {
@@ -367,6 +429,9 @@ class JustMockPostProcessorTest {
     private static class TestFields {
         @JustMock
         private SampleClient client;
+
+        @JustMock(name = "projectMock")
+        private SampleClient namedProjectMock;
 
         @JustMock
         private SampleClient secondClient;
@@ -439,6 +504,23 @@ class JustMockPostProcessorTest {
     }
 
     private static class SampleClient {
+    }
+
+    @Configuration
+    static class ThreadScopedMockConfig {
+        @Bean
+        @ThreadScopedMock
+        SampleClient mockClient() {
+            return mock(SampleClient.class);
+        }
+    }
+
+    @Configuration
+    static class SampleLogAutoConfiguration {
+        @Bean
+        SampleClient dataAudit() {
+            return new SampleClient();
+        }
     }
 
     private interface SampleMapper {

@@ -91,6 +91,20 @@ final class JustMockDefinition {
         return declaringClassName + "." + fieldName + " (" + type.getName() + ")";
     }
 
+    /**
+     * 诊断用的 mock 来源标签：{@code @JustMock}、{@code @ThreadScopedMock}，
+     * 或 auto-mock 来源字符串。
+     */
+    String sourceLabel() {
+        if (field != null) {
+            return "@JustMock";
+        }
+        if (declaringClassName != null && !declaringClassName.isEmpty()) {
+            return declaringClassName;
+        }
+        return "@JustMock";
+    }
+
     @Override
     public boolean equals(Object other) {
         if (this == other) return true;

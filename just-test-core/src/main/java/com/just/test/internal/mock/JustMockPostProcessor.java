@@ -70,9 +70,11 @@ class JustMockPostProcessor implements BeanFactoryPostProcessor {
             if (beanName != null) {
                 registeredBeanNames.add(beanName);
                 bindings.put(definition, beanName);
+                markMockSource(registry, beanName, definition);
             }
         }
 
+        rejectMockAutoConfigurationConflicts(beanFactory, bindings);
         registerBindingsBean(registry, bindings);
         // 注册 Registry bean，供 JustTestExtension 在 case 开始时预热所有 thread-scoped mock
         registerRegistryBean(registry, registeredBeanNames);
@@ -282,7 +284,7 @@ class JustMockPostProcessor implements BeanFactoryPostProcessor {
                 return candidate;
             }
         }
-        throw ambiguous(definition, candidates);
+        throw ambiguous(beanFactory, definition, candidates);
     }
 
     private String resolveFromTypeCandidates(ConfigurableListableBeanFactory beanFactory,
@@ -321,7 +323,7 @@ class JustMockPostProcessor implements BeanFactoryPostProcessor {
             if (beanFactory.containsBeanDefinition(candidate)
                     && beanFactory.getBeanDefinition(candidate).isPrimary()) {
                 if (primary != null) {
-                    throw ambiguous(definition, injectableCandidates);
+                    throw ambiguous(beanFactory, definition, injectableCandidates);
                 }
                 primary = candidate;
             }
@@ -333,7 +335,7 @@ class JustMockPostProcessor implements BeanFactoryPostProcessor {
             }
         }
         if (injectableCandidates.size() == 1) return injectableCandidates.iterator().next();
-        throw ambiguous(definition, injectableCandidates);
+        throw ambiguous(beanFactory, definition, injectableCandidates);
     }
 
     private String resolveNamedFallback(ConfigurableListableBeanFactory beanFactory,
@@ -424,9 +426,55 @@ class JustMockPostProcessor implements BeanFactoryPostProcessor {
         return false;
     }
 
-    private IllegalStateException ambiguous(JustMockDefinition definition, Set<String> candidates) {
+    private IllegalStateException ambiguous(ConfigurableListableBeanFactory beanFactory,
+                                            JustMockDefinition definition, Set<String> candidates) {
+        java.util.List<JustMockBeanOrigins.Candidate> described = JustMockBeanOrigins.describeCandidates(
+                beanFactory, candidates, java.util.Collections.<String, String>emptyMap());
+        if (JustMockBeanOrigins.hasAutoConfiguration(described)) {
+            return JustMockBeanOrigins.conflict(definition.getType(), described);
+        }
         return new IllegalStateException("[JustMock] Multiple beans found for " + definition.describe()
                 + ": " + candidates + ". Use @JustMock(name = \"...\") or @Qualifier.");
+    }
+
+    private void markMockSource(BeanDefinitionRegistry registry, String beanName,
+                                JustMockDefinition definition) {
+        String source = definition.sourceLabel();
+        markSourceAttribute(registry, beanName, source);
+        markSourceAttribute(registry, ScopedProxyUtils.getTargetBeanName(beanName), source);
+    }
+
+    private void markSourceAttribute(BeanDefinitionRegistry registry, String beanName, String source) {
+        if (registry.containsBeanDefinition(beanName)) {
+            registry.getBeanDefinition(beanName)
+                    .setAttribute(JustMockBeanOrigins.SOURCE_ATTRIBUTE, source);
+        }
+    }
+
+    /**
+     * {@code @JustMock} / {@code @ThreadScopedMock} 只替换自己选中的那个 Bean。
+     * 同类型若还留下第三方 {@code *AutoConfiguration} 候选，按类型注入会变成
+     * {@code NoUniqueBeanDefinitionException}。这里在 Context refresh 期间 fail-fast，
+     * 不自动 exclude，也不改 {@code @Resource} 语义。
+     */
+    private void rejectMockAutoConfigurationConflicts(ConfigurableListableBeanFactory beanFactory,
+                                                      java.util.Map<JustMockDefinition, String> bindings) {
+        java.util.Map<String, String> mockSources = new java.util.LinkedHashMap<String, String>();
+        for (java.util.Map.Entry<JustMockDefinition, String> entry : bindings.entrySet()) {
+            mockSources.put(entry.getValue(), entry.getKey().sourceLabel());
+        }
+        Set<Class<?>> seenTypes = new LinkedHashSet<Class<?>>();
+        for (JustMockDefinition definition : bindings.keySet()) {
+            Class<?> type = definition.getType();
+            if (!seenTypes.add(type)) {
+                continue;
+            }
+            java.util.List<JustMockBeanOrigins.Candidate> candidates = JustMockBeanOrigins.describeCandidates(
+                    beanFactory, collectLogicalCandidates(beanFactory, type, false), mockSources);
+            if (JustMockBeanOrigins.hasMockAndAutoConfiguration(candidates)) {
+                throw JustMockBeanOrigins.conflict(type, candidates);
+            }
+        }
     }
 
     private String generateBeanName(Class<?> type) {
