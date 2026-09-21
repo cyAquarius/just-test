@@ -1,18 +1,12 @@
 package com.just.test.internal.project;
 
 import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.support.DefaultListableBeanFactory;
 import org.springframework.core.annotation.AnnotationAttributes;
-import org.springframework.core.env.MapPropertySource;
-import org.springframework.core.env.PropertySource;
-import org.springframework.core.env.StandardEnvironment;
 import org.springframework.util.ClassUtils;
 
-import java.util.Collections;
-
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
-import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -77,69 +71,33 @@ class JustTestProjectRegistrarTest {
     }
 
     @Test
-    void defaultDisablesFeignOkHttpAndOverridesExistingTrue() {
-        StandardEnvironment environment = new StandardEnvironment();
-        environment.getPropertySources().addFirst(new MapPropertySource(
-                "application", Collections.<String, Object>singletonMap(
-                        JustTestProjectFeignOkHttp.BOOT2_OKHTTP_ENABLED, "true")));
-        AnnotationAttributes attributes = feignOkHttpAttributes(false);
+    void doesNotRegisterFeignAutoMockWhenFlagIsAbsentOrFalse() {
+        DefaultListableBeanFactory registry = new DefaultListableBeanFactory();
+        JustTestProjectRegistrar.registerFeignAutoMockIfRequested(
+                registry, new AnnotationAttributes(), new String[] {"com.example"});
+        assertFalse(registry.containsBeanDefinition(JustTestProjectFeignAutoMock.BEAN_NAME));
 
-        JustTestProjectFeignOkHttp.apply(environment, attributes);
-
-        assertEquals(Boolean.FALSE,
-                environment.getProperty(JustTestProjectFeignOkHttp.BOOT2_OKHTTP_ENABLED, Boolean.class));
-        assertEquals(Boolean.FALSE,
-                environment.getProperty(JustTestProjectFeignOkHttp.BOOT3_OKHTTP_ENABLED, Boolean.class));
-        assertTrue(environment.getPropertySources()
-                .contains(JustTestProjectFeignOkHttp.PROPERTY_SOURCE_NAME));
+        AnnotationAttributes disabled = new AnnotationAttributes();
+        disabled.put(JustTestProjectFeignAutoMock.ATTRIBUTE, false);
+        JustTestProjectRegistrar.registerFeignAutoMockIfRequested(
+                registry, disabled, new String[] {"com.example"});
+        assertFalse(registry.containsBeanDefinition(JustTestProjectFeignAutoMock.BEAN_NAME));
     }
 
     @Test
-    void optInLeavesFeignOkHttpEnabledUntouched() {
-        StandardEnvironment environment = new StandardEnvironment();
-        environment.getPropertySources().addFirst(new MapPropertySource(
-                "application", Collections.<String, Object>singletonMap(
-                        JustTestProjectFeignOkHttp.BOOT2_OKHTTP_ENABLED, "true")));
-        AnnotationAttributes attributes = feignOkHttpAttributes(true);
-
-        JustTestProjectFeignOkHttp.apply(environment, attributes);
-
-        assertEquals(Boolean.TRUE,
-                environment.getProperty(JustTestProjectFeignOkHttp.BOOT2_OKHTTP_ENABLED, Boolean.class));
-        assertNull(environment.getProperty(JustTestProjectFeignOkHttp.BOOT3_OKHTTP_ENABLED));
-        assertFalse(environment.getPropertySources()
-                .contains(JustTestProjectFeignOkHttp.PROPERTY_SOURCE_NAME));
-    }
-
-    @Test
-    void disableIsIdempotent() {
-        StandardEnvironment environment = new StandardEnvironment();
-        JustTestProjectFeignOkHttp.disableOkHttp(environment);
-        JustTestProjectFeignOkHttp.disableOkHttp(environment);
-        assertEquals(1, countPropertySource(environment, JustTestProjectFeignOkHttp.PROPERTY_SOURCE_NAME));
-    }
-
-    @Test
-    void failsFastWhenEnvironmentIsNotConfigurable() {
-        IllegalStateException failure = assertThrows(IllegalStateException.class,
-                () -> JustTestProjectFeignOkHttp.disableOkHttp(null));
-        assertTrue(failure.getMessage().contains("cannot disable Feign OkHttp"));
-        assertTrue(failure.getMessage().contains("client"));
-    }
-
-    private static AnnotationAttributes feignOkHttpAttributes(boolean enableFeignOkHttp) {
+    void registersFeignAutoMockSettingsWhenOptedIn() {
+        DefaultListableBeanFactory registry = new DefaultListableBeanFactory();
         AnnotationAttributes attributes = new AnnotationAttributes();
-        attributes.put(JustTestProjectFeignOkHttp.ATTRIBUTE, enableFeignOkHttp);
-        return attributes;
-    }
+        attributes.put(JustTestProjectFeignAutoMock.ATTRIBUTE, true);
+        attributes.put(JustTestProjectFeignAutoMock.EXCLUDES_ATTRIBUTE, new Class<?>[] {Runnable.class});
 
-    private static int countPropertySource(StandardEnvironment environment, String name) {
-        int count = 0;
-        for (PropertySource<?> source : environment.getPropertySources()) {
-            if (name.equals(source.getName())) {
-                count++;
-            }
-        }
-        return count;
+        JustTestProjectRegistrar.registerFeignAutoMockIfRequested(
+                registry, attributes, new String[] {"com.example.feign"});
+
+        assertTrue(registry.containsBeanDefinition(JustTestProjectFeignAutoMock.BEAN_NAME));
+        JustTestProjectFeignAutoMock settings = registry.getBean(
+                JustTestProjectFeignAutoMock.BEAN_NAME, JustTestProjectFeignAutoMock.class);
+        assertArrayEquals(new String[] {"com.example.feign"}, settings.getBasePackages());
+        assertTrue(settings.getExcludeClassNames().contains(Runnable.class.getName()));
     }
 }

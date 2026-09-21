@@ -26,10 +26,11 @@ final class JustMockDefinition {
     private final Set<Annotation> qualifierAnnotations;
     private final String declaringClassName;
     private final Field field;
+    private final boolean createIfAbsent;
 
     private JustMockDefinition(Class<?> type, String fieldName, String explicitBeanName,
                                 Set<Annotation> qualifierAnnotations,
-                                String declaringClassName, Field field) {
+                                String declaringClassName, Field field, boolean createIfAbsent) {
         this.type = type;
         this.fieldName = fieldName;
         this.explicitBeanName = explicitBeanName;
@@ -37,6 +38,7 @@ final class JustMockDefinition {
                 new LinkedHashSet<>(qualifierAnnotations));
         this.declaringClassName = declaringClassName;
         this.field = field;
+        this.createIfAbsent = createIfAbsent;
     }
 
     static JustMockDefinition forField(Field field, JustMock justMock) {
@@ -49,12 +51,26 @@ final class JustMockDefinition {
             }
         }
         return new JustMockDefinition(field.getType(), field.getName(), justMock.name(),
-                qualifiers, field.getDeclaringClass().getName(), field);
+                qualifiers, field.getDeclaringClass().getName(), field, false);
     }
 
     static JustMockDefinition forBeanName(Class<?> type, String beanName, String source) {
         return new JustMockDefinition(type, beanName, beanName,
-                Collections.emptySet(), source, null);
+                Collections.emptySet(), source, null, false);
+    }
+
+    static JustMockDefinition forAutoMock(Class<?> type, String existingBeanName, String source) {
+        boolean createIfAbsent = existingBeanName == null || existingBeanName.isEmpty();
+        String beanName = createIfAbsent ? decapitalize(type.getSimpleName()) : existingBeanName;
+        return new JustMockDefinition(type, beanName, beanName,
+                Collections.emptySet(), source, null, createIfAbsent);
+    }
+
+    static String decapitalize(String simpleName) {
+        if (simpleName == null || simpleName.isEmpty()) {
+            return simpleName;
+        }
+        return Character.toLowerCase(simpleName.charAt(0)) + simpleName.substring(1);
     }
 
     Class<?> getType() { return type; }
@@ -62,6 +78,7 @@ final class JustMockDefinition {
     String getExplicitBeanName() { return explicitBeanName; }
     String getDeclaringClassName() { return declaringClassName; }
     boolean hasQualifierAnnotations() { return !qualifierAnnotations.isEmpty(); }
+    boolean isCreateIfAbsent() { return createIfAbsent; }
 
     DependencyDescriptor toDependencyDescriptor() {
         if (field == null) {

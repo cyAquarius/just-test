@@ -17,7 +17,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * 处理 {@code @JustTestProject}：默认扫描排除、默认关闭 Feign OkHttp、
+ * 处理 {@code @JustTestProject}：默认扫描排除、可选 Feign 自动 mock、
  * 可选 MyBatis 装配、默认及声明的数据源 / 事务管理器别名。
  *
  * <p>不对消费方提供兼容承诺。由 Boot 模块的 {@code @JustTestProject} 通过
@@ -52,10 +52,10 @@ public class JustTestProjectRegistrar implements ImportBeanDefinitionRegistrar,
     public void registerBeanDefinitions(AnnotationMetadata importingClassMetadata,
                                         BeanDefinitionRegistry registry) {
         AnnotationAttributes attributes = resolveAttributes(importingClassMetadata);
-        JustTestProjectFeignOkHttp.apply(environment, attributes);
         String[] basePackages = requiredBasePackages(attributes);
         String[] mapperPackages = trimAll(attributes.getStringArray("mapperPackages"));
         requireMyBatisSpringIfNeeded(mapperPackages, classLoader);
+        registerFeignAutoMockIfRequested(registry, attributes, basePackages);
 
         ClassPathBeanDefinitionScanner scanner = createScanner(registry);
         scanner.addExcludeFilter(new JustTestProjectTypeExcludeFilter(
@@ -72,6 +72,20 @@ public class JustTestProjectRegistrar implements ImportBeanDefinitionRegistrar,
                 registry,
                 trimAll(attributes.getStringArray("dataSourceAliases")),
                 trimAll(attributes.getStringArray("transactionManagerAliases")));
+    }
+
+    static void registerFeignAutoMockIfRequested(BeanDefinitionRegistry registry,
+                                                 AnnotationAttributes attributes,
+                                                 String[] basePackages) {
+        if (attributes == null
+                || !attributes.containsKey(JustTestProjectFeignAutoMock.ATTRIBUTE)
+                || !attributes.getBoolean(JustTestProjectFeignAutoMock.ATTRIBUTE)) {
+            return;
+        }
+        Class<?>[] excludes = attributes.containsKey(JustTestProjectFeignAutoMock.EXCLUDES_ATTRIBUTE)
+                ? attributes.getClassArray(JustTestProjectFeignAutoMock.EXCLUDES_ATTRIBUTE)
+                : new Class<?>[0];
+        JustTestProjectFeignAutoMock.register(registry, basePackages, excludes);
     }
 
     static AnnotationAttributes resolveAttributes(AnnotationMetadata metadata) {

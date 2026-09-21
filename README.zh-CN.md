@@ -28,7 +28,7 @@ Boot 2 线保留最后一个正式版本 2.7.18 和真实 Java 8 基线；Boot 3
 ## JustTest 提供的能力
 
 - `@JustTest` 配置 Spring Test、H2、`JdbcTemplate` 与事务管理器，使被测服务可以按正常事务行为执行；不存在 `refresh` scope 时会注册一个替代实现，使使用 `@RefreshScope` 或 `@Scope("refresh")` 的业务 Bean 无需 Spring Cloud refresh 基础设施即可加载，但测试不提供真实的 refresh 语义。
-- `@JustTestProject` 是推荐的消费方启动注解：空类加上 `basePackages`（以及可选的 `mapperPackages`）即可组合 `@SpringBootConfiguration`、`@EnableAutoConfiguration`、默认组件扫描排除、可选的 MyBatis→JustTest 数据源装配，以及 `dataSource` / `transactionManager` 别名（还可用 `dataSourceAliases` / `transactionManagerAliases` 声明存量 Bean 名）。默认还会写入 `feign.okhttp.enabled=false`（Boot 3 另写 `spring.cloud.openfeign.okhttp.enabled=false`），避免 OkHttp Feign 注册名为 `client` 的 Bean 与 `@Resource private XxxClient client` 按字段名冲突；`FeignAutoConfiguration` / `FeignContext` 仍保留给依赖包中的 Feign Client。需要 OkHttp 时设 `enableFeignOkHttp = true`。已有手写启动类可继续使用。
+- `@JustTestProject` 是推荐的消费方启动注解：空类加上 `basePackages`（以及可选的 `mapperPackages`）即可组合 `@SpringBootConfiguration`、`@EnableAutoConfiguration`、默认组件扫描排除、可选的 MyBatis→JustTest 数据源装配，以及 `dataSource` / `transactionManager` 别名（还可用 `dataSourceAliases` / `transactionManagerAliases` 声明存量 Bean 名）。传输层 / OkHttp 由消费工程自行选择，框架不会写入 `feign.okhttp.enabled=false` / `spring.cloud.openfeign.okhttp.enabled=false`；`FeignAutoConfiguration` / `FeignContext` 仍保留。需要时设 `autoMockFeignClients = true`，只为带 `@FeignClient` 的接口注册与 `@JustMock` 相同的线程作用域 Mockito mock（不按 `*Client` 名字推断，也不自动 mock Redis / OSS / SDK）。显式 `@JustMock` / `@ThreadScopedMock` 优先；`autoMockFeignClientExcludes` 可对选定 Feign 类型 opt-out。已有手写启动类可继续使用。
 - `@CaseSource` 发现 YAML 用例，并为每个 case 创建完整的 JUnit test-template invocation；测试方法和标准单测生命周期方法均可注入 `CaseContext`。
 - 通过 `prepare.yaml`、`response.yaml`、`expect.yaml`、`expect_exception.yaml` 完成数据准备以及结果、数据库和异常验证。
 - `@JustMock` 创建线程作用域 Mockito mock；同类型多 Bean 时，显式 `name` 只命中类型兼容的 Bean；如果现有 Bean 类型无法解析（例如 `FactoryBean` 隐藏了对象类型），仍会使用名称回退。名称相同但类型无关的 Bean 不会被替换，错误的显式名称仍会以缺少候选 Bean 的错误失败。
@@ -108,7 +108,7 @@ Java 17 / Boot 3：把 `artifactId` 换成 `just-test-boot3`。不要同时引�
 
 若公司私服已代理 Central，只需声明依赖；若无法访问 Central，请代理 Central，或将 boot2/boot3 的 `1.2.0` 制品上传到私服 release 仓库，并保持坐标为 `io.github.cyaquarius`。
 
-`enableFeignOkHttp` 默认关闭 OkHttp、保留 `FeignContext` 的行为已包含在 `1.2.0`。
+Central 上的 `1.2.0` 已保留 `FeignAutoConfiguration` / `FeignContext`，且不整段排除 Feign 自动配置。opt-in 的 `autoMockFeignClients`（以及撤回框架默认关闭 OkHttp）在 `main` 上，待下次 patch 发布；安装坐标片段仍写已发布的 `1.2.0`。
 
 AI 编写用例：按仓库内配方 [docs/ai-justtest-authoring.md](docs/ai-justtest-authoring.md)。
 
@@ -122,9 +122,9 @@ AI 编写配方（方法包布局、Java glue、Flag、反模式）见 [docs/ai-
 
 JustTest 统一使用 Spring Boot TestContext。启动知识分成三层：
 
-1. **框架拥有：** H2、事务管理器、`JdbcTemplate`、默认组件扫描 denylist、默认关闭 Feign OkHttp（`feign.okhttp.enabled=false` / Boot 3 的 `spring.cloud.openfeign.okhttp.enabled=false`；**不**排除 `FeignAutoConfiguration`），以及（声明了 `mapperPackages` 时）绑定 JustTest DataSource 的 MyBatis `SqlSessionFactory` / `SqlSessionTemplate` / MapperScan。
-2. **默认可覆盖：** `excludeClasses`、`excludeFilters`、`includeFilters`、`excludeAutoConfiguration`、`enableFeignOkHttp`。消费方不必复制默认 denylist。
-3. **项目必须声明：** `basePackages`（不猜测业务根包）、`src/test/resources/sql/schema.sql`，以及 Support 上的 `@JustMock`。不要把生产 DataSource / 事务管理器配置放到测试启动类上。
+1. **框架拥有：** H2、事务管理器、`JdbcTemplate`、默认组件扫描 denylist（**不**排除 `FeignAutoConfiguration` / `FeignContext`），以及（声明了 `mapperPackages` 时）绑定 JustTest DataSource 的 MyBatis `SqlSessionFactory` / `SqlSessionTemplate` / MapperScan。框架不选择 Feign HTTP 客户端，也不自动 mock Redis、对象存储、SDK 或其他非 Feign Bean。
+2. **默认可覆盖：** `excludeClasses`、`excludeFilters`、`includeFilters`、`excludeAutoConfiguration`、`autoMockFeignClients`、`autoMockFeignClientExcludes`。消费方不必复制默认 denylist。`enableFeignOkHttp` 已弃用且不再写入任何属性。
+3. **项目必须声明：** `basePackages`（不猜测业务根包）、`src/test/resources/sql/schema.sql`，以及非 Feign 外部依赖在 Support 上的显式 `@JustMock` / `@ThreadScopedMock`。不要把生产 DataSource / 事务管理器配置放到测试启动类上。
 
 ```java
 // src/test/java/com/example/justtest/JustTestApplication.java
@@ -133,19 +133,20 @@ JustTest 统一使用 Spring Boot TestContext。启动知识分成三层：
     mapperPackages = "com.example.mapper", // 可选；没有 MyBatis 时省略
     dataSourceAliases = "masterDataSource", // 可选的存量 Bean 名
     transactionManagerAliases = "masterDataTransactionManager"
-    // enableFeignOkHttp = true // 仅在测试需要 OkHttp Feign（`client` Bean）时开启
+    // autoMockFeignClients = true // 按需：只自动 mock @FeignClient 接口
+    // autoMockFeignClientExcludes = { BillingClient.class }
 )
 public class JustTestApplication {
 }
 ```
 
-`@JustTestProject` 元注解组合 `@SpringBootConfiguration` 与 `@EnableAutoConfiguration`，类体可以为空。默认扫描会排除 `basePackages` 下的其他 `@SpringBootApplication` / `@SpringBootConfiguration`，并在注解存在时排除 `@Controller` / `@RestController` / `@ControllerAdvice`；classpath 上有 OpenFeign 时排除 `@FeignClient`；能安全探测到的 Job / 调度刻板类型也会排除。Feign OkHttp 默认关闭（`enableFeignOkHttp` 默认为 `false`）：`OkHttpFeignConfiguration` 会注册名为 `client` 的 `OkHttpClient`，`@Resource` 会按字段名优先命中它，从而与 `EmailClient client` 这类写法冲突；`FeignAutoConfiguration` 与 `FeignContext` 仍会装配，供依赖包中的 Feign Client 使用。`dataSource` 与 `transactionManager` 在名称未被占用时注册为 JustTest 主 Bean 的别名。`dataSourceAliases` / `transactionManagerAliases` 按同样规则为存量 `@Qualifier` / `@Transactional` 注册额外别名：空白项忽略、重复项去重，目标名已有 Bean 定义或别名时不覆盖（会打出跳过诊断日志）。声明了 `mapperPackages` 但缺少 mybatis-spring 会 fail-fast；有 MyBatis 但未声明 `mapperPackages` 时不会猜测扫描根。
+`@JustTestProject` 元注解组合 `@SpringBootConfiguration` 与 `@EnableAutoConfiguration`，类体可以为空。默认扫描会排除 `basePackages` 下的其他 `@SpringBootApplication` / `@SpringBootConfiguration`，并在注解存在时排除 `@Controller` / `@RestController` / `@ControllerAdvice`；classpath 上有 OpenFeign 时排除 `@FeignClient`；能安全探测到的 Job / 调度刻板类型也会排除。OkHttp / Feign 传输层由项目自行决定：JustTest 不会写入 `feign.okhttp.enabled` 或 `spring.cloud.openfeign.okhttp.enabled`。若 `OkHttpFeignConfiguration` 注册了名为 `client` 的 Bean，与 `@Resource private XxxClient client` 冲突，请在项目中关闭 OkHttp，或重命名 / 使用 `@Resource(name = ...)`。`FeignAutoConfiguration` 与 `FeignContext` 仍会装配。`autoMockFeignClients` 默认为 `false`；设为 `true` 时只发现带 `@FeignClient` 的接口（按注解存在，不按 `*Client` 名字），并注册与 `@JustMock` 相同的线程作用域 Mockito mock。同一类型上显式 `@JustMock` / `@ThreadScopedMock` 优先于自动 mock；`autoMockFeignClientExcludes` 可跳过选定 Feign 类型。Redis、OSS、SDK 等仍需在 Support / MockConfig 上显式 mock。`dataSource` 与 `transactionManager` 在名称未被占用时注册为 JustTest 主 Bean 的别名。`dataSourceAliases` / `transactionManagerAliases` 按同样规则为存量 `@Qualifier` / `@Transactional` 注册额外别名：空白项忽略、重复项去重，目标名已有 Bean 定义或别名时不覆盖（会打出跳过诊断日志）。声明了 `mapperPackages` 但缺少 mybatis-spring 会 fail-fast；有 MyBatis 但未声明 `mapperPackages` 时不会猜测扫描根。
 
 手写 `@SpringBootConfiguration` + `@EnableAutoConfiguration` + `@ComponentScan` 启动类仍然有效。新项目请优先使用 `@JustTestProject`。
 
 `JustTestApplication` 是消费工程专用于 JustTest 的测试启动配置，不需要 `main` 方法。将它放入独立测试包，并将所有 JustTest 测试类放在该包或其子包下，例如 `com.example.justtest.order`。Spring Boot 会先发现这个更近的测试配置，不会继续搜索父包中的生产 `Application`；仅放在 `src/test` 并不能避免两个启动类冲突，因为测试 classpath 同时包含生产类和测试类。非 JustTest 的普通 JUnit 测试放在该树之外。用例目录仍是 Support + 方法包，不要另造一套 case 根约定。
 
-JustTest Context 使用框架提供的 H2 `DataSource`、事务管理器和 `JdbcTemplate`。其余生产持久化配置请用 `test` profile 或 `excludeClasses` / `excludeFilters` 排除。框架不会改写用户 Bean 的 `@Primary` 属性，也不会替测试选择生产与测试数据源，更不会自动 mock 业务 Client。
+JustTest Context 使用框架提供的 H2 `DataSource`、事务管理器和 `JdbcTemplate`。其余生产持久化配置请用 `test` profile 或 `excludeClasses` / `excludeFilters` 排除。框架不会改写用户 Bean 的 `@Primary` 属性，也不会替测试选择生产与测试数据源。非 Feign 业务 Client 不会自动 mock；Feign 自动 mock 需显式打开 `autoMockFeignClients`。
 
 ```java
 // src/test/java/com/example/justtest/order/OrderJustTestSupport.java

@@ -1,6 +1,7 @@
 package com.just.test.internal.mock;
 
 import com.just.test.annotation.ThreadScopedMock;
+import com.just.test.internal.project.JustTestProjectFeignAutoMock;
 import org.mockito.Mockito;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -17,7 +18,9 @@ import org.springframework.beans.factory.support.BeanDefinitionRegistry;
 import org.springframework.beans.factory.config.BeanFactoryPostProcessor;
 import org.springframework.core.type.MethodMetadata;
 
+import java.util.Collections;
 import java.util.LinkedHashSet;
+import java.util.Map;
 import java.util.Set;
 
 /**
@@ -31,6 +34,8 @@ import java.util.Set;
  * <ol>
  *   <li>{@code mockTypes} —— 测试类字段 {@code @JustMock} 扫描所得（per-test 差异化 mock）</li>
  *   <li>{@code @ThreadScopedMock} —— Configuration 类 {@code @Bean} 方法标记（全局外部依赖 mock）</li>
+ *   <li>opt-in {@code @JustTestProject(autoMockFeignClients = true)} 发现的 {@code @FeignClient}
+ *       接口；显式 {@code @JustMock} / {@code @ThreadScopedMock} 优先</li>
  * </ol>
  * </p>
  */
@@ -53,9 +58,10 @@ class JustMockPostProcessor implements BeanFactoryPostProcessor {
         }
         BeanDefinitionRegistry registry = (BeanDefinitionRegistry) beanFactory;
 
-        // 合并 @JustMock 字段类型 + @ThreadScopedMock @Bean 方法返回类型
+        // 合并 @JustMock 字段类型 + @ThreadScopedMock @Bean 方法返回类型，再叠加 opt-in Feign
         Set<JustMockDefinition> allMockDefinitions = new LinkedHashSet<>(mockDefinitions);
         allMockDefinitions.addAll(collectThreadScopedMockDefinitions(beanFactory));
+        allMockDefinitions.addAll(collectAutoMockedFeignClients(beanFactory, registry, allMockDefinitions));
 
         Set<String> registeredBeanNames = new LinkedHashSet<>();
         java.util.Map<JustMockDefinition, String> bindings = new java.util.LinkedHashMap<>();
@@ -122,6 +128,42 @@ class JustMockPostProcessor implements BeanFactoryPostProcessor {
         return definitions;
     }
 
+    private Set<JustMockDefinition> collectAutoMockedFeignClients(
+            ConfigurableListableBeanFactory beanFactory,
+            BeanDefinitionRegistry registry,
+            Set<JustMockDefinition> alreadyMocked) {
+        if (!registry.containsBeanDefinition(JustTestProjectFeignAutoMock.BEAN_NAME)
+                && !beanFactory.containsSingleton(JustTestProjectFeignAutoMock.BEAN_NAME)) {
+            return Collections.emptySet();
+        }
+        JustTestProjectFeignAutoMock settings = beanFactory.getBean(
+                JustTestProjectFeignAutoMock.BEAN_NAME, JustTestProjectFeignAutoMock.class);
+        Set<Class<?>> mockedTypes = mockedTypes(alreadyMocked);
+        Set<JustMockDefinition> definitions = new LinkedHashSet<>();
+        for (Map.Entry<Class<?>, String> entry : settings.discover(beanFactory).entrySet()) {
+            Class<?> type = entry.getKey();
+            if (mockedTypes.contains(type)) {
+                log.debug("[JustMock] Skipping auto @FeignClient {} because an explicit mock already exists",
+                        type.getName());
+                continue;
+            }
+            JustMockDefinition definition = JustMockDefinition.forAutoMock(
+                    type, entry.getValue(), JustTestProjectFeignAutoMock.SOURCE);
+            definitions.add(definition);
+            mockedTypes.add(type);
+            log.info("[JustMock] Auto-mocking @FeignClient {}", type.getName());
+        }
+        return definitions;
+    }
+
+    private static Set<Class<?>> mockedTypes(Set<JustMockDefinition> definitions) {
+        Set<Class<?>> types = new LinkedHashSet<>();
+        for (JustMockDefinition definition : definitions) {
+            types.add(definition.getType());
+        }
+        return types;
+    }
+
     private String registerThreadScopedMock(ConfigurableListableBeanFactory beanFactory,
                                             BeanDefinitionRegistry registry,
                                             JustMockDefinition definition) {
@@ -182,6 +224,9 @@ class JustMockPostProcessor implements BeanFactoryPostProcessor {
                     && isTypeCompatible(beanFactory, existingBeanName, definition)) {
                 return existingBeanName;
             }
+            if (definition.isCreateIfAbsent()) {
+                return resolveCreateIfAbsent(beanFactory, definition, logicalCandidates);
+            }
             if (logicalCandidates.isEmpty()) {
                 logicalCandidates.addAll(
                         collectLogicalCandidates(beanFactory, definition.getType(), true));
@@ -216,6 +261,28 @@ class JustMockPostProcessor implements BeanFactoryPostProcessor {
             }
         }
         return logicalCandidates;
+    }
+
+    private String resolveCreateIfAbsent(ConfigurableListableBeanFactory beanFactory,
+                                         JustMockDefinition definition,
+                                         Set<String> logicalCandidates) {
+        java.util.LinkedHashSet<String> candidates = new java.util.LinkedHashSet<>(logicalCandidates);
+        if (candidates.isEmpty()) {
+            // 不 eager-init：避免实例化真实 FeignClientFactoryBean（可能缺 LoadBalancer）
+            candidates.addAll(collectLogicalCandidates(beanFactory, definition.getType(), false));
+        }
+        if (candidates.size() == 1) {
+            return candidates.iterator().next();
+        }
+        if (candidates.isEmpty()) {
+            return definition.getExplicitBeanName();
+        }
+        for (String candidate : candidates) {
+            if (matchesName(beanFactory, candidate, definition.getExplicitBeanName())) {
+                return candidate;
+            }
+        }
+        throw ambiguous(definition, candidates);
     }
 
     private String resolveFromTypeCandidates(ConfigurableListableBeanFactory beanFactory,

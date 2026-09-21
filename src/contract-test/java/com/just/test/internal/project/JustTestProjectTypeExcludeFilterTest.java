@@ -1,6 +1,7 @@
 package com.just.test.internal.project;
 
 import com.just.test.demo.project.defaultapp.JustTestApplication;
+import com.just.test.demo.project.fixtures.feign.DemoFeignClient;
 import com.just.test.demo.project.fixtures.scan.DemoMarkerService;
 import com.just.test.demo.project.fixtures.scan.DemoProductionApplication;
 import com.just.test.demo.project.fixtures.scan.DemoSchedulingConfig;
@@ -58,9 +59,16 @@ class JustTestProjectTypeExcludeFilterTest {
     @Test
     void skipsOptionalStereotypesThatAreNotOnTheClasspath() {
         assertNull(JustTestProjectTypeExcludeFilter.optionalAnnotationFilter(
-                "org.springframework.cloud.openfeign.FeignClient", classLoader));
+                "com.xxl.job.core.handler.annotation.JobHandler", classLoader));
         assertNull(JustTestProjectTypeExcludeFilter.optionalAssignableFilter(
                 "org.quartz.Job", classLoader));
+    }
+
+    @Test
+    void excludesFeignClientsWhenAnnotationIsPresent() throws IOException {
+        assertNotNull(JustTestProjectTypeExcludeFilter.optionalAnnotationFilter(
+                "org.springframework.cloud.openfeign.FeignClient", classLoader));
+        assertTrue(matches(DemoFeignClient.class));
     }
 
     @Test
