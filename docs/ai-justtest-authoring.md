@@ -10,8 +10,8 @@ JustTest 面向 **YAML 用例 + 薄 Java glue**，不是手写 assert 堆。本�
 
 | 消费工程 | Maven Central |
 | --- | --- |
-| Java 8 / Spring Boot 2 | `io.github.cyaquarius:just-test-boot2:1.2.0` |
-| Java 17 / Spring Boot 3 | `io.github.cyaquarius:just-test-boot3:1.2.0` |
+| Java 8 / Spring Boot 2 | `io.github.cyaquarius:just-test-boot2:1.2.1` |
+| Java 17 / Spring Boot 3 | `io.github.cyaquarius:just-test-boot3:1.2.1` |
 
 不要同时引入两个顶层 artifact。不要单独声明 `just-test-core`：它已 shade 进 boot JAR，Central 不上架。
 
@@ -37,7 +37,7 @@ public class JustTestApplication {
 
 放入独立测试包，所有 `@JustTest` 类放在该包或其子包。框架拥有默认扫描 denylist，**不**排除 `FeignAutoConfiguration` / `FeignContext`，也不默认关闭 OkHttp（传输层由项目自行选择；若出现名为 `client` 的 OkHttp Bean 与 `@Resource private XxxClient client` 冲突，项目可自行关 OkHttp 或改 `@Resource(name=…)` / 字段名）。可选 MyBatis 装配仍由 `mapperPackages` 声明。项目只声明 `basePackages` / 差异过滤器、需要兼容的数据源 / 事务别名，以及是否 `autoMockFeignClients`。`dataSource` 与 `transactionManager` 在名称空闲时始终注册；额外名称空白忽略、重复去重，已被 Bean 定义或别名占用则跳过。Redis / OSS / SDK / 自定义 Client 的 Mock 放在 Support 的 `@JustMock`（或 `@ThreadScopedMock`）上。只有打开 `autoMockFeignClients` 时，框架才按 `@FeignClient` 注解存在自动 mock 接口；不按 `*Client` 名字推断。显式 `@JustMock` / `@ThreadScopedMock` 优先于自动 Feign mock。手写 `@SpringBootConfiguration` 启动类仍可用。
 
-安装坐标仍用已发布的 `1.2.0`；`autoMockFeignClients` 在 `main` 上，待下次 patch。
+`1.2.1` 已包含撤回框架默认关闭 OkHttp，以及 opt-in `@JustTestProject(autoMockFeignClients)`（仅 `@FeignClient`）。
 3. `@JustTest` 已包含 Boot TestContext 与 `test` profile；不要再叠 `@SpringBootTest` 或 `@BootstrapWith`。启动配置不得加载生产 `DataSource` / 事务管理器。
 
 三层职责（框架拥有 / 默认可覆盖 / 项目必须声明）见 README「编写测试」。用例目录仍是 Support + 方法包，不要改成别的 case 根。

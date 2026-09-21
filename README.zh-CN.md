@@ -91,7 +91,7 @@ junit.jupiter.execution.parallel.mode.classes.default=concurrent
 
 ## Maven Central
 
-坐标为 `io.github.cyaquarius`。Java 包名仍是 `com.just.test`。Maven Central **只发布** `just-test-boot2` 与 `just-test-boot3`（`just-test-core` 打进这两个 JAR，不单独上架）。`1.2.0` 是当前发布坐标，消费方应使用 Central 坐标。本地 `mvn install` 仍用于基于本仓库开发。
+坐标为 `io.github.cyaquarius`。Java 包名仍是 `com.just.test`。Maven Central **只发布** `just-test-boot2` 与 `just-test-boot3`（`just-test-core` 打进这两个 JAR，不单独上架）。`1.2.1` 是当前发布坐标，消费方应使用 Central 坐标。本地 `mvn install` 仍用于基于本仓库开发。
 
 Java 8 / Boot 2：
 
@@ -99,16 +99,16 @@ Java 8 / Boot 2：
 <dependency>
     <groupId>io.github.cyaquarius</groupId>
     <artifactId>just-test-boot2</artifactId>
-    <version>1.2.0</version>
+    <version>1.2.1</version>
     <scope>test</scope>
 </dependency>
 ```
 
 Java 17 / Boot 3：把 `artifactId` 换成 `just-test-boot3`。不要同时引入两个顶层 artifact。不要单独声明 `just-test-core`——它已打进 boot JAR，且没有独立的 Central 坐标。
 
-若公司私服已代理 Central，只需声明依赖；若无法访问 Central，请代理 Central，或将 boot2/boot3 的 `1.2.0` 制品上传到私服 release 仓库，并保持坐标为 `io.github.cyaquarius`。
+若公司私服已代理 Central，只需声明依赖；若无法访问 Central，请代理 Central，或将 boot2/boot3 的 `1.2.1` 制品上传到私服 release 仓库，并保持坐标为 `io.github.cyaquarius`。
 
-Central 上的 `1.2.0` 已保留 `FeignAutoConfiguration` / `FeignContext`，且不整段排除 Feign 自动配置。opt-in 的 `autoMockFeignClients`（以及撤回框架默认关闭 OkHttp）在 `main` 上，待下次 patch 发布；安装坐标片段仍写已发布的 `1.2.0`。
+`1.2.1` 撤回框架默认关闭 OkHttp，并提供 opt-in 的 `@JustTestProject(autoMockFeignClients)`，仅自动 mock `@FeignClient` 接口。仍保留 `FeignAutoConfiguration` / `FeignContext`，且不整段排除 Feign 自动配置。
 
 AI 编写用例：按仓库内配方 [docs/ai-justtest-authoring.md](docs/ai-justtest-authoring.md)。
 
