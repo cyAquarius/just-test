@@ -18,12 +18,13 @@ import java.lang.annotation.Target;
  * {@link SpringBootConfiguration}、{@link EnableAutoConfiguration} 以及框架默认的
  * 组件扫描 / 可选 MyBatis 装配。
  *
- * <p>框架拥有默认 denylist（生产启动类、Web/API 边界、classpath 上的 Feign / 调度刻板类型）、
- * 默认关闭 Feign OkHttp（保留 {@code FeignAutoConfiguration} / {@code FeignContext}），
- * 以及 JustTest DataSource 别名；项目只声明差异：{@code basePackages}、可选
+ * <p>框架拥有默认 denylist（生产启动类、Web/API 边界、classpath 上的 Feign / 调度刻板类型）
+ * 以及 JustTest DataSource 别名；保留 {@code FeignAutoConfiguration} / {@code FeignContext}，
+ * 但不默认关闭 OkHttp。项目只声明差异：{@code basePackages}、可选
  * {@code mapperPackages}、可选的 {@code dataSourceAliases} / {@code transactionManagerAliases}，
- * 以及需要叠加的 include/exclude。外部依赖 Mock 仍放在 Support 的
- * {@link JustMock} 上，本注解不会自动 mock 业务 Client。</p>
+ * 以及需要叠加的 include/exclude。Redis / OSS / SDK 等外部依赖 Mock 仍放在 Support 的
+ * {@link JustMock} 上。{@code autoMockFeignClients} 默认关闭；开启后只 mock 带
+ * {@code @FeignClient} 的接口，不按 {@code *Client} 名字推断。</p>
  *
  * <pre>
  * &#64;JustTestProject(
@@ -96,16 +97,34 @@ public @interface JustTestProject {
     ComponentScan.Filter[] includeFilters() default {};
 
     /**
-     * 是否启用 Feign 的 OkHttp HTTP 客户端子配置。默认 {@code false}：向测试
-     * Environment 写入 {@code feign.okhttp.enabled=false}（Boot 3 另写
-     * {@code spring.cloud.openfeign.okhttp.enabled=false}），从而跳过
-     * {@code OkHttpFeignConfiguration} 注册名为 {@code client} 的
-     * {@code OkHttpClient}，避免与 {@code @Resource private XxxClient client}
-     * 按字段名注入冲突。
+     * 是否自动为 {@code @FeignClient} 接口注册与 {@link JustMock} 相同的
+     * 线程作用域 Mockito mock。默认 {@code false}。
      *
-     * <p>不会排除 {@code FeignAutoConfiguration}：{@code FeignContext} 仍会装配，
-     * 供依赖包中的 Feign Client 使用。设为 {@code true} 时不强制关闭 OkHttp。</p>
+     * <p>开启后按注解存在发现接口（不按 {@code *Client} 类名推断），并替换已有
+     * Feign 代理定义，从而避免真实远程调用 / LoadBalancer 缺失导致的启动失败。
+     * 不会排除 {@code FeignAutoConfiguration} / {@code FeignContext}。
+     * 显式 {@link JustMock} 与 {@link ThreadScopedMock} 优先于自动 mock。</p>
      */
+    boolean autoMockFeignClients() default false;
+
+    /**
+     * 在 {@link #autoMockFeignClients()} 为 {@code true} 时，跳过自动 mock 的
+     * {@code @FeignClient} 类型。未开启自动 mock 时本属性无效。
+     */
+    Class<?>[] autoMockFeignClientExcludes() default {};
+
+    /**
+     * 历史上用于让框架默认关闭 Feign OkHttp。现已无效果：JustTest 不再向
+     * Environment 写入 {@code feign.okhttp.enabled} /
+     * {@code spring.cloud.openfeign.okhttp.enabled}。传输层由消费工程自行选择。
+     *
+     * <p>若 OkHttp 注册了名为 {@code client} 的 Bean，与
+     * {@code @Resource private XxxClient client} 按字段名冲突，请在项目中自行
+     * 关闭 OkHttp，或改为 {@code @Resource(name = ...)} / 重命名字段。</p>
+     *
+     * @deprecated 框架不再把 OkHttp 当作默认开关；保留属性以免旧代码无法编译。
+     */
+    @Deprecated
     boolean enableFeignOkHttp() default false;
 
     /**

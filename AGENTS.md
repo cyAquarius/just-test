@@ -10,3 +10,4 @@
 - 修改 Boot 2 线必须保持 Java 8 兼容；修改 Boot 3 线不得破坏 Boot 2 线，反之亦然。共享 `just-test-core` 的改动需同时考虑两条产品线。
 - Java 构建和测试直接使用 Maven。
 - 消费方 / AI 编写 YAML 用例：见 `docs/ai-justtest-authoring.md`。
+- `@JustTestProject` 不默认关闭 OkHttp；`autoMockFeignClients` 默认 `false`，开启后只 mock `@FeignClient` 接口。Redis / OSS / SDK 等仍需显式 `@JustMock` / `@ThreadScopedMock`，后者优先于自动 Feign mock。

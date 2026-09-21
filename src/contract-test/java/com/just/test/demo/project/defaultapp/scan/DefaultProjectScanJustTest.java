@@ -22,6 +22,7 @@ import javax.sql.DataSource;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -57,15 +58,16 @@ class DefaultProjectScanJustTest implements JustTestLifecycle {
         assertSame(applicationContext.getBean("justTestDataSource", DataSource.class),
                 applicationContext.getBean(DataSource.class));
         assertFalse(applicationContext.containsBean("sqlSessionFactory"));
-        assertFalse(JustTestApplication.class.getAnnotation(JustTestProject.class).enableFeignOkHttp());
+        assertFalse(JustTestApplication.class.getAnnotation(JustTestProject.class).autoMockFeignClients());
+        assertEquals(0, JustTestApplication.class.getAnnotation(JustTestProject.class)
+                .autoMockFeignClientExcludes().length);
         assertEquals(0, JustTestApplication.class.getAnnotation(JustTestProject.class)
                 .excludeAutoConfiguration().length);
         assertTrue(environment instanceof ConfigurableEnvironment);
-        assertTrue(((ConfigurableEnvironment) environment).getPropertySources()
+        assertFalse(((ConfigurableEnvironment) environment).getPropertySources()
                 .contains("justTestProjectFeignOkHttp"));
-        assertEquals(Boolean.FALSE, environment.getProperty("feign.okhttp.enabled", Boolean.class));
-        assertEquals(Boolean.FALSE,
-                environment.getProperty("spring.cloud.openfeign.okhttp.enabled", Boolean.class));
+        assertNull(environment.getProperty("feign.okhttp.enabled"));
+        assertNull(environment.getProperty("spring.cloud.openfeign.okhttp.enabled"));
         assertFalse(applicationContext.containsBean("client"));
         context.setResult(markerService.marker());
     }

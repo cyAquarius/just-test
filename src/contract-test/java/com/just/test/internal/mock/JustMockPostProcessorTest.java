@@ -1,6 +1,10 @@
 package com.just.test.internal.mock;
 
 import com.just.test.annotation.JustMock;
+import com.just.test.demo.project.fixtures.feign.DemoFeignClient;
+import com.just.test.demo.project.fixtures.feign.DemoLocalClient;
+import com.just.test.demo.project.fixtures.feign.ExcludedFeignClient;
+import com.just.test.internal.project.JustTestProjectFeignAutoMock;
 import org.junit.jupiter.api.Test;
 import org.mybatis.spring.mapper.MapperFactoryBean;
 import org.springframework.aop.scope.ScopedProxyUtils;
@@ -10,6 +14,7 @@ import org.springframework.beans.factory.support.AbstractBeanDefinition;
 import org.springframework.beans.factory.support.AutowireCandidateQualifier;
 import org.springframework.beans.factory.support.BeanDefinitionBuilder;
 import org.springframework.beans.factory.support.DefaultListableBeanFactory;
+import org.springframework.beans.factory.support.GenericBeanDefinition;
 import org.springframework.context.annotation.ContextAnnotationAutowireCandidateResolver;
 
 import java.lang.annotation.ElementType;
@@ -220,6 +225,56 @@ class JustMockPostProcessorTest {
     }
 
     @Test
+    void autoMocksAnnotatedFeignClientsAndSkipsExcludesAndNameOnlyClients() {
+        DefaultListableBeanFactory beanFactory = beanFactory();
+        beanFactory.registerBeanDefinition("demoLocalClient",
+                BeanDefinitionBuilder.genericBeanDefinition(DemoLocalClient.class).getBeanDefinition());
+        JustTestProjectFeignAutoMock.register(beanFactory,
+                new String[] {"com.just.test.demo.project.fixtures.feign"},
+                new Class<?>[] {ExcludedFeignClient.class});
+
+        new JustMockPostProcessor(Collections.emptySet()).postProcessBeanFactory(beanFactory);
+
+        assertTrue(beanFactory.containsBeanDefinition("demoFeignClient"));
+        assertTrue(beanFactory.containsBeanDefinition("scopedTarget.demoFeignClient"));
+        assertFalse(beanFactory.containsBeanDefinition("excludedFeignClient"));
+        assertFalse(beanFactory.containsBeanDefinition("scopedTarget.demoLocalClient"));
+        assertEquals(DemoLocalClient.class, beanFactory.getType("demoLocalClient"));
+    }
+
+    @Test
+    void replacesFeignFactoryBeanWithoutEagerInitWhenAutoMocking() {
+        DefaultListableBeanFactory beanFactory = beanFactory();
+        GenericBeanDefinition factoryBean = new GenericBeanDefinition();
+        factoryBean.setBeanClassName(JustTestProjectFeignAutoMock.FEIGN_CLIENT_FACTORY_BEAN);
+        factoryBean.getPropertyValues().add("type", DemoFeignClient.class);
+        beanFactory.registerBeanDefinition("demo-feign", factoryBean);
+        JustTestProjectFeignAutoMock.register(beanFactory,
+                new String[] {"com.just.test.demo.project.fixtures.feign"}, new Class<?>[0]);
+
+        new JustMockPostProcessor(Collections.emptySet()).postProcessBeanFactory(beanFactory);
+
+        assertTrue(beanFactory.containsBeanDefinition("demo-feign"));
+        assertTrue(beanFactory.containsBeanDefinition("scopedTarget.demo-feign"));
+        assertEquals(DemoFeignClient.class, beanFactory.getType("scopedTarget.demo-feign"));
+    }
+
+    @Test
+    void explicitJustMockWinsOverAutoFeignMock() {
+        DefaultListableBeanFactory beanFactory = beanFactory();
+        JustTestProjectFeignAutoMock.register(beanFactory,
+                new String[] {"com.just.test.demo.project.fixtures.feign"}, new Class<?>[0]);
+        Field field = field(FeignTestFields.class, "demoFeignClient");
+
+        process(beanFactory, field);
+
+        assertEquals("demoFeignClient",
+                beanFactory.getBean(JustMockBindings.class).getBeanName(definition(field)));
+        assertTrue(beanFactory.containsBeanDefinition("scopedTarget.demoFeignClient"));
+        assertEquals(1, countLogicalBeansOfType(beanFactory, DemoFeignClient.class));
+    }
+
+    @Test
     void replacesMapperFactoryBeanByDefaultNameWhenObjectTypeIsNotVisible() {
         DefaultListableBeanFactory beanFactory = beanFactory();
         AbstractBeanDefinition definition = BeanDefinitionBuilder
@@ -292,6 +347,21 @@ class JustMockPostProcessorTest {
                 .genericBeanDefinition(SampleClient.class).getBeanDefinition();
         definition.addQualifier(new AutowireCandidateQualifier(Region.class, qualifier));
         beanFactory.registerBeanDefinition(beanName, definition);
+    }
+
+    private int countLogicalBeansOfType(DefaultListableBeanFactory beanFactory, Class<?> type) {
+        int count = 0;
+        for (String name : beanFactory.getBeanNamesForType(type, true, false)) {
+            if (!name.startsWith("scopedTarget.")) {
+                count++;
+            }
+        }
+        return count;
+    }
+
+    private static class FeignTestFields {
+        @JustMock
+        private DemoFeignClient demoFeignClient;
     }
 
     private static class TestFields {
