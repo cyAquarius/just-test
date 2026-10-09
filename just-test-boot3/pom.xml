@@ -16,6 +16,7 @@
 
     <properties>
         <maven.compiler.release>17</maven.compiler.release>
+        <just-test.central.split.executor>true</just-test.central.split.executor>
         <just-test.publish.skip>false</just-test.publish.skip>
     </properties>
 

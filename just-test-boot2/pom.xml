@@ -17,6 +17,7 @@
     <properties>
         <maven.compiler.source>8</maven.compiler.source>
         <maven.compiler.target>8</maven.compiler.target>
+        <just-test.central.split.executor>true</just-test.central.split.executor>
         <just-test.publish.skip>false</just-test.publish.skip>
     </properties>
 

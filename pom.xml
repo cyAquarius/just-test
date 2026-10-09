@@ -241,11 +241,55 @@
                             <publishingServerId>central</publishingServerId>
                             <autoPublish>true</autoPublish>
                             <waitUntil>published</waitUntil>
+                            <!-- Reactor deploy never uploads; scripts/publish-central-modules.sh
+                                 publishes boot2/boot3 one deployment each via central-upload. -->
+                            <skipPublishing>true</skipPublishing>
+                        </configuration>
+                    </plugin>
+                    <plugin>
+                        <groupId>org.codehaus.mojo</groupId>
+                        <artifactId>exec-maven-plugin</artifactId>
+                        <version>3.5.0</version>
+                        <executions>
+                            <execution>
+                                <id>publish-boot-modules-separately</id>
+                                <phase>deploy</phase>
+                                <goals>
+                                    <goal>exec</goal>
+                                </goals>
+                                <configuration>
+                                    <!-- Only the parent reactor should run the split publisher. -->
+                                    <skip>${just-test.central.split.executor}</skip>
+                                    <executable>bash</executable>
+                                    <workingDirectory>${maven.multiModuleProjectDirectory}</workingDirectory>
+                                    <arguments>
+                                        <argument>${maven.multiModuleProjectDirectory}/scripts/publish-central-modules.sh</argument>
+                                    </arguments>
+                                </configuration>
+                            </execution>
+                        </executions>
+                    </plugin>
+                </plugins>
+            </build>
+            <properties>
+                <!-- Nested module deploys set -Djust-test.central.split.executor=true to avoid recursion. -->
+                <just-test.central.split.executor>false</just-test.central.split.executor>
+            </properties>
+        </profile>
+        <profile>
+            <id>central-upload</id>
+            <build>
+                <plugins>
+                    <plugin>
+                        <groupId>org.sonatype.central</groupId>
+                        <artifactId>central-publishing-maven-plugin</artifactId>
+                        <version>0.9.0</version>
+                        <extensions>true</extensions>
+                        <configuration>
+                            <publishingServerId>central</publishingServerId>
+                            <autoPublish>true</autoPublish>
+                            <waitUntil>published</waitUntil>
                             <skipPublishing>${just-test.publish.skip}</skipPublishing>
-                            <!-- Isolate staging per module; shared reactor staging can upload a
-                                 mixed boot2+boot3 bundle that Central rejects (missing .pom). -->
-                            <stagingDirectory>${project.build.directory}/central-staging</stagingDirectory>
-                            <outputDirectory>${project.build.directory}/central-publishing</outputDirectory>
                         </configuration>
                     </plugin>
                 </plugins>

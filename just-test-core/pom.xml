@@ -15,6 +15,7 @@
     <description>Java 8 compatible JustTest implementation shared by the Boot 2 and Boot 3 adapters.</description>
 
     <properties>
+        <just-test.central.split.executor>true</just-test.central.split.executor>
         <maven.compiler.source>8</maven.compiler.source>
         <maven.compiler.target>8</maven.compiler.target>
     </properties>
