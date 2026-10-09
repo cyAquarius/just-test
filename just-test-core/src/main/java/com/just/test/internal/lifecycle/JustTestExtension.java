@@ -28,16 +28,11 @@ import org.springframework.beans.factory.NoSuchBeanDefinitionException;
 import org.springframework.beans.factory.NoUniqueBeanDefinitionException;
 import org.springframework.context.ApplicationContext;
 import org.springframework.jdbc.core.JdbcTemplate;
-import org.springframework.jdbc.datasource.ConnectionHolder;
 import org.springframework.test.context.junit.jupiter.SpringExtension;
-import org.springframework.transaction.support.TransactionSynchronizationManager;
 
-import javax.sql.DataSource;
 import java.lang.reflect.Method;
-import java.sql.Connection;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Map;
 
 /**
  * 单个 JustTest case invocation 的完整生命周期。
@@ -57,11 +52,10 @@ public final class JustTestExtension implements BeforeEachCallback, AfterEachCal
 
     private static final Logger log = LoggerFactory.getLogger(JustTestExtension.class);
     private static final String SCHEMA_LOCATION = "classpath:sql/schema.sql";
-    private static final String SQL_SESSION_FACTORY_CLASS = "org.apache.ibatis.session.SqlSessionFactory";
-    private static final String SQL_SESSION_HOLDER_CLASS = "org.mybatis.spring.SqlSessionHolder";
-    private static final String SQL_SESSION_CLASS = "org.apache.ibatis.session.SqlSession";
     private static final ApplicationContextDiagnostics CONTEXT_DIAGNOSTICS =
             new ApplicationContextDiagnostics();
+    private static final TransactionThreadCleanup TRANSACTION_THREAD_CLEANUP =
+            new TransactionThreadCleanup();
 
     private final CaseContext caseContext;
     private ApplicationContext applicationContext;
@@ -106,12 +100,12 @@ public final class JustTestExtension implements BeforeEachCallback, AfterEachCal
         CaseExecutionContext.bind(caseContext);
         caseBound = true;
         try {
-            routingDataSource = beginCaseDatabase(applicationContext);
-            Throwable staleResourceFailure = clearTransactionResources(applicationContext, null);
+            Throwable staleResourceFailure = TRANSACTION_THREAD_CLEANUP.cleanup(
+                    applicationContext, caseContext.getCaseName(), LeakPhase.BEFORE_CASE, null);
             if (staleResourceFailure != null) {
-                log.warn("[JustTest] Failed to clean stale transaction resources before case [{}]",
-                        caseContext.getCaseName(), staleResourceFailure);
+                throw asException(staleResourceFailure);
             }
+            routingDataSource = beginCaseDatabase(applicationContext);
             prepareCaseData();
 
             ThreadScope.resetCurrentThread();
@@ -232,7 +226,8 @@ public final class JustTestExtension implements BeforeEachCallback, AfterEachCal
         Throwable failure = null;
         failure = closeStaticMocks(failure);
         failure = clearThreadScope(failure);
-        failure = clearTransactionResources(applicationContext, failure);
+        failure = TRANSACTION_THREAD_CLEANUP.cleanup(
+                applicationContext, caseContext.getCaseName(), LeakPhase.AFTER_CASE, failure);
         failure = releaseCaseDatabase(failure);
         try {
             CaseExecutionContext.clear();
@@ -263,120 +258,6 @@ public final class JustTestExtension implements BeforeEachCallback, AfterEachCal
             failure = appendFailure(failure, cleanupFailure);
         }
         return failure;
-    }
-
-    private Throwable clearTransactionResources(ApplicationContext context, Throwable failure) {
-        if (context == null) {
-            return failure;
-        }
-        failure = clearMyBatisResources(context, failure);
-        return clearConnectionResources(context, failure);
-    }
-
-    private Throwable clearMyBatisResources(ApplicationContext context, Throwable failure) {
-        Class<?> sqlSessionFactoryType = loadOptionalClass(SQL_SESSION_FACTORY_CLASS, context);
-        if (sqlSessionFactoryType == null) {
-            return failure;
-        }
-
-        Map<String, ?> factories;
-        try {
-            factories = context.getBeansOfType(sqlSessionFactoryType);
-        } catch (Throwable cleanupFailure) {
-            return appendCleanupFailure(failure, "MyBatis SqlSessionFactory resources", cleanupFailure);
-        }
-
-        for (Map.Entry<String, ?> entry : factories.entrySet()) {
-            try {
-                Object resource = TransactionSynchronizationManager
-                        .unbindResourceIfPossible(entry.getValue());
-                closeSqlSessionResource(resource, context);
-            } catch (Throwable cleanupFailure) {
-                failure = appendCleanupFailure(
-                        failure, "MyBatis resource for bean '" + entry.getKey() + "'", cleanupFailure);
-            }
-        }
-        return failure;
-    }
-
-    private Throwable clearConnectionResources(ApplicationContext context, Throwable failure) {
-        Map<String, DataSource> dataSources;
-        try {
-            dataSources = context.getBeansOfType(DataSource.class);
-        } catch (Throwable cleanupFailure) {
-            return appendCleanupFailure(failure, "JDBC ConnectionHolder resources", cleanupFailure);
-        }
-
-        for (Map.Entry<String, DataSource> entry : dataSources.entrySet()) {
-            try {
-                Object resource = TransactionSynchronizationManager
-                        .unbindResourceIfPossible(entry.getValue());
-                if (resource instanceof ConnectionHolder) {
-                    ConnectionHolder connectionHolder = (ConnectionHolder) resource;
-                    Connection connection = connectionHolder.getConnection();
-                    if (connection != null) {
-                        connection.close();
-                    }
-                }
-            } catch (Throwable cleanupFailure) {
-                failure = appendCleanupFailure(
-                        failure, "JDBC resource for bean '" + entry.getKey() + "'", cleanupFailure);
-            }
-        }
-        return failure;
-    }
-
-    private void closeSqlSessionResource(Object resource, ApplicationContext context) throws Exception {
-        if (resource == null) {
-            return;
-        }
-
-        Class<?> sqlSessionType = loadOptionalClass(SQL_SESSION_CLASS, context);
-        Object sqlSession = sqlSessionType != null && sqlSessionType.isInstance(resource)
-                ? resource
-                : null;
-        if (sqlSession == null) {
-            Class<?> sqlSessionHolderType = loadOptionalClass(SQL_SESSION_HOLDER_CLASS, context);
-            if (sqlSessionHolderType != null && sqlSessionHolderType.isInstance(resource)) {
-                Method getSqlSession = sqlSessionHolderType.getMethod("getSqlSession");
-                sqlSession = getSqlSession.invoke(resource);
-            }
-        }
-        if (sqlSession == null) {
-            return;
-        }
-        if (sqlSessionType != null && sqlSessionType.isInstance(sqlSession)) {
-            sqlSessionType.getMethod("close").invoke(sqlSession);
-        } else if (sqlSession instanceof AutoCloseable) {
-            ((AutoCloseable) sqlSession).close();
-        }
-    }
-
-    private Class<?> loadOptionalClass(String className, ApplicationContext context) {
-        ClassLoader classLoader = context.getClassLoader();
-        if (classLoader == null) {
-            classLoader = Thread.currentThread().getContextClassLoader();
-        }
-        try {
-            return Class.forName(className, false, classLoader);
-        } catch (ClassNotFoundException ignored) {
-            try {
-                return Class.forName(className);
-            } catch (ClassNotFoundException ignoredAgain) {
-                return null;
-            } catch (LinkageError ignoredAgain) {
-                return null;
-            }
-        } catch (LinkageError ignored) {
-            return null;
-        }
-    }
-
-    private Throwable appendCleanupFailure(Throwable failure, String resourceDescription,
-                                            Throwable cleanupFailure) {
-        log.warn("[JustTest] Failed to clean {}: {}", resourceDescription,
-                cleanupFailure.getMessage(), cleanupFailure);
-        return appendFailure(failure, cleanupFailure);
     }
 
     private Throwable releaseCaseDatabase(Throwable failure) {
