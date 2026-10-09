@@ -51,11 +51,11 @@ upload_and_wait() {
       -H "${auth_header}" \
       "${api}/status?id=${deployment_id}")"
     echo "status[${i}]: ${state}"
-    if printf '%s' "${state}" | rg -q '"deploymentState"[[:space:]]*:[[:space:]]*"PUBLISHED"'; then
+    if printf '%s' "${state}" | grep -Eq '"deploymentState"[[:space:]]*:[[:space:]]*"PUBLISHED"'; then
       echo "Published ${name}"
       return 0
     fi
-    if printf '%s' "${state}" | rg -q '"deploymentState"[[:space:]]*:[[:space:]]*"FAILED"'; then
+    if printf '%s' "${state}" | grep -Eq '"deploymentState"[[:space:]]*:[[:space:]]*"FAILED"'; then
       echo "Central deployment failed: ${state}" >&2
       exit 1
     fi
@@ -129,11 +129,11 @@ for module in just-test-boot2 just-test-boot3; do
 
   echo "Clean bundle:"
   unzip -l "${zip_path}"
-  if unzip -l "${zip_path}" | rg -q 'maven-metadata|_remote\.repositories'; then
+  if unzip -l "${zip_path}" | grep -Eq 'maven-metadata|_remote\.repositories'; then
     echo "Bundle contains local-repo metadata" >&2
     exit 1
   fi
-  if ! unzip -l "${zip_path}" | rg -q "${base}\\.pom$"; then
+  if ! unzip -l "${zip_path}" | grep -Eq "${base}\\.pom$"; then
     echo "Bundle missing pom" >&2
     exit 1
   fi
