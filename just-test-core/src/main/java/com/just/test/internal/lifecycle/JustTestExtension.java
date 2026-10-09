@@ -28,17 +28,11 @@ import org.springframework.beans.factory.NoSuchBeanDefinitionException;
 import org.springframework.beans.factory.NoUniqueBeanDefinitionException;
 import org.springframework.context.ApplicationContext;
 import org.springframework.jdbc.core.JdbcTemplate;
-import org.springframework.jdbc.datasource.ConnectionHolder;
 import org.springframework.test.context.junit.jupiter.SpringExtension;
-import org.springframework.transaction.support.TransactionSynchronizationManager;
 
-import javax.sql.DataSource;
 import java.lang.reflect.Method;
-import java.sql.Connection;
 import java.util.ArrayList;
-import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Map;
 
 /**
  * 单个 JustTest case invocation 的完整生命周期。
@@ -58,11 +52,10 @@ public final class JustTestExtension implements BeforeEachCallback, AfterEachCal
 
     private static final Logger log = LoggerFactory.getLogger(JustTestExtension.class);
     private static final String SCHEMA_LOCATION = "classpath:sql/schema.sql";
-    private static final String SQL_SESSION_FACTORY_CLASS = "org.apache.ibatis.session.SqlSessionFactory";
-    private static final String SQL_SESSION_HOLDER_CLASS = "org.mybatis.spring.SqlSessionHolder";
-    private static final String SQL_SESSION_CLASS = "org.apache.ibatis.session.SqlSession";
     private static final ApplicationContextDiagnostics CONTEXT_DIAGNOSTICS =
             new ApplicationContextDiagnostics();
+    private static final TransactionThreadCleanup TRANSACTION_THREAD_CLEANUP =
+            new TransactionThreadCleanup();
 
     private final CaseContext caseContext;
     private ApplicationContext applicationContext;
@@ -107,8 +100,8 @@ public final class JustTestExtension implements BeforeEachCallback, AfterEachCal
         CaseExecutionContext.bind(caseContext);
         caseBound = true;
         try {
-            Throwable staleResourceFailure = cleanupTransactionResources(
-                    applicationContext, null, true);
+            Throwable staleResourceFailure = TRANSACTION_THREAD_CLEANUP.cleanup(
+                    applicationContext, caseContext.getCaseName(), LeakPhase.BEFORE_CASE, null);
             if (staleResourceFailure != null) {
                 throw asException(staleResourceFailure);
             }
@@ -233,7 +226,8 @@ public final class JustTestExtension implements BeforeEachCallback, AfterEachCal
         Throwable failure = null;
         failure = closeStaticMocks(failure);
         failure = clearThreadScope(failure);
-        failure = cleanupTransactionResources(applicationContext, failure, false);
+        failure = TRANSACTION_THREAD_CLEANUP.cleanup(
+                applicationContext, caseContext.getCaseName(), LeakPhase.AFTER_CASE, failure);
         failure = releaseCaseDatabase(failure);
         try {
             CaseExecutionContext.clear();
@@ -264,215 +258,6 @@ public final class JustTestExtension implements BeforeEachCallback, AfterEachCal
             failure = appendFailure(failure, cleanupFailure);
         }
         return failure;
-    }
-
-    private Throwable clearTransactionResources(ApplicationContext context, Throwable failure) {
-        if (context == null) {
-            return failure;
-        }
-        failure = clearMyBatisResources(context, failure);
-        return clearConnectionResources(context, failure);
-    }
-
-    private Throwable cleanupTransactionResources(ApplicationContext context, Throwable failure,
-                                                  boolean beforeCase) {
-        if (context == null) {
-            return failure;
-        }
-
-        boolean actualTransactionActive = TransactionSynchronizationManager.isActualTransactionActive();
-        boolean synchronizationActive = TransactionSynchronizationManager.isSynchronizationActive();
-        Integer synchronizationCount = synchronizationCount(synchronizationActive);
-        Map<Object, Object> resourcesBeforeCleanup = snapshotTransactionResources();
-
-        failure = clearTransactionResources(context, failure);
-        Map<Object, Object> remainingResources = snapshotTransactionResources();
-        if (!actualTransactionActive && !synchronizationActive && remainingResources.isEmpty()) {
-            return failure;
-        }
-
-        IllegalStateException leakFailure = new IllegalStateException(transactionLeakMessage(
-                actualTransactionActive, synchronizationActive, synchronizationCount,
-                resourcesBeforeCleanup.keySet(), remainingResources.keySet(), beforeCase));
-        failure = appendFailure(failure, leakFailure);
-
-        // 隔离已经确认泄漏的线程状态；这不是业务事务的 rollback 替代品。
-        try {
-            TransactionSynchronizationManager.clear();
-        } catch (Throwable cleanupFailure) {
-            failure = appendCleanupFailure(failure, "Spring transaction thread state", cleanupFailure);
-        }
-        for (Map.Entry<Object, Object> entry : remainingResources.entrySet()) {
-            Object resourceKey = entry.getKey();
-            try {
-                Object resource = TransactionSynchronizationManager.unbindResourceIfPossible(resourceKey);
-                closeKnownTransactionResource(
-                        resource == null ? entry.getValue() : resource, context);
-            } catch (Throwable cleanupFailure) {
-                failure = appendCleanupFailure(failure,
-                        "unexpected transaction resource '" + resourceKey + "'", cleanupFailure);
-            }
-        }
-        return failure;
-    }
-
-    private Integer synchronizationCount(boolean synchronizationActive) {
-        if (!synchronizationActive) {
-            return Integer.valueOf(0);
-        }
-        try {
-            return Integer.valueOf(TransactionSynchronizationManager.getSynchronizations().size());
-        } catch (Throwable ignored) {
-            return null;
-        }
-    }
-
-    private Map<Object, Object> snapshotTransactionResources() {
-        return new LinkedHashMap<Object, Object>(TransactionSynchronizationManager.getResourceMap());
-    }
-
-    private String transactionLeakMessage(boolean actualTransactionActive,
-                                          boolean synchronizationActive,
-                                          Integer synchronizationCount,
-                                          java.util.Set<Object> resourceKeysBeforeCleanup,
-                                          java.util.Set<Object> remainingResourceKeys,
-                                          boolean beforeCase) {
-        return new StringBuilder(beforeCase
-                ? "[JustTest] Residual Spring transaction state found before case: case="
-                : "[JustTest] Unfinished Spring transaction leaked at case boundary: case=")
-                .append(caseContext.getCaseName() == null ? "<unknown>" : caseContext.getCaseName())
-                .append(", thread=").append(Thread.currentThread().getName())
-                .append(", actualTransactionActive=").append(actualTransactionActive)
-                .append(", synchronizationActive=").append(synchronizationActive)
-                .append(", synchronizationCount=")
-                .append(synchronizationCount == null ? "unavailable" : synchronizationCount)
-                .append(", resourceKeysBeforeCleanup=").append(resourceKeysBeforeCleanup)
-                .append(", remainingResourceKeys=").append(remainingResourceKeys)
-                .append(". Business code must commit or roll back transactions on every path; ")
-                .append("move validation before getTransaction when possible. JustTest quarantined the ")
-                .append("leaked thread state, but quarantine is not a substitute for business rollback.")
-                .toString();
-    }
-
-    private Throwable clearMyBatisResources(ApplicationContext context, Throwable failure) {
-        Class<?> sqlSessionFactoryType = loadOptionalClass(SQL_SESSION_FACTORY_CLASS, context);
-        if (sqlSessionFactoryType == null) {
-            return failure;
-        }
-
-        Map<String, ?> factories;
-        try {
-            factories = context.getBeansOfType(sqlSessionFactoryType);
-        } catch (Throwable cleanupFailure) {
-            return appendCleanupFailure(failure, "MyBatis SqlSessionFactory resources", cleanupFailure);
-        }
-
-        for (Map.Entry<String, ?> entry : factories.entrySet()) {
-            try {
-                Object resource = TransactionSynchronizationManager
-                        .unbindResourceIfPossible(entry.getValue());
-                closeSqlSessionResource(resource, context);
-            } catch (Throwable cleanupFailure) {
-                failure = appendCleanupFailure(
-                        failure, "MyBatis resource for bean '" + entry.getKey() + "'", cleanupFailure);
-            }
-        }
-        return failure;
-    }
-
-    private Throwable clearConnectionResources(ApplicationContext context, Throwable failure) {
-        Map<String, DataSource> dataSources;
-        try {
-            dataSources = context.getBeansOfType(DataSource.class);
-        } catch (Throwable cleanupFailure) {
-            return appendCleanupFailure(failure, "JDBC ConnectionHolder resources", cleanupFailure);
-        }
-
-        for (Map.Entry<String, DataSource> entry : dataSources.entrySet()) {
-            try {
-                Object resource = TransactionSynchronizationManager
-                        .unbindResourceIfPossible(entry.getValue());
-                closeConnectionResource(resource);
-            } catch (Throwable cleanupFailure) {
-                failure = appendCleanupFailure(
-                        failure, "JDBC resource for bean '" + entry.getKey() + "'", cleanupFailure);
-            }
-        }
-        return failure;
-    }
-
-    private void closeKnownTransactionResource(Object resource, ApplicationContext context)
-            throws Exception {
-        if (resource instanceof Connection || resource instanceof ConnectionHolder) {
-            closeConnectionResource(resource);
-            return;
-        }
-        closeSqlSessionResource(resource, context);
-    }
-
-    private void closeConnectionResource(Object resource) throws Exception {
-        Connection connection = null;
-        if (resource instanceof ConnectionHolder) {
-            connection = ((ConnectionHolder) resource).getConnection();
-        } else if (resource instanceof Connection) {
-            connection = (Connection) resource;
-        }
-        if (connection != null) {
-            connection.close();
-        }
-    }
-
-    private void closeSqlSessionResource(Object resource, ApplicationContext context) throws Exception {
-        if (resource == null) {
-            return;
-        }
-
-        Class<?> sqlSessionType = loadOptionalClass(SQL_SESSION_CLASS, context);
-        Object sqlSession = sqlSessionType != null && sqlSessionType.isInstance(resource)
-                ? resource
-                : null;
-        if (sqlSession == null) {
-            Class<?> sqlSessionHolderType = loadOptionalClass(SQL_SESSION_HOLDER_CLASS, context);
-            if (sqlSessionHolderType != null && sqlSessionHolderType.isInstance(resource)) {
-                Method getSqlSession = sqlSessionHolderType.getMethod("getSqlSession");
-                sqlSession = getSqlSession.invoke(resource);
-            }
-        }
-        if (sqlSession == null) {
-            return;
-        }
-        if (sqlSessionType != null && sqlSessionType.isInstance(sqlSession)) {
-            sqlSessionType.getMethod("close").invoke(sqlSession);
-        } else if (sqlSession instanceof AutoCloseable) {
-            ((AutoCloseable) sqlSession).close();
-        }
-    }
-
-    private Class<?> loadOptionalClass(String className, ApplicationContext context) {
-        ClassLoader classLoader = context.getClassLoader();
-        if (classLoader == null) {
-            classLoader = Thread.currentThread().getContextClassLoader();
-        }
-        try {
-            return Class.forName(className, false, classLoader);
-        } catch (ClassNotFoundException ignored) {
-            try {
-                return Class.forName(className);
-            } catch (ClassNotFoundException ignoredAgain) {
-                return null;
-            } catch (LinkageError ignoredAgain) {
-                return null;
-            }
-        } catch (LinkageError ignored) {
-            return null;
-        }
-    }
-
-    private Throwable appendCleanupFailure(Throwable failure, String resourceDescription,
-                                            Throwable cleanupFailure) {
-        log.warn("[JustTest] Failed to clean {}: {}", resourceDescription,
-                cleanupFailure.getMessage(), cleanupFailure);
-        return appendFailure(failure, cleanupFailure);
     }
 
     private Throwable releaseCaseDatabase(Throwable failure) {
