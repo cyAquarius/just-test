@@ -2,6 +2,7 @@ package com.just.test.transactionleak;
 
 import com.just.test.transactionleak.control.TransactionRollbackControlCases;
 import com.just.test.transactionleak.leaking.TransactionLeakCases;
+import com.just.test.transactionleak.residual.ResidualTransactionStateCases;
 import org.junit.jupiter.api.Test;
 import org.junit.platform.engine.TestExecutionResult;
 import org.junit.platform.engine.discovery.DiscoverySelectors;
@@ -25,6 +26,9 @@ class TransactionLeakIsolationTest {
         assertEquals(1, results.testEvents().failed().count());
         assertEquals(1, results.testEvents().succeeded().count(),
                 "the normal case after the leak must run successfully on the same thread");
+        assertEquals("b-after-leak",
+                results.testEvents().succeeded().list().get(0).getTestDescriptor().getDisplayName(),
+                "the successful event must belong to the case after the leak");
         Throwable failure = firstFailure(results);
         assertNotNull(failure);
         String diagnostic = flatten(failure);
@@ -46,6 +50,18 @@ class TransactionLeakIsolationTest {
 
         assertEquals(0, results.testEvents().failed().count());
         assertEquals(2, results.testEvents().succeeded().count());
+    }
+
+    @Test
+    void residualStateBeforeCaseFailsFastAndIsQuarantined() {
+        EngineExecutionResults results = execute(ResidualTransactionStateCases.class);
+
+        assertEquals(1, results.testEvents().failed().count());
+        assertEquals(0, results.testEvents().succeeded().count());
+        String diagnostic = flatten(firstFailure(results));
+        assertTrue(diagnostic.contains("Residual Spring transaction state found before case"));
+        assertTrue(diagnostic.contains("case=residual-before-case"));
+        assertFalse(diagnostic.contains("case body must not run"));
     }
 
     private EngineExecutionResults execute(Class<?> testClass) {

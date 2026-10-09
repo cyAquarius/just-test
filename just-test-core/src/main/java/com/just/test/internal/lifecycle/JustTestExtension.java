@@ -107,12 +107,12 @@ public final class JustTestExtension implements BeforeEachCallback, AfterEachCal
         CaseExecutionContext.bind(caseContext);
         caseBound = true;
         try {
-            routingDataSource = beginCaseDatabase(applicationContext);
-            Throwable staleResourceFailure = clearTransactionResources(applicationContext, null);
+            Throwable staleResourceFailure = cleanupTransactionResources(
+                    applicationContext, null, true);
             if (staleResourceFailure != null) {
-                log.warn("[JustTest] Failed to clean stale transaction resources before case [{}]",
-                        caseContext.getCaseName(), staleResourceFailure);
+                throw asException(staleResourceFailure);
             }
+            routingDataSource = beginCaseDatabase(applicationContext);
             prepareCaseData();
 
             ThreadScope.resetCurrentThread();
@@ -233,7 +233,7 @@ public final class JustTestExtension implements BeforeEachCallback, AfterEachCal
         Throwable failure = null;
         failure = closeStaticMocks(failure);
         failure = clearThreadScope(failure);
-        failure = cleanupTransactionResources(applicationContext, failure);
+        failure = cleanupTransactionResources(applicationContext, failure, false);
         failure = releaseCaseDatabase(failure);
         try {
             CaseExecutionContext.clear();
@@ -274,7 +274,8 @@ public final class JustTestExtension implements BeforeEachCallback, AfterEachCal
         return clearConnectionResources(context, failure);
     }
 
-    private Throwable cleanupTransactionResources(ApplicationContext context, Throwable failure) {
+    private Throwable cleanupTransactionResources(ApplicationContext context, Throwable failure,
+                                                  boolean beforeCase) {
         if (context == null) {
             return failure;
         }
@@ -292,7 +293,7 @@ public final class JustTestExtension implements BeforeEachCallback, AfterEachCal
 
         IllegalStateException leakFailure = new IllegalStateException(transactionLeakMessage(
                 actualTransactionActive, synchronizationActive, synchronizationCount,
-                resourcesBeforeCleanup.keySet(), remainingResources.keySet()));
+                resourcesBeforeCleanup.keySet(), remainingResources.keySet(), beforeCase));
         failure = appendFailure(failure, leakFailure);
 
         // 隔离已经确认泄漏的线程状态；这不是业务事务的 rollback 替代品。
@@ -301,9 +302,12 @@ public final class JustTestExtension implements BeforeEachCallback, AfterEachCal
         } catch (Throwable cleanupFailure) {
             failure = appendCleanupFailure(failure, "Spring transaction thread state", cleanupFailure);
         }
-        for (Object resourceKey : remainingResources.keySet()) {
+        for (Map.Entry<Object, Object> entry : remainingResources.entrySet()) {
+            Object resourceKey = entry.getKey();
             try {
-                TransactionSynchronizationManager.unbindResourceIfPossible(resourceKey);
+                Object resource = TransactionSynchronizationManager.unbindResourceIfPossible(resourceKey);
+                closeKnownTransactionResource(
+                        resource == null ? entry.getValue() : resource, context);
             } catch (Throwable cleanupFailure) {
                 failure = appendCleanupFailure(failure,
                         "unexpected transaction resource '" + resourceKey + "'", cleanupFailure);
@@ -331,8 +335,11 @@ public final class JustTestExtension implements BeforeEachCallback, AfterEachCal
                                           boolean synchronizationActive,
                                           Integer synchronizationCount,
                                           java.util.Set<Object> resourceKeysBeforeCleanup,
-                                          java.util.Set<Object> remainingResourceKeys) {
-        return new StringBuilder("[JustTest] Unfinished Spring transaction leaked at case boundary: case=")
+                                          java.util.Set<Object> remainingResourceKeys,
+                                          boolean beforeCase) {
+        return new StringBuilder(beforeCase
+                ? "[JustTest] Residual Spring transaction state found before case: case="
+                : "[JustTest] Unfinished Spring transaction leaked at case boundary: case=")
                 .append(caseContext.getCaseName() == null ? "<unknown>" : caseContext.getCaseName())
                 .append(", thread=").append(Thread.currentThread().getName())
                 .append(", actualTransactionActive=").append(actualTransactionActive)
@@ -385,19 +392,34 @@ public final class JustTestExtension implements BeforeEachCallback, AfterEachCal
             try {
                 Object resource = TransactionSynchronizationManager
                         .unbindResourceIfPossible(entry.getValue());
-                if (resource instanceof ConnectionHolder) {
-                    ConnectionHolder connectionHolder = (ConnectionHolder) resource;
-                    Connection connection = connectionHolder.getConnection();
-                    if (connection != null) {
-                        connection.close();
-                    }
-                }
+                closeConnectionResource(resource);
             } catch (Throwable cleanupFailure) {
                 failure = appendCleanupFailure(
                         failure, "JDBC resource for bean '" + entry.getKey() + "'", cleanupFailure);
             }
         }
         return failure;
+    }
+
+    private void closeKnownTransactionResource(Object resource, ApplicationContext context)
+            throws Exception {
+        if (resource instanceof Connection || resource instanceof ConnectionHolder) {
+            closeConnectionResource(resource);
+            return;
+        }
+        closeSqlSessionResource(resource, context);
+    }
+
+    private void closeConnectionResource(Object resource) throws Exception {
+        Connection connection = null;
+        if (resource instanceof ConnectionHolder) {
+            connection = ((ConnectionHolder) resource).getConnection();
+        } else if (resource instanceof Connection) {
+            connection = (Connection) resource;
+        }
+        if (connection != null) {
+            connection.close();
+        }
     }
 
     private void closeSqlSessionResource(Object resource, ApplicationContext context) throws Exception {

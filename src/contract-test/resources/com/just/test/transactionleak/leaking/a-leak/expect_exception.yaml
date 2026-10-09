@@ -1,2 +1,2 @@
-type: com.just.test.transactionleak.leaking.TransactionLeakCases$ExpectedBusinessException
+type: com.just.test.transactionleak.TransactionTestSupport$ExpectedBusinessException
 message: validation failed after transaction start
