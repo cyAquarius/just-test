@@ -1,0 +1,2 @@
+type: com.just.test.transactionleak.control.TransactionRollbackControlCases$ExpectedBusinessException
+message: validation failed after transaction start

@@ -36,6 +36,7 @@ import javax.sql.DataSource;
 import java.lang.reflect.Method;
 import java.sql.Connection;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -232,7 +233,7 @@ public final class JustTestExtension implements BeforeEachCallback, AfterEachCal
         Throwable failure = null;
         failure = closeStaticMocks(failure);
         failure = clearThreadScope(failure);
-        failure = clearTransactionResources(applicationContext, failure);
+        failure = cleanupTransactionResources(applicationContext, failure);
         failure = releaseCaseDatabase(failure);
         try {
             CaseExecutionContext.clear();
@@ -271,6 +272,79 @@ public final class JustTestExtension implements BeforeEachCallback, AfterEachCal
         }
         failure = clearMyBatisResources(context, failure);
         return clearConnectionResources(context, failure);
+    }
+
+    private Throwable cleanupTransactionResources(ApplicationContext context, Throwable failure) {
+        if (context == null) {
+            return failure;
+        }
+
+        boolean actualTransactionActive = TransactionSynchronizationManager.isActualTransactionActive();
+        boolean synchronizationActive = TransactionSynchronizationManager.isSynchronizationActive();
+        Integer synchronizationCount = synchronizationCount(synchronizationActive);
+        Map<Object, Object> resourcesBeforeCleanup = snapshotTransactionResources();
+
+        failure = clearTransactionResources(context, failure);
+        Map<Object, Object> remainingResources = snapshotTransactionResources();
+        if (!actualTransactionActive && !synchronizationActive && remainingResources.isEmpty()) {
+            return failure;
+        }
+
+        IllegalStateException leakFailure = new IllegalStateException(transactionLeakMessage(
+                actualTransactionActive, synchronizationActive, synchronizationCount,
+                resourcesBeforeCleanup.keySet(), remainingResources.keySet()));
+        failure = appendFailure(failure, leakFailure);
+
+        // 隔离已经确认泄漏的线程状态；这不是业务事务的 rollback 替代品。
+        try {
+            TransactionSynchronizationManager.clear();
+        } catch (Throwable cleanupFailure) {
+            failure = appendCleanupFailure(failure, "Spring transaction thread state", cleanupFailure);
+        }
+        for (Object resourceKey : remainingResources.keySet()) {
+            try {
+                TransactionSynchronizationManager.unbindResourceIfPossible(resourceKey);
+            } catch (Throwable cleanupFailure) {
+                failure = appendCleanupFailure(failure,
+                        "unexpected transaction resource '" + resourceKey + "'", cleanupFailure);
+            }
+        }
+        return failure;
+    }
+
+    private Integer synchronizationCount(boolean synchronizationActive) {
+        if (!synchronizationActive) {
+            return Integer.valueOf(0);
+        }
+        try {
+            return Integer.valueOf(TransactionSynchronizationManager.getSynchronizations().size());
+        } catch (Throwable ignored) {
+            return null;
+        }
+    }
+
+    private Map<Object, Object> snapshotTransactionResources() {
+        return new LinkedHashMap<Object, Object>(TransactionSynchronizationManager.getResourceMap());
+    }
+
+    private String transactionLeakMessage(boolean actualTransactionActive,
+                                          boolean synchronizationActive,
+                                          Integer synchronizationCount,
+                                          java.util.Set<Object> resourceKeysBeforeCleanup,
+                                          java.util.Set<Object> remainingResourceKeys) {
+        return new StringBuilder("[JustTest] Unfinished Spring transaction leaked at case boundary: case=")
+                .append(caseContext.getCaseName() == null ? "<unknown>" : caseContext.getCaseName())
+                .append(", thread=").append(Thread.currentThread().getName())
+                .append(", actualTransactionActive=").append(actualTransactionActive)
+                .append(", synchronizationActive=").append(synchronizationActive)
+                .append(", synchronizationCount=")
+                .append(synchronizationCount == null ? "unavailable" : synchronizationCount)
+                .append(", resourceKeysBeforeCleanup=").append(resourceKeysBeforeCleanup)
+                .append(", remainingResourceKeys=").append(remainingResourceKeys)
+                .append(". Business code must commit or roll back transactions on every path; ")
+                .append("move validation before getTransaction when possible. JustTest quarantined the ")
+                .append("leaked thread state, but quarantine is not a substitute for business rollback.")
+                .toString();
     }
 
     private Throwable clearMyBatisResources(ApplicationContext context, Throwable failure) {
