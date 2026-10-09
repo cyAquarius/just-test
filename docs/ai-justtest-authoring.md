@@ -39,7 +39,7 @@ public class JustTestApplication {
 
 从较窄的手写启动类迁到 `@JustTestProject` 会扩大扫描和自动配置面：把原来的 `excludeAutoConfiguration` 与 mock 一并迁过去。JustTest **不会**自动 exclude 第三方 `*AutoConfiguration`。若 `@JustMock` / `@ThreadScopedMock` 与某个 `*AutoConfiguration` 的同类型 Bean 共存，Context 启动会 fail-fast 一次（列出冲突类型、候选 Bean 名、mock / 自动配置来源，并建议 `excludeAutoConfiguration` 或删掉多余 mock），JUnit 中止该类，后续 YAML case 不会反复刷新同一个失败 Context。`@Resource` 语义不变，框架也不会静默让 mock 压过生产 Bean。
 
-当前主线（待发布的 `1.2.3`）会在 case 边界 fail-fast 检测未结束的 Spring 事务同步/线程状态，并只在检测到泄漏后隔离线程；泄漏源 case 即使匹配 `expect_exception.yaml` 也会失败。业务代码仍必须在所有路径 commit/rollback，框架隔离不是业务 rollback 的替代品。#6/#12 处理 holder，#67 补充事务同步与 active-transaction 状态。`1.2.2` 新增上述 mock 冲突 fail-fast。`1.2.1` 已包含撤回框架默认关闭 OkHttp，以及 opt-in `@JustTestProject(autoMockFeignClients)`（仅 `@FeignClient`）。
+当前已发布的 `1.2.3` 会在 case 边界 fail-fast 检测未结束的 Spring 事务同步/线程状态，并只在检测到泄漏后隔离线程；泄漏源 case 即使匹配 `expect_exception.yaml` 也会失败。业务代码仍必须在所有路径 commit/rollback，框架隔离不是业务 rollback 的替代品。#6/#12 处理 holder，#67 补充事务同步与 active-transaction 状态。`1.2.2` 新增上述 mock 冲突 fail-fast。`1.2.1` 已包含撤回框架默认关闭 OkHttp，以及 opt-in `@JustTestProject(autoMockFeignClients)`（仅 `@FeignClient`）。
 3. `@JustTest` 已包含 Boot TestContext 与 `test` profile；不要再叠 `@SpringBootTest` 或 `@BootstrapWith`。启动配置不得加载生产 `DataSource` / 事务管理器。
 
 三层职责（框架拥有 / 默认可覆盖 / 项目必须声明）见 README「编写测试」。用例目录仍是 Support + 方法包，不要改成别的 case 根。
