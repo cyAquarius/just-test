@@ -242,6 +242,10 @@
                             <autoPublish>true</autoPublish>
                             <waitUntil>published</waitUntil>
                             <skipPublishing>${just-test.publish.skip}</skipPublishing>
+                            <!-- Isolate staging per module; shared reactor staging can upload a
+                                 mixed boot2+boot3 bundle that Central rejects (missing .pom). -->
+                            <stagingDirectory>${project.build.directory}/central-staging</stagingDirectory>
+                            <outputDirectory>${project.build.directory}/central-publishing</outputDirectory>
                         </configuration>
                     </plugin>
                 </plugins>
