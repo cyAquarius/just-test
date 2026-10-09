@@ -16,8 +16,9 @@ cd "${root}"
 : "${CENTRAL_USERNAME:?CENTRAL_USERNAME is required}"
 : "${CENTRAL_PASSWORD:?CENTRAL_PASSWORD is required}"
 
-mvn_cmd=(mvn --batch-mode --no-transfer-progress)
+auth_header="Authorization: Bearer $(printf '%s:%s' "${CENTRAL_USERNAME}" "${CENTRAL_PASSWORD}" | base64 | tr -d '\n')"
 api="https://central.sonatype.com/api/v1/publisher"
+mvn_cmd=(mvn --batch-mode --no-transfer-progress)
 
 scrub_staging() {
   local dir="$1"
@@ -43,31 +44,32 @@ upload_and_wait() {
   local name="$2"
   local response deployment_id state i
 
-  response="$(curl -sS -u "${CENTRAL_USERNAME}:${CENTRAL_PASSWORD}" \
-    -F "bundle=@${zip}" \
+  response="$(curl -sS -X POST \
+    -H "${auth_header}" \
+    -F "bundle=@${zip};type=application/octet-stream" \
     "${api}/upload?name=${name}&publishingType=AUTOMATIC")"
   echo "Central upload response: ${response}"
 
-  deployment_id="$(printf '%s' "${response}" | tr -d '\r' | tr -d '"')"
+  deployment_id="$(printf '%s' "${response}" | tr -d '\r' | tr -d '"' | tr -d '\n')"
   if [[ ! "${deployment_id}" =~ ^[0-9a-fA-F-]{36}$ ]]; then
-    # some API versions return JSON {"deploymentId":"..."}
     deployment_id="$(printf '%s' "${response}" | sed -n 's/.*"deploymentId"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p')"
   fi
-  if [[ -z "${deployment_id}" ]]; then
+  if [[ -z "${deployment_id}" || ! "${deployment_id}" =~ ^[0-9a-fA-F-]{36}$ ]]; then
     echo "Failed to parse deployment id from: ${response}" >&2
     exit 1
   fi
   echo "Deployment id: ${deployment_id}"
 
   for i in $(seq 1 90); do
-    state="$(curl -sS -u "${CENTRAL_USERNAME}:${CENTRAL_PASSWORD}" \
+    state="$(curl -sS -X POST \
+      -H "${auth_header}" \
       "${api}/status?id=${deployment_id}")"
     echo "status[${i}]: ${state}"
     if printf '%s' "${state}" | rg -q '"deploymentState"[[:space:]]*:[[:space:]]*"PUBLISHED"'; then
       echo "Published ${name}"
       return 0
     fi
-    if printf '%s' "${state}" | rg -q '"deploymentState"[[:space:]]*:[[:space:]]*"(FAILED|REJECTED)"'; then
+    if printf '%s' "${state}" | rg -q '"deploymentState"[[:space:]]*:[[:space:]]*"FAILED"'; then
       echo "Central deployment failed: ${state}" >&2
       exit 1
     fi
@@ -97,12 +99,12 @@ for module in just-test-boot2 just-test-boot3; do
   staging="$(find_staging_dir "${module}")"
   if [[ -z "${staging}" ]]; then
     echo "No central-staging directory found for ${module}" >&2
+    find "${module}/target" -maxdepth 3 -type d -print >&2 || true
     exit 1
   fi
 
   scrub_staging "${staging}"
 
-  # Guard: refuse to ship local-repo metadata even if scrub missed something.
   if find "${staging}" \( -name 'maven-metadata*.xml' -o -name '_remote.repositories*' \) | rg -q .; then
     echo "Staging still contains local-repo metadata:" >&2
     find "${staging}" \( -name 'maven-metadata*.xml' -o -name '_remote.repositories*' \) >&2
@@ -121,6 +123,10 @@ for module in just-test-boot2 just-test-boot3; do
   ( cd "${staging}" && zip -r -X "${root}/${zip_path}" . )
   echo "Clean bundle:"
   unzip -l "${zip_path}"
+  if unzip -l "${zip_path}" | rg -q 'maven-metadata|_remote\.repositories'; then
+    echo "Clean zip still contains local-repo metadata" >&2
+    exit 1
+  fi
 
   version="$(mvn --quiet -pl "${module}" help:evaluate -Dexpression=project.version -DforceStdout)"
   upload_and_wait "${zip_path}" "${module}-${version}"
