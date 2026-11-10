@@ -2,7 +2,7 @@
  * JustTest 引擎内部实现。
  *
  * <p>本包及其子包不是稳定消费 API，不提供兼容承诺，可随时变更。
- * 应用测试应只依赖 {@code com.just.test.annotation}、
+ * 应用测试应只依赖 {@code com.just.test.annotation}（含 {@code @JustSpy}）、
  * {@link com.just.test.context.CaseContext}、
  * {@link com.just.test.lifecycle.JustTestLifecycle}、
  * {@link com.just.test.mock.StaticMockContext}

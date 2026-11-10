@@ -1,6 +1,7 @@
 package com.just.test.internal.mock;
 
 import com.just.test.annotation.JustMock;
+import com.just.test.annotation.JustSpy;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.config.DependencyDescriptor;
 import org.springframework.core.annotation.AnnotatedElementUtils;
@@ -13,10 +14,11 @@ import java.util.Objects;
 import java.util.Set;
 
 /**
- * 一个 {@code @JustMock} 字段表达的 Bean 选择意图。
+ * 一个 {@code @JustMock} 或 {@code @JustSpy} 字段表达的 Bean 选择意图。
  *
  * <p>声明类只用于诊断；Context 缓存只关心会影响 Bean 选择的语义字段，
- * 使不同测试类的等价声明能够复用 Context。</p>
+ * 使不同测试类的等价声明能够复用 Context。{@code spy} 会进入 equals / hashCode，
+ * 因此同一选择下的 mock 与 spy 不会共用 Spring Test Context。</p>
  */
 final class JustMockDefinition {
 
@@ -27,10 +29,12 @@ final class JustMockDefinition {
     private final String declaringClassName;
     private final Field field;
     private final boolean createIfAbsent;
+    private final boolean spy;
 
     private JustMockDefinition(Class<?> type, String fieldName, String explicitBeanName,
                                 Set<Annotation> qualifierAnnotations,
-                                String declaringClassName, Field field, boolean createIfAbsent) {
+                                String declaringClassName, Field field,
+                                boolean createIfAbsent, boolean spy) {
         this.type = type;
         this.fieldName = fieldName;
         this.explicitBeanName = explicitBeanName;
@@ -39,9 +43,20 @@ final class JustMockDefinition {
         this.declaringClassName = declaringClassName;
         this.field = field;
         this.createIfAbsent = createIfAbsent;
+        this.spy = spy;
     }
 
     static JustMockDefinition forField(Field field, JustMock justMock) {
+        return new JustMockDefinition(field.getType(), field.getName(), justMock.name(),
+                qualifiers(field), field.getDeclaringClass().getName(), field, false, false);
+    }
+
+    static JustMockDefinition forSpyField(Field field, JustSpy justSpy) {
+        return new JustMockDefinition(field.getType(), field.getName(), justSpy.name(),
+                qualifiers(field), field.getDeclaringClass().getName(), field, false, true);
+    }
+
+    private static Set<Annotation> qualifiers(Field field) {
         Set<Annotation> qualifiers = new LinkedHashSet<>();
         for (Annotation annotation : field.getAnnotations()) {
             Class<? extends Annotation> annotationType = annotation.annotationType();
@@ -50,20 +65,19 @@ final class JustMockDefinition {
                 qualifiers.add(annotation);
             }
         }
-        return new JustMockDefinition(field.getType(), field.getName(), justMock.name(),
-                qualifiers, field.getDeclaringClass().getName(), field, false);
+        return qualifiers;
     }
 
     static JustMockDefinition forBeanName(Class<?> type, String beanName, String source) {
         return new JustMockDefinition(type, beanName, beanName,
-                Collections.emptySet(), source, null, false);
+                Collections.emptySet(), source, null, false, false);
     }
 
     static JustMockDefinition forAutoMock(Class<?> type, String existingBeanName, String source) {
         boolean createIfAbsent = existingBeanName == null || existingBeanName.isEmpty();
         String beanName = createIfAbsent ? decapitalize(type.getSimpleName()) : existingBeanName;
         return new JustMockDefinition(type, beanName, beanName,
-                Collections.emptySet(), source, null, createIfAbsent);
+                Collections.emptySet(), source, null, createIfAbsent, false);
     }
 
     static String decapitalize(String simpleName) {
@@ -79,6 +93,7 @@ final class JustMockDefinition {
     String getDeclaringClassName() { return declaringClassName; }
     boolean hasQualifierAnnotations() { return !qualifierAnnotations.isEmpty(); }
     boolean isCreateIfAbsent() { return createIfAbsent; }
+    boolean isSpy() { return spy; }
 
     DependencyDescriptor toDependencyDescriptor() {
         if (field == null) {
@@ -92,17 +107,17 @@ final class JustMockDefinition {
     }
 
     /**
-     * 诊断用的 mock 来源标签：{@code @JustMock}、{@code @ThreadScopedMock}，
+     * 诊断用的来源标签：{@code @JustMock}、{@code @JustSpy}、{@code @ThreadScopedMock}，
      * 或 auto-mock 来源字符串。
      */
     String sourceLabel() {
         if (field != null) {
-            return "@JustMock";
+            return spy ? "@JustSpy" : "@JustMock";
         }
         if (declaringClassName != null && !declaringClassName.isEmpty()) {
             return declaringClassName;
         }
-        return "@JustMock";
+        return spy ? "@JustSpy" : "@JustMock";
     }
 
     @Override
@@ -111,7 +126,8 @@ final class JustMockDefinition {
         if (!(other instanceof JustMockDefinition)) return false;
         JustMockDefinition that = (JustMockDefinition) other;
         if (!Objects.equals(type, that.type)
-                || !Objects.equals(explicitBeanName, that.explicitBeanName)) {
+                || !Objects.equals(explicitBeanName, that.explicitBeanName)
+                || spy != that.spy) {
             return false;
         }
         if (!explicitBeanName.isEmpty()) {
@@ -124,8 +140,8 @@ final class JustMockDefinition {
     @Override
     public int hashCode() {
         if (!explicitBeanName.isEmpty()) {
-            return Objects.hash(type, explicitBeanName);
+            return Objects.hash(type, explicitBeanName, spy);
         }
-        return Objects.hash(type, fieldName, explicitBeanName, qualifierAnnotations);
+        return Objects.hash(type, fieldName, explicitBeanName, qualifierAnnotations, spy);
     }
 }

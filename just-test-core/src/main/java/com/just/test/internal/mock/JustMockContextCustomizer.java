@@ -7,14 +7,15 @@ import org.springframework.context.annotation.AnnotatedBeanDefinitionReader;
 import org.springframework.test.context.ContextCustomizer;
 import org.springframework.test.context.MergedContextConfiguration;
 
+import java.util.Collections;
 import java.util.Objects;
 import java.util.Set;
 
 /**
  * 将 {@link JustMockPostProcessor} 注册到 ApplicationContext。
  *
- * <p>equals/hashCode 基于影响 Bean 选择的 mock 语义，决定 Spring Context 缓存 key：
- * 相同 mock 组合共享 Context，不同组合独立 Context。</p>
+ * <p>equals/hashCode 基于影响 Bean 选择的 {@code @JustMock} 与 {@code @JustSpy} 语义，
+ * 决定 Spring Context 缓存 key：相同组合共享 Context，不同组合独立 Context。</p>
  *
  * <p>这里只隔离 JustTest 自己拥有的资源；业务 JVM 静态状态不属于
  * ApplicationContext，不能通过 Context 创建锁获得通用的并发隔离。</p>
@@ -22,16 +23,23 @@ import java.util.Set;
 class JustMockContextCustomizer implements ContextCustomizer {
 
     private final Set<JustMockDefinition> mockDefinitions;
+    private final Set<JustMockDefinition> spyDefinitions;
 
     JustMockContextCustomizer(Set<JustMockDefinition> mockDefinitions) {
+        this(mockDefinitions, Collections.<JustMockDefinition>emptySet());
+    }
+
+    JustMockContextCustomizer(Set<JustMockDefinition> mockDefinitions,
+                              Set<JustMockDefinition> spyDefinitions) {
         this.mockDefinitions = mockDefinitions;
+        this.spyDefinitions = spyDefinitions;
     }
 
     @Override
     public void customizeContext(ConfigurableApplicationContext context,
                                  MergedContextConfiguration mergedConfig) {
         registerJustTestConfiguration(context);
-        JustMockPostProcessor postProcessor = new JustMockPostProcessor(mockDefinitions);
+        JustMockPostProcessor postProcessor = new JustMockPostProcessor(mockDefinitions, spyDefinitions);
         // 仅通过 addBeanFactoryPostProcessor 注册一次。
         // 之前同时 registerSingleton + addBeanFactoryPostProcessor 会让 Spring 执行 PostProcessor 两次
         // （一次作为 BeanFactoryPostProcessor bean,一次来自 context.beanFactoryPostProcessors 列表),
@@ -55,11 +63,12 @@ class JustMockContextCustomizer implements ContextCustomizer {
         if (this == o) return true;
         if (o == null || getClass() != o.getClass()) return false;
         JustMockContextCustomizer that = (JustMockContextCustomizer) o;
-        return Objects.equals(mockDefinitions, that.mockDefinitions);
+        return Objects.equals(mockDefinitions, that.mockDefinitions)
+                && Objects.equals(spyDefinitions, that.spyDefinitions);
     }
 
     @Override
     public int hashCode() {
-        return Objects.hash(mockDefinitions);
+        return Objects.hash(mockDefinitions, spyDefinitions);
     }
 }

@@ -1,6 +1,7 @@
 package com.just.test.internal.mock;
 
 import com.just.test.annotation.JustMock;
+import com.just.test.annotation.JustSpy;
 import com.just.test.annotation.JustTest;
 import org.junit.jupiter.api.Test;
 import org.springframework.test.context.ContextCustomizer;
@@ -30,6 +31,23 @@ class JustMockContextCustomizerFactoryTest {
     }
 
     @Test
+    void rejectsJustSpyOutsideJustTest() {
+        IllegalStateException failure = assertThrows(IllegalStateException.class,
+                () -> factory.createContextCustomizer(SpyWithoutJustTest.class, Collections.emptyList()));
+
+        assertTrue(failure.getMessage().contains("uses @JustSpy without @JustTest"));
+    }
+
+    @Test
+    void rejectsFieldThatDeclaresBothJustMockAndJustSpy() {
+        IllegalStateException failure = assertThrows(IllegalStateException.class,
+                () -> factory.createContextCustomizer(BothAnnotations.class, Collections.emptyList()));
+
+        assertTrue(failure.getMessage().contains("declares both @JustMock and @JustSpy"));
+        assertTrue(failure.getMessage().contains("client"));
+    }
+
+    @Test
     void configuresJustTestWithoutJustMockFields() {
         ContextCustomizer customizer = factory.createContextCustomizer(
                 EmptyJustTest.class, Collections.emptyList());
@@ -39,6 +57,18 @@ class JustMockContextCustomizerFactoryTest {
 
     static class InvalidTest {
         @JustMock
+        private Runnable client;
+    }
+
+    static class SpyWithoutJustTest {
+        @JustSpy
+        private Runnable client;
+    }
+
+    @JustTest
+    static class BothAnnotations {
+        @JustMock
+        @JustSpy
         private Runnable client;
     }
 

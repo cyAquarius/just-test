@@ -112,8 +112,57 @@ final class JustMockBeanOrigins {
             }
             message.append(" })\n");
         }
-        message.append("  - or remove the redundant @JustMock / @ThreadScopedMock");
+        message.append("  - or remove the redundant @JustMock / @JustSpy / @ThreadScopedMock");
         return message.toString();
+    }
+
+    static IllegalStateException spyAndMockConflict(Class<?> type,
+                                                    List<JustMockDefinition> spies,
+                                                    List<JustMockDefinition> mocks) {
+        return new IllegalStateException(formatSpyAndMock(type, spies, mocks));
+    }
+
+    static String formatSpyAndMock(Class<?> type,
+                                   List<JustMockDefinition> spies,
+                                   List<JustMockDefinition> mocks) {
+        StringBuilder message = new StringBuilder();
+        message.append("[JustTest] Conflicting beans of type ").append(type.getName()).append('.');
+        message.append(" JustTest does not combine @JustSpy with @JustMock or @ThreadScopedMock");
+        message.append(" for the same type. Candidates:\n");
+        appendSpyMockCandidates(message, spies);
+        appendSpyMockCandidates(message, mocks);
+        message.append("Next steps:\n");
+        message.append("  - keep only @JustSpy so unstubbed methods call the real bean\n");
+        message.append("  - or remove @JustSpy and keep @JustMock / @ThreadScopedMock\n");
+        return message.toString();
+    }
+
+    static IllegalStateException sameBeanSpyMockConflict(String beanName,
+                                                         JustMockDefinition spy,
+                                                         JustMockDefinition mock) {
+        StringBuilder message = new StringBuilder();
+        message.append("[JustTest] Conflicting beans named '").append(beanName).append("'.");
+        message.append(" @JustSpy and ").append(mock.sourceLabel()).append(" selected the same bean.");
+        message.append(" Candidates:\n");
+        message.append("  - ").append(beanName).append(": ").append(spy.sourceLabel())
+                .append(" from ").append(spy.describe()).append('\n');
+        message.append("  - ").append(beanName).append(": ").append(mock.sourceLabel())
+                .append(" from ").append(mock.describe()).append('\n');
+        message.append("Next steps:\n");
+        message.append("  - keep only @JustSpy so unstubbed methods call the real bean\n");
+        message.append("  - or remove @JustSpy and keep ").append(mock.sourceLabel()).append('\n');
+        return new IllegalStateException(message.toString());
+    }
+
+    private static void appendSpyMockCandidates(StringBuilder message, List<JustMockDefinition> definitions) {
+        for (JustMockDefinition definition : definitions) {
+            String name = definition.getExplicitBeanName();
+            if (name == null || name.isEmpty()) {
+                name = definition.getFieldName();
+            }
+            message.append("  - ").append(name).append(": ").append(definition.sourceLabel())
+                    .append(" from ").append(definition.describe()).append('\n');
+        }
     }
 
     static String detectAutoConfigurationClass(ConfigurableListableBeanFactory beanFactory,
