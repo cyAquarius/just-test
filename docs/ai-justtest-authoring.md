@@ -27,6 +27,7 @@ flowchart LR
 
 - 不要同时引入两个顶层 artifact。
 - 不要单独声明 `just-test-core`：它已 shade 进 boot JAR，Central 不上架。
+- Maven Central 已发布版本仍是 `1.2.7`。本仓库待发布坐标是 `1.2.8`（尚未打 tag，也未发布）。本地 `mvn install` 使用 `1.2.8`。
 
 ## 启动类
 
@@ -88,6 +89,10 @@ public class JustTestApplication {
 - 没装上的类型 fail-fast。不要指望框架退回替换定义，也不要指望它拆开缓存。
 - 真实 Bean 内部的 `this.foo()` 不会进拦截。
 - final 或当前 mock-maker 不能代理的类型会在启动期失败。
+- 待发布的 `1.2.8`：同一个真实 Bean 可以同时按接口和实现类 `@JustMock`。按解析到的 Bean 名只注册一次拦截，两个字段绑定同一个线程级 mock。
+- 当前类声明了其中任一类型，未 stub 走 Mockito 默认值；都没声明仍走真实 Bean。
+- 无法安全合并（mock 类型不兼容、多个候选 Bean）会在启动期 fail-fast。诊断里有声明类型、Bean 名和声明它们的测试类。
+- 解析到同一个 Bean 时，不要为了混用接口和实现去改测试类。
 - 没有 `@JustTestProject` 的手写启动类上，真实 Bean `@JustMock` 仍会替换定义并进入缓存 key。
 - 同一类型多个候选时仍在启动期 fail-fast。不要指望框架自动 exclude 自动配置。
 
@@ -107,6 +112,7 @@ public class JustTestApplication {
 
 **已发布语义（生成时按此写，不要按更旧的替换行为写）**
 
+- `1.2.8`（待发布，尚未打 tag，也未发布）：同一 Bean 的接口 / 实现 `@JustMock` 按 Bean 名去重，规则见上。#93。生成对着已发布的 `1.2.7` 时，不要假设这次去重已经在 Central 上。
 - `1.2.7`：指向真实 Bean 的 `@JustMock` 是线程拦截，规则见上。#88。
 - `1.2.6`：针对已有线程级 mock 的 `@JustMock` 是绑定。#85。
 - `1.2.5`：线程作用域 `@JustSpy` / `@JustMock` 保持为可 stub 的 Mockito mock，Spring 自动代理的 advisor 留在真实 Bean 上。#81。
@@ -206,6 +212,7 @@ class CreateJustTest extends OrderJustTestSupport {
 - 替换 Spring Bean 用 `@JustMock`。只 stub 已有 Bean 的个别方法、其余走真实逻辑（包括 `prepare.yaml` / H2）时用 `@JustSpy`。
 - 静态 Context / 工厂入口用 `configureStaticMocks` + `StaticMockContext`。
 - 使用 `@JustTestProject` 时，真实 Bean 的 `@JustMock` 不拆 Context：未 stub 必须是 Mockito 默认值，没声明 `@JustMock` 的类仍走真实 Bean。
+- 待发布的 `1.2.8` 里，接口和实现解析到同一个 Bean 时只拦截一次；声明了任一类型即激活。不能安全合并则启动期 fail-fast，不要改成运行期递归。
 - 包树之外的测试若需要拦截，必须把类型写进 `interceptMocks`。该共享 Context 第一次启动后不能再追加类型。
 - 真实 Bean 内部的 `this.foo()` 不会进拦截。final 或当前 mock-maker 不能代理的类型会在启动期失败。
 - `@JustSpy` 必须 stub 成 `doReturn` / `doThrow` / `doNothing`。`when(spy.foo())` 会先调用真实方法。
@@ -247,7 +254,8 @@ class CreateJustTest extends OrderJustTestSupport {
 
 ## 写出前核对
 
-- [ ] 只依赖 `just-test-boot2` 或 `just-test-boot3` 之一，版本 `1.2.7`，`scope` 为 `test`，没有 `just-test-core`。
+- [ ] 只依赖 `just-test-boot2` 或 `just-test-boot3` 之一，已发布版本 `1.2.7`，`scope` 为 `test`，没有 `just-test-core`。本仓库待发布坐标是 `1.2.8`，不要写成已经发布。
+- [ ] 同一个真实 Bean 的接口 `@JustMock` 与实现类 `@JustMock` 可以并存。`1.2.8` 按 Bean 名只拦截一次。不要为了这种混用去改声明；不能安全合并时期望启动期 fail-fast。
 - [ ] 有 `src/test/resources/sql/schema.sql`，且启动类不加载生产 DataSource / 事务管理器。
 - [ ] `@JustTestProject` 在独立测试包，`@JustTest` 类在该包或子包。
 - [ ] 没有默认关闭 OkHttp。`autoMockFeignClients` 仅在需要时打开，且只覆盖 `@FeignClient`。

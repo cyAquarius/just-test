@@ -18,8 +18,10 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
 import java.util.Collections;
+import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -36,7 +38,8 @@ final class JustMockInterceptPlan {
     private static final String INTERCEPT_MOCKS = "interceptMocks";
 
     private static final JustMockInterceptPlan NONE =
-            new JustMockInterceptPlan(null, Collections.<Class<?>>emptySet(), Collections.<Class<?>>emptySet());
+            new JustMockInterceptPlan(null, Collections.<Class<?>>emptySet(),
+                    Collections.<Class<?>>emptySet(), Collections.<Class<?>, Set<String>>emptyMap());
 
     private static final ConcurrentHashMap<String, Union> CACHE =
             new ConcurrentHashMap<String, Union>();
@@ -44,13 +47,16 @@ final class JustMockInterceptPlan {
     private final Class<?> startupClass;
     private final Set<Class<?>> explicitTypes;
     private final Set<Class<?>> scannedTypes;
+    private final Map<Class<?>, Set<String>> declaredBy;
 
     private JustMockInterceptPlan(Class<?> startupClass,
                                   Set<Class<?>> explicitTypes,
-                                  Set<Class<?>> scannedTypes) {
+                                  Set<Class<?>> scannedTypes,
+                                  Map<Class<?>, Set<String>> declaredBy) {
         this.startupClass = startupClass;
         this.explicitTypes = explicitTypes;
         this.scannedTypes = scannedTypes;
+        this.declaredBy = declaredBy;
     }
 
     static JustMockInterceptPlan none() {
@@ -63,10 +69,35 @@ final class JustMockInterceptPlan {
     static JustMockInterceptPlan project(Class<?> startupClass,
                                          Collection<Class<?>> explicitTypes,
                                          Collection<Class<?>> scannedTypes) {
+        return project(startupClass, explicitTypes, scannedTypes,
+                Collections.<Class<?>, Collection<Class<?>>>emptyMap());
+    }
+
+    /**
+     * 测试用。{@code declaredBy} 把声明类型映到声明它的测试类，供无法合并时的诊断使用。
+     */
+    static JustMockInterceptPlan project(Class<?> startupClass,
+                                         Collection<Class<?>> explicitTypes,
+                                         Collection<Class<?>> scannedTypes,
+                                         Map<Class<?>, ? extends Collection<Class<?>>> declaredBy) {
+        Map<Class<?>, LinkedHashSet<String>> names = new LinkedHashMap<Class<?>, LinkedHashSet<String>>();
+        if (declaredBy != null) {
+            for (Map.Entry<Class<?>, ? extends Collection<Class<?>>> entry : declaredBy.entrySet()) {
+                rememberAll(names, entry.getKey(), entry.getValue());
+            }
+        }
+        if (startupClass != null && explicitTypes != null) {
+            for (Class<?> type : explicitTypes) {
+                if (type != null && !names.containsKey(type)) {
+                    rememberDeclarer(names, type, startupClass.getName());
+                }
+            }
+        }
         return new JustMockInterceptPlan(
                 startupClass,
                 copy(explicitTypes),
-                copy(scannedTypes));
+                copy(scannedTypes),
+                freeze(names));
     }
 
     static JustMockInterceptPlan forTest(Class<?> testClass, List<ContextConfigurationAttributes> attributes) {
@@ -84,7 +115,8 @@ final class JustMockInterceptPlan {
             Union raced = CACHE.putIfAbsent(cacheKey, created);
             cached = raced == null ? created : raced;
         }
-        return new JustMockInterceptPlan(startup, cached.explicitTypes, cached.scannedTypes);
+        return new JustMockInterceptPlan(
+                startup, cached.explicitTypes, cached.scannedTypes, cached.declaredBy);
     }
 
     boolean isProject() {
@@ -107,6 +139,25 @@ final class JustMockInterceptPlan {
         return scannedTypes;
     }
 
+    /**
+     * 声明了 {@code type} 的测试类，或把该类型写进 {@code interceptMocks} 的启动类。
+     * 没有记录时返回固定占位，避免诊断里出现空列表。
+     */
+    String declaredBy(Class<?> type) {
+        Set<String> names = type == null ? null : declaredBy.get(type);
+        if (names == null || names.isEmpty()) {
+            return "(no test class recorded)";
+        }
+        StringBuilder builder = new StringBuilder();
+        for (String name : names) {
+            if (builder.length() > 0) {
+                builder.append(", ");
+            }
+            builder.append(name);
+        }
+        return builder.toString();
+    }
+
     IllegalStateException notInstalled(JustMockDefinition definition) {
         String startup = startupClass == null ? "(no @JustTestProject)" : startupClass.getName();
         return new IllegalStateException("[JustMock] " + definition.describe()
@@ -119,12 +170,14 @@ final class JustMockInterceptPlan {
     }
 
     private static Union discover(Class<?> startup) {
-        Set<Class<?>> explicit = explicitTypes(startup);
-        Set<Class<?>> scanned = scanJustMockTypes(startup);
-        return new Union(explicit, scanned);
+        Map<Class<?>, LinkedHashSet<String>> declaredBy = new LinkedHashMap<Class<?>, LinkedHashSet<String>>();
+        Set<Class<?>> explicit = explicitTypes(startup, declaredBy);
+        Set<Class<?>> scanned = scanJustMockTypes(startup, declaredBy);
+        return new Union(explicit, scanned, freeze(declaredBy));
     }
 
-    private static Set<Class<?>> explicitTypes(Class<?> startup) {
+    private static Set<Class<?>> explicitTypes(Class<?> startup,
+                                               Map<Class<?>, LinkedHashSet<String>> declaredBy) {
         AnnotationAttributes attributes = AnnotatedElementUtils.getMergedAnnotationAttributes(
                 startup, JUST_TEST_PROJECT);
         if (attributes == null || !attributes.containsKey(INTERCEPT_MOCKS)) {
@@ -134,10 +187,14 @@ final class JustMockInterceptPlan {
         if (declared == null || declared.length == 0) {
             return Collections.emptySet();
         }
+        for (Class<?> type : declared) {
+            rememberDeclarer(declaredBy, type, startup.getName());
+        }
         return copy(Arrays.asList(declared));
     }
 
-    private static Set<Class<?>> scanJustMockTypes(Class<?> startup) {
+    private static Set<Class<?>> scanJustMockTypes(Class<?> startup,
+                                                   Map<Class<?>, LinkedHashSet<String>> declaredBy) {
         String basePackage = ClassUtils.getPackageName(startup);
         if (basePackage == null || basePackage.isEmpty()) {
             return Collections.emptySet();
@@ -162,12 +219,14 @@ final class JustMockInterceptPlan {
             if (startupClass(testClass, Collections.<ContextConfigurationAttributes>emptyList()) != startup) {
                 continue;
             }
-            collectJustMockTypes(testClass, types);
+            collectJustMockTypes(testClass, types, declaredBy);
         }
         return Collections.unmodifiableSet(types);
     }
 
-    private static void collectJustMockTypes(Class<?> testClass, Set<Class<?>> types) {
+    private static void collectJustMockTypes(Class<?> testClass,
+                                             Set<Class<?>> types,
+                                             Map<Class<?>, LinkedHashSet<String>> declaredBy) {
         for (Class<?> current = testClass; current != null && current != Object.class;
              current = current.getSuperclass()) {
             for (Field field : current.getDeclaredFields()) {
@@ -179,8 +238,48 @@ final class JustMockInterceptPlan {
                     continue;
                 }
                 types.add(fieldType);
+                rememberDeclarer(declaredBy, fieldType, testClass.getName());
             }
         }
+    }
+
+    private static void rememberAll(Map<Class<?>, LinkedHashSet<String>> declaredBy,
+                                    Class<?> type,
+                                    Collection<Class<?>> testClasses) {
+        if (testClasses == null) {
+            return;
+        }
+        for (Class<?> testClass : testClasses) {
+            if (testClass != null) {
+                rememberDeclarer(declaredBy, type, testClass.getName());
+            }
+        }
+    }
+
+    private static void rememberDeclarer(Map<Class<?>, LinkedHashSet<String>> declaredBy,
+                                         Class<?> type,
+                                         String declarer) {
+        if (type == null || declarer == null || declarer.isEmpty()) {
+            return;
+        }
+        LinkedHashSet<String> names = declaredBy.get(type);
+        if (names == null) {
+            names = new LinkedHashSet<String>();
+            declaredBy.put(type, names);
+        }
+        names.add(declarer);
+    }
+
+    private static Map<Class<?>, Set<String>> freeze(Map<Class<?>, LinkedHashSet<String>> declaredBy) {
+        if (declaredBy.isEmpty()) {
+            return Collections.emptyMap();
+        }
+        Map<Class<?>, Set<String>> frozen = new LinkedHashMap<Class<?>, Set<String>>();
+        for (Map.Entry<Class<?>, LinkedHashSet<String>> entry : declaredBy.entrySet()) {
+            frozen.put(entry.getKey(), Collections.unmodifiableSet(
+                    new LinkedHashSet<String>(entry.getValue())));
+        }
+        return Collections.unmodifiableMap(frozen);
     }
 
     /**
@@ -263,10 +362,14 @@ final class JustMockInterceptPlan {
     private static final class Union {
         private final Set<Class<?>> explicitTypes;
         private final Set<Class<?>> scannedTypes;
+        private final Map<Class<?>, Set<String>> declaredBy;
 
-        private Union(Set<Class<?>> explicitTypes, Set<Class<?>> scannedTypes) {
+        private Union(Set<Class<?>> explicitTypes,
+                      Set<Class<?>> scannedTypes,
+                      Map<Class<?>, Set<String>> declaredBy) {
             this.explicitTypes = explicitTypes;
             this.scannedTypes = scannedTypes;
+            this.declaredBy = declaredBy;
         }
     }
 }

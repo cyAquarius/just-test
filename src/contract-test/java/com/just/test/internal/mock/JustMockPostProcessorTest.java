@@ -3,6 +3,8 @@ package com.just.test.internal.mock;
 import com.just.test.annotation.JustMock;
 import com.just.test.annotation.JustSpy;
 import com.just.test.annotation.ThreadScopedMock;
+import com.just.test.context.CaseContext;
+import com.just.test.internal.context.CaseExecutionContext;
 import com.just.test.demo.project.fixtures.feign.DemoFeignClient;
 import com.just.test.demo.project.fixtures.feign.DemoLocalClient;
 import com.just.test.demo.project.fixtures.feign.ExcludedFeignClient;
@@ -34,7 +36,11 @@ import java.lang.annotation.RetentionPolicy;
 import java.lang.annotation.Target;
 import java.lang.reflect.Field;
 import java.util.Arrays;
+import java.util.Collection;
 import java.util.Collections;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
 import java.util.concurrent.Callable;
 import java.util.concurrent.atomic.AtomicBoolean;
 
@@ -131,6 +137,42 @@ class JustMockPostProcessorTest {
         assertEquals(SampleClient.class.getName(), beanFactory.getBeanDefinition("firstClient").getBeanClassName());
         assertEquals(SampleClient.class.getName(), beanFactory.getBeanDefinition("secondClient").getBeanClassName());
         assertFalse(beanFactory.containsBeanDefinition("scopedTarget.firstClient"));
+    }
+
+    @Test
+    void implementationThenInterfaceRegistersOneInterceptAndDoesNotRecurse() {
+        assertSameBeanIntercept(Arrays.<Class<?>>asList(PortImpl.class, Port.class));
+    }
+
+    @Test
+    void interfaceThenImplementationAlsoRegistersOneIntercept() {
+        assertSameBeanIntercept(Arrays.<Class<?>>asList(Port.class, PortImpl.class));
+    }
+
+    @Test
+    void incompatibleMockTypeFailsFastBeforeASecondIntercept() {
+        ImplAlsoMatches beanFactory = new ImplAlsoMatches();
+        beanFactory.setAutowireCandidateResolver(new ContextAnnotationAutowireCandidateResolver());
+        beanFactory.registerBeanDefinition("port",
+                BeanDefinitionBuilder.genericBeanDefinition(Port.class, () -> new PortImpl()).getBeanDefinition());
+
+        IllegalStateException failure = assertThrows(IllegalStateException.class,
+                () -> new JustMockPostProcessor(Collections.<JustMockDefinition>emptySet(),
+                        Collections.<JustMockDefinition>emptySet(),
+                        portPlan(Arrays.<Class<?>>asList(PortImpl.class, Port.class)))
+                        .postProcessBeanFactory(beanFactory));
+
+        String message = failure.getMessage();
+        assertTrue(message.contains("Cannot merge"), message);
+        assertTrue(message.contains("'port'"), message);
+        assertTrue(message.contains("Incompatible mock type"), message);
+        assertTrue(message.contains(Port.class.getName()), message);
+        assertTrue(message.contains(PortImpl.class.getName()), message);
+        assertTrue(message.contains(ApiDecl.class.getName()), message);
+        assertTrue(message.contains(ImplDecl.class.getName()), message);
+        assertFalse(beanFactory.containsBeanDefinition("scopedTarget.port"));
+        assertFalse(beanFactory.containsBeanDefinition(
+                JustMockPostProcessor.INTERCEPT_TARGET_PREFIX + "port"));
     }
 
     @Test
@@ -645,6 +687,57 @@ class JustMockPostProcessorTest {
                 beanFactory.getBean(JustMockBindings.class).getBeanName(definition(field)));
     }
 
+    private void assertSameBeanIntercept(List<Class<?>> scannedOrder) {
+        AnnotationConfigApplicationContext context = new AnnotationConfigApplicationContext();
+        context.register(PortConfig.class);
+        context.getBeanFactory().registerScope("thread", new ThreadScope());
+        context.addBeanFactoryPostProcessor(new JustMockPostProcessor(
+                Collections.<JustMockDefinition>emptySet(),
+                Collections.<JustMockDefinition>emptySet(),
+                portPlan(scannedOrder)));
+        context.refresh();
+        CaseExecutionContext.bind(new CaseContext("port", "port"));
+        try {
+            assertEquals(1, interceptTargetCount(
+                    (DefaultListableBeanFactory) context.getBeanFactory(), "portImpl"));
+            assertFalse(context.getBeanFactory().containsBeanDefinition(
+                    "scopedTarget." + JustMockPostProcessor.INTERCEPT_TARGET_PREFIX + "portImpl"));
+            assertEquals("live", context.getBean(Port.class).id());
+            JustMockInterceptActivation.bindActiveBeans(Collections.singleton("portImpl"));
+            assertNull(context.getBean(Port.class).id());
+            JustMockBindings bindings = context.getBean(JustMockBindings.class);
+            assertEquals("portImpl", bindings.getBeanName(definition(field(ApiField.class, "port"))));
+            assertEquals("portImpl", bindings.getBeanName(definition(field(ImplField.class, "portImpl"))));
+        } finally {
+            JustMockInterceptActivation.resetStubsAndClear(context);
+            CaseExecutionContext.clear();
+            ThreadScope.clearCurrentThread();
+            context.close();
+        }
+    }
+
+    private static int interceptTargetCount(DefaultListableBeanFactory beanFactory, String beanName) {
+        String marker = JustMockPostProcessor.INTERCEPT_TARGET_PREFIX + beanName;
+        int count = 0;
+        for (String name : beanFactory.getBeanDefinitionNames()) {
+            if (name.contains(marker)) {
+                count++;
+            }
+        }
+        return count;
+    }
+
+    private JustMockInterceptPlan portPlan(List<Class<?>> scannedOrder) {
+        Map<Class<?>, Collection<Class<?>>> declaredBy = new LinkedHashMap<Class<?>, Collection<Class<?>>>();
+        declaredBy.put(PortImpl.class, Collections.<Class<?>>singletonList(ImplDecl.class));
+        declaredBy.put(Port.class, Collections.<Class<?>>singletonList(ApiDecl.class));
+        return JustMockInterceptPlan.project(
+                JustMockPostProcessorTest.class,
+                Collections.<Class<?>>emptySet(),
+                scannedOrder,
+                declaredBy);
+    }
+
     private JustMockContextCustomizer customizer(Field field) {
         return new JustMockContextCustomizer(Collections.singleton(definition(field)));
     }
@@ -883,6 +976,51 @@ class JustMockPostProcessorTest {
     public static class AnswerTarget {
         public String value() {
             return "live";
+        }
+    }
+
+    public interface Port {
+        String id();
+    }
+
+    public static class PortImpl implements Port {
+        @Override
+        public String id() {
+            return "live";
+        }
+    }
+
+    static class ApiField {
+        @JustMock
+        private Port port;
+    }
+
+    static class ImplField {
+        @JustMock
+        private PortImpl portImpl;
+    }
+
+    static class ApiDecl {
+    }
+
+    static class ImplDecl {
+    }
+
+    private static final class ImplAlsoMatches extends DefaultListableBeanFactory {
+        @Override
+        public String[] getBeanNamesForType(Class<?> type, boolean includeNonSingletons, boolean allowEagerInit) {
+            if (type == PortImpl.class) {
+                return new String[] {"port"};
+            }
+            return super.getBeanNamesForType(type, includeNonSingletons, allowEagerInit);
+        }
+    }
+
+    @Configuration
+    static class PortConfig {
+        @Bean
+        PortImpl portImpl() {
+            return new PortImpl();
         }
     }
 

@@ -14,7 +14,7 @@
 
 ## 坐标
 
-Maven Central 的 group 为 `io.github.cyaquarius`。当前已发布版本为 `1.2.7`。
+Maven Central 的 group 为 `io.github.cyaquarius`。当前已发布版本为 `1.2.7`。本仓库待发布版本为 `1.2.8`（不打 tag，也不发布）。
 
 | | Boot 2 | Boot 3 |
 | --- | --- | --- |
@@ -22,6 +22,7 @@ Maven Central 的 group 为 `io.github.cyaquarius`。当前已发布版本为 `1
 | Java / Spring Boot | 8 / 2.7.18 | 17 / 3.5.16 |
 | Java 包名 | `com.just.test` | `com.just.test` |
 | 已发布版本 | `1.2.7` | `1.2.7` |
+| 待发布版本 | `1.2.8` | `1.2.8` |
 
 Java 8 / Boot 2：
 
@@ -39,7 +40,7 @@ Java 8 / Boot 2：
 - Central **只发布** `just-test-boot2` 与 `just-test-boot3`。
 - 公司私服已代理 Central 时，只需上面的依赖声明。
 - 环境访问不了 Central 时，可代理 Central，或把 boot2 / boot3 制品上传到私服 release 仓库，并保持 group 为 `io.github.cyaquarius`。
-- 基于本仓库开发仍用本地 `mvn install`。版本记录见[变更记录](#changelog)。依赖基线见[兼容性](#compatibility)。
+- 基于本仓库开发仍用本地 `mvn install`，装到的是待发布的 `1.2.8`。版本记录见[变更记录](#changelog)。依赖基线见[兼容性](#compatibility)。
 
 <a id="capabilities"></a>
 
@@ -401,6 +402,24 @@ sequenceDiagram
 - 之后再对未装上的类型使用 `@JustMock` 会 fail-fast。不会退回替换该 Bean，也不会拆开缓存。
 - 真实 Bean 内部的 `this.foo()` 自调用不会进拦截。
 
+**同一个 Bean 的接口与实现（待发布的 `1.2.8`）**
+
+```mermaid
+flowchart TD
+  iface["接口上的 @JustMock"] --> same{"同一个唯一 Bean？"}
+  impl["实现类上的 @JustMock"] --> same
+  same -->|是| once["只注册一次线程拦截<br/>两个字段都绑定它"]
+  same -->|不能安全合并| stop["启动期 fail-fast<br/>类型、Bean 名、测试类"]
+```
+
+- `1.2.7` 仍然拦截真实 Bean，也仍然共用一个 Context。该版本按声明类型注册拦截。
+- `1.2.8` 按解析到的 Bean 名注册，一个 Bean 名只注册一次。
+- 接口声明和实现类声明解析到这同一个唯一 Bean 时，共用这一次拦截。两个 `@JustMock` 字段都绑定它。
+- 当前测试类声明了其中任一类型，未 stub 走 Mockito 默认值。两个类型都没声明的类仍调用真实 Bean。
+- 第二次声明无法安全合并时（mock 类型不兼容，或命中多个 Bean），Context 启动即失败。
+- 失败信息列出冲突的声明类型、Bean 名，以及声明它们的测试类。
+- 解析到同一个 Bean 的接口 / 实现混用仍然合法，不要求改写这些声明。
+
 **真实 Bean，且没有 `@JustTestProject`**
 
 - 真实 Bean 仍会替换定义。
@@ -666,8 +685,14 @@ junit.jupiter.execution.parallel.mode.classes.default=concurrent
 
 ## 变更记录
 
-当前 Maven Central 发布版本是 `1.2.7`。上面的规则对应该版本。
+当前 Maven Central 发布版本是 `1.2.7`。本仓库待发布版本为 `1.2.8`（不打 tag，也不发布）。上面保留 `1.2.7` 的拦截规则。按 Bean 名去重见 [`@JustMock`](#justmock)，属于 `1.2.8`。
 
+- **1.2.8**（待发布）— 按解析到的 Bean 名只注册一次线程拦截。[Issue #93](https://github.com/cyAquarius/just-test/issues/93)。
+  - 接口 `@JustMock` 与实现类 `@JustMock` 解析到同一个唯一 Bean 时只注册一次。两个字段绑定同一个线程级 mock。
+  - 声明了其中任一类型即激活 Mockito 默认值。两个类型都没声明的测试类仍调用真实 Bean。
+  - 无法安全合并的声明（mock 类型不兼容、多个候选 Bean）在 Context 启动时失败。
+  - 诊断列出声明类型、Bean 名，以及声明它们的测试类。
+  - `1.2.7` 的上下文复用拦截保留。这个版本不会改成「凡是接口/实现混用就 fail-fast」。
 - **1.2.7** — 指向真实 Bean 的 `@JustMock` 改为拦截，不再替换该 Bean、拆开 Spring Test Context。[Issue #88](https://github.com/cyAquarius/just-test/issues/88)。完整规则见 [`@JustMock`](#justmock)。
   - 使用同一个 `@JustTestProject` 启动类的测试共用一个 `ApplicationContext`。
   - 拦截类型在该共享 Context 第一次启动前确定，之后不能再增加。

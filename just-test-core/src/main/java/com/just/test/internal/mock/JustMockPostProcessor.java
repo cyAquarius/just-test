@@ -54,7 +54,8 @@ import java.util.Set;
  *       {@code @JustSpy} / {@code @ThreadScopedMock} 优先</li>
  *   <li>{@code @JustTestProject} 上的真实 Bean 拦截：隐藏真实 Bean，公开名换成按线程切换默认答案的
  *       Mockito mock。本测试类声明了 {@code @JustMock} 时未 stub 走 Mockito 默认值，否则
- *       {@code delegatesTo} 真实 Bean。这些声明不重复注册定义。</li>
+ *       {@code delegatesTo} 真实 Bean。这些声明不重复注册定义。接口与实现解析到同一个
+ *       Bean 名时只注册一次；无法安全合并则在启动期失败。</li>
  *   <li>{@code @JustSpy} —— 只包裹已有 Bean，找不到则失败，不会 create-if-absent</li>
  * </ol>
  * </p>
@@ -421,41 +422,66 @@ class JustMockPostProcessor implements BeanFactoryPostProcessor {
         if (!interceptPlan.isProject()) {
             return installed;
         }
+        // 先按原始 Bean 定义解析全部声明类型，再按 Bean 名合并注册。
+        // 实现类先于接口安装时，不能把已经包过的公开代理再当成真实 Bean 包第二层。
+        List<InterceptResolution> resolutions = new ArrayList<InterceptResolution>();
+        Set<Class<?>> seen = new LinkedHashSet<Class<?>>();
         for (Class<?> type : interceptPlan.explicitTypes()) {
-            installIntercept(beanFactory, registry, type, true, threadScoped, spiesByBeanName,
-                    feignDiscovered, bindings, registeredBeanNames, interceptBeanNames,
-                    feignBlocked, installed);
-        }
-        for (Class<?> type : interceptPlan.scannedTypes()) {
-            if (interceptPlan.isExplicit(type) || installed.containsKey(type)) {
+            if (!seen.add(type)) {
                 continue;
             }
-            installIntercept(beanFactory, registry, type, false, threadScoped, spiesByBeanName,
-                    feignDiscovered, bindings, registeredBeanNames, interceptBeanNames,
-                    feignBlocked, installed);
+            InterceptResolution resolution = resolveIntercept(
+                    beanFactory, registry, type, true, threadScoped, spiesByBeanName, feignDiscovered);
+            if (resolution != null) {
+                resolutions.add(resolution);
+            }
+        }
+        for (Class<?> type : interceptPlan.scannedTypes()) {
+            if (interceptPlan.isExplicit(type) || !seen.add(type)) {
+                continue;
+            }
+            InterceptResolution resolution = resolveIntercept(
+                    beanFactory, registry, type, false, threadScoped, spiesByBeanName, feignDiscovered);
+            if (resolution != null) {
+                resolutions.add(resolution);
+            }
+        }
+        for (InterceptResolution resolution : resolutions) {
+            if (resolution.ambiguous()) {
+                throw ambiguousIntercept(resolution, resolutions);
+            }
+        }
+        Map<String, List<InterceptResolution>> byBean =
+                new LinkedHashMap<String, List<InterceptResolution>>();
+        for (InterceptResolution resolution : resolutions) {
+            List<InterceptResolution> group = byBean.get(resolution.beanName);
+            if (group == null) {
+                group = new ArrayList<InterceptResolution>();
+                byBean.put(resolution.beanName, group);
+            }
+            group.add(resolution);
+        }
+        for (Map.Entry<String, List<InterceptResolution>> entry : byBean.entrySet()) {
+            registerMergedIntercept(beanFactory, registry, entry.getKey(), entry.getValue(),
+                    bindings, registeredBeanNames, interceptBeanNames, feignBlocked, installed);
         }
         return installed;
     }
 
-    private void installIntercept(ConfigurableListableBeanFactory beanFactory,
-                                  BeanDefinitionRegistry registry,
-                                  Class<?> type,
-                                  boolean explicit,
-                                  Set<JustMockDefinition> threadScoped,
-                                  Map<String, JustMockDefinition> spiesByBeanName,
-                                  Map<Class<?>, String> feignDiscovered,
-                                  Map<JustMockDefinition, String> bindings,
-                                  Set<String> registeredBeanNames,
-                                  Set<String> interceptBeanNames,
-                                  Set<Class<?>> feignBlocked,
-                                  Map<Class<?>, String> installed) {
+    private InterceptResolution resolveIntercept(ConfigurableListableBeanFactory beanFactory,
+                                                 BeanDefinitionRegistry registry,
+                                                 Class<?> type,
+                                                 boolean explicit,
+                                                 Set<JustMockDefinition> threadScoped,
+                                                 Map<String, JustMockDefinition> spiesByBeanName,
+                                                 Map<Class<?>, String> feignDiscovered) {
         if (feignDiscovered != null && feignDiscovered.containsKey(type)) {
             if (explicit) {
                 throw alreadyThreadScoped(type);
             }
             log.debug("[JustMock] {} is a Feign auto-mock; @JustMock binds and is not intercepted",
                     type.getName());
-            return;
+            return null;
         }
         Set<String> threadScopedNames = threadScopedByNames(threadScoped);
         LinkedHashSet<String> candidates = collectLogicalCandidates(beanFactory, type, false);
@@ -467,12 +493,10 @@ class JustMockPostProcessor implements BeanFactoryPostProcessor {
             }
             log.debug("[JustMock] {} is already a thread-scoped mock; @JustMock binds and is not intercepted",
                     type.getName());
-            return;
+            return null;
         }
         if (candidates.size() > 1) {
-            throw ambiguous(beanFactory,
-                    JustMockDefinition.forBeanName(type, type.getSimpleName(), JustMockInterceptActivation.SOURCE),
-                    candidates);
+            return InterceptResolution.ambiguous(type, candidates);
         }
         if (candidates.isEmpty()) {
             if (explicit) {
@@ -483,34 +507,180 @@ class JustMockPostProcessor implements BeanFactoryPostProcessor {
             }
             log.debug("[JustMock] No real bean of {} to intercept; a later @JustMock of this type fails fast",
                     type.getName());
-            return;
+            return null;
         }
         String publicName = candidates.iterator().next();
         if (spiesByBeanName.containsKey(publicName)) {
             log.debug("[JustMock] {} is a @JustSpy target in this context and is not intercepted", publicName);
-            return;
+            return null;
         }
         Class<?> mockType = resolveMockType(beanFactory, registry, publicName,
                 JustMockDefinition.forBeanName(type, publicName, JustMockInterceptActivation.SOURCE));
+        return InterceptResolution.unique(type, publicName, mockType);
+    }
+
+    private void registerMergedIntercept(ConfigurableListableBeanFactory beanFactory,
+                                         BeanDefinitionRegistry registry,
+                                         String publicName,
+                                         List<InterceptResolution> group,
+                                         Map<JustMockDefinition, String> bindings,
+                                         Set<String> registeredBeanNames,
+                                         Set<String> interceptBeanNames,
+                                         Set<Class<?>> feignBlocked,
+                                         Map<Class<?>, String> installed) {
+        Class<?> mockType = mockTypeForGroup(beanFactory, publicName, group);
         assertMockable(mockType);
         registerThreadScopedIntercept(beanFactory, registry, mockType, publicName);
         registeredBeanNames.add(publicName);
         interceptBeanNames.add(publicName);
-        feignBlocked.add(type);
-        feignBlocked.add(mockType);
-        rememberIntercept(installed, type, publicName);
+        LinkedHashSet<Class<?>> boundTypes = new LinkedHashSet<Class<?>>();
+        boundTypes.add(mockType);
+        for (InterceptResolution resolution : group) {
+            boundTypes.add(resolution.type);
+            rememberIntercept(installed, resolution.type, publicName);
+            feignBlocked.add(resolution.type);
+        }
         rememberIntercept(installed, mockType, publicName);
-        JustMockDefinition source = JustMockDefinition.forBeanName(
-                mockType, publicName, JustMockInterceptActivation.SOURCE);
-        bindings.put(source, publicName);
-        if (mockType != type) {
+        feignBlocked.add(mockType);
+        for (Class<?> boundType : boundTypes) {
             bindings.put(JustMockDefinition.forBeanName(
-                    type, publicName, JustMockInterceptActivation.SOURCE), publicName);
+                    boundType, publicName, JustMockInterceptActivation.SOURCE), publicName);
         }
         markSourceAttribute(registry, publicName, JustMockInterceptActivation.SOURCE);
         markSourceAttribute(registry, ScopedProxyUtils.getTargetBeanName(publicName),
                 JustMockInterceptActivation.SOURCE);
         log.info("[JustMock] Registered thread intercept for {} as '{}'", mockType.getName(), publicName);
+        if (group.size() > 1) {
+            log.info("[JustMock] Merged declaration types {} onto thread intercept '{}'",
+                    declarationTypes(group), publicName);
+        }
+    }
+
+    /**
+     * 同一 Bean 只选一个 mock 类型。单个声明保持原先的 {@code resolveMockType} 结果。
+     * 多个声明必须都能接受这个 mock（字段类型是 mock 类型的超类型或相同类型）。
+     */
+    private Class<?> mockTypeForGroup(ConfigurableListableBeanFactory beanFactory,
+                                      String beanName,
+                                      List<InterceptResolution> group) {
+        if (group.size() == 1) {
+            return group.get(0).mockType;
+        }
+        Class<?> beanType = safeBeanType(beanFactory, beanName);
+        Class<?> mockType = beanType;
+        if (mockType == null) {
+            mockType = group.get(0).mockType;
+            for (InterceptResolution resolution : group) {
+                if (mockType.isAssignableFrom(resolution.mockType)) {
+                    mockType = resolution.mockType;
+                }
+            }
+        }
+        for (InterceptResolution resolution : group) {
+            if (mockType == null || !resolution.type.isAssignableFrom(mockType)) {
+                throw unsafeMerge(beanName, mockType, group);
+            }
+        }
+        if (beanType != null && !mockType.isAssignableFrom(beanType)) {
+            throw unsafeMerge(beanName, mockType, group);
+        }
+        return mockType;
+    }
+
+    private IllegalStateException unsafeMerge(String beanName,
+                                              Class<?> mockType,
+                                              List<InterceptResolution> group) {
+        String mockTypeName = mockType == null ? "(unknown)" : mockType.getName();
+        return new IllegalStateException("[JustMock] Cannot merge thread intercept onto bean '"
+                + beanName + "'. Incompatible mock type " + mockTypeName
+                + ". Declaration types: " + declarationTypes(group)
+                + ". Declared by: " + declarers(group)
+                + ". JustTest will not register a second intercept.");
+    }
+
+    private IllegalStateException ambiguousIntercept(InterceptResolution ambiguous,
+                                                     List<InterceptResolution> resolutions) {
+        StringBuilder conflicts = new StringBuilder();
+        for (InterceptResolution resolution : resolutions) {
+            if (resolution.ambiguous() || resolution.beanName == null
+                    || !ambiguous.candidates.contains(resolution.beanName)) {
+                continue;
+            }
+            if (conflicts.length() > 0) {
+                conflicts.append("; ");
+            }
+            conflicts.append(resolution.type.getName())
+                    .append(" -> '")
+                    .append(resolution.beanName)
+                    .append("' declared by ")
+                    .append(interceptPlan.declaredBy(resolution.type));
+        }
+        StringBuilder message = new StringBuilder();
+        message.append("[JustMock] Cannot merge thread intercept for declaration type ")
+                .append(ambiguous.type.getName())
+                .append(" declared by ")
+                .append(interceptPlan.declaredBy(ambiguous.type))
+                .append(". Multiple beans found: ")
+                .append(ambiguous.candidates)
+                .append('.');
+        if (conflicts.length() > 0) {
+            message.append(" Conflicting declaration types: ").append(conflicts).append('.');
+        }
+        message.append(" JustTest will not choose between them or register a second intercept.");
+        return new IllegalStateException(message.toString());
+    }
+
+    private static String declarationTypes(List<InterceptResolution> group) {
+        StringBuilder builder = new StringBuilder();
+        for (InterceptResolution resolution : group) {
+            if (builder.length() > 0) {
+                builder.append(", ");
+            }
+            builder.append(resolution.type.getName());
+        }
+        return builder.toString();
+    }
+
+    private String declarers(List<InterceptResolution> group) {
+        StringBuilder builder = new StringBuilder();
+        for (InterceptResolution resolution : group) {
+            if (builder.length() > 0) {
+                builder.append("; ");
+            }
+            builder.append(resolution.type.getName())
+                    .append(" by ")
+                    .append(interceptPlan.declaredBy(resolution.type));
+        }
+        return builder.toString();
+    }
+
+    private static final class InterceptResolution {
+        private final Class<?> type;
+        private final String beanName;
+        private final Class<?> mockType;
+        private final LinkedHashSet<String> candidates;
+
+        private InterceptResolution(Class<?> type,
+                                    String beanName,
+                                    Class<?> mockType,
+                                    LinkedHashSet<String> candidates) {
+            this.type = type;
+            this.beanName = beanName;
+            this.mockType = mockType;
+            this.candidates = candidates;
+        }
+
+        private static InterceptResolution unique(Class<?> type, String beanName, Class<?> mockType) {
+            return new InterceptResolution(type, beanName, mockType, null);
+        }
+
+        private static InterceptResolution ambiguous(Class<?> type, LinkedHashSet<String> candidates) {
+            return new InterceptResolution(type, null, null, candidates);
+        }
+
+        private boolean ambiguous() {
+            return candidates != null;
+        }
     }
 
     private static void rememberIntercept(Map<Class<?>, String> installed, Class<?> type, String beanName) {

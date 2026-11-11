@@ -124,7 +124,9 @@ public @interface JustTestProject {
      * 否则委托给真实 Bean。真实 Bean 内部的 {@code this.foo()} 自调不会进拦截。
      * 已是 {@link ThreadScopedMock} 或 Feign auto-mock 的类型不要写在这里。
      * 不能被 Mockito 代理的类型（final、缺少 mock-maker）会在启动期失败。
-     * 同类型多个候选仍 fail-fast，不会因此再露出一个 Bean，也不会自动 exclude 自动配置。</p>
+     * 同类型多个候选仍 fail-fast，不会因此再露出一个 Bean，也不会自动 exclude 自动配置。
+     * 接口与实现解析到同一个 Bean 时只注册一次；无法安全合并则在启动期失败，
+     * 诊断包含声明类型、Bean 名和声明它们的测试类。</p>
      */
     Class<?>[] interceptMocks() default {};
 
