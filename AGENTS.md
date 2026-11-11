@@ -9,5 +9,6 @@
 - 父 reactor 模块为 `just-test-core`、`just-test-boot2`、`just-test-boot3`；消费烟测在 `smoke-tests/boot2` 与 `smoke-tests/boot3`。共享语义放 `just-test-core`，产品线差异放对应 boot 模块，不要假设仓库只有单一 Boot 2 模块。
 - 修改 Boot 2 线必须保持 Java 8 兼容；修改 Boot 3 线不得破坏 Boot 2 线，反之亦然。共享 `just-test-core` 的改动需同时考虑两条产品线。
 - Java 构建和测试直接使用 Maven。
+- 重叠屏障契约不要移回默认 Surefire execution：`ConcurrentCasesJustTest` 留在 boot2/boot3 的 `concurrent-case-contract`，`ParallelFirstJustTest` / `ParallelSecondJustTest` 留在 `parallel-class-contract`（同一份 `src/contract-test/resources/junit-platform.properties`，`fixed.parallelism=2`）。`default-test` 仍并发跑其余类；不要为此串行化 case、放宽重叠断言或只加大超时。
 - 消费方 / AI 编写 YAML 用例：见 `docs/ai-justtest-authoring.md`。
 - `@JustTestProject` 不默认关闭 OkHttp；`autoMockFeignClients` 默认 `false`，开启后只 mock `@FeignClient` 接口。Redis / OSS / SDK 等仍需显式 `@JustMock` / `@ThreadScopedMock`。显式 `@JustMock` / `@JustSpy` / `@ThreadScopedMock` 优先于自动 Feign mock。`@JustSpy` 只包裹已有 Bean，未 stub 的方法走真实逻辑。
