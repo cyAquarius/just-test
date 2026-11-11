@@ -29,6 +29,9 @@ import java.lang.annotation.Target;
  * </pre>
  *
  * <p>可以放在抽象基类或具体测试类上，灵活组合不会冲突。</p>
+ *
+ * <p>未 stub 的方法只会返回 Mockito 默认值。要保留已有 Bean、只替换个别方法时使用
+ * {@link JustSpy}，不要在本注解上增加 spy 开关。</p>
  */
 @Target(ElementType.FIELD)
 @Retention(RetentionPolicy.RUNTIME)

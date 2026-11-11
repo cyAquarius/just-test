@@ -2,7 +2,7 @@
 
 - 默认使用中文协作，代码标识符和命令保持英文。
 - 本仓库是可复用的测试工具库，不得引入特定业务项目的包、依赖、表结构或用例。
-- 框架代码统一放在 `com.just.test` 下。稳定公开 API 仅限 `annotation`、`CaseContext`、`JustTestLifecycle`、`StaticMockContext`，以及 Boot 模块的 `@JustTest` / `@JustTestProject`；`JustTestClassValidationExtension` 由 `@JustTest` 元注解注册，勿直接依赖。引擎实现放在 `com.just.test.internal`，不对消费方提供兼容承诺。
+- 框架代码统一放在 `com.just.test` 下。稳定公开 API 仅限 `annotation`（含 `@JustSpy`）、`CaseContext`、`JustTestLifecycle`、`StaticMockContext`，以及 Boot 模块的 `@JustTest` / `@JustTestProject`；`JustTestClassValidationExtension` 由 `@JustTest` 元注解注册，勿直接依赖。引擎实现放在 `com.just.test.internal`，不对消费方提供兼容承诺。
 - 仅用于演示的代码放在 `src/contract-test` 的 `com.just.test.demo` 下（boot2 / boot3 的 `testSourceDirectory`）。
 - JustTest 的公开运行模型只面向 Spring Boot；`@JustTest` 统一负责 Boot TestContext 启动，不新增非 Boot 模式，也不要求消费测试重复声明 Boot bootstrap 注解。
 - Boot 2 与 Boot 3 均为一等产品线，并由 CI 独立验证：`just-test-boot2` = Java 8 + Spring Boot 2.7.18；`just-test-boot3` = Java 17 + Spring Boot 3.5.16。
@@ -10,4 +10,4 @@
 - 修改 Boot 2 线必须保持 Java 8 兼容；修改 Boot 3 线不得破坏 Boot 2 线，反之亦然。共享 `just-test-core` 的改动需同时考虑两条产品线。
 - Java 构建和测试直接使用 Maven。
 - 消费方 / AI 编写 YAML 用例：见 `docs/ai-justtest-authoring.md`。
-- `@JustTestProject` 不默认关闭 OkHttp；`autoMockFeignClients` 默认 `false`，开启后只 mock `@FeignClient` 接口。Redis / OSS / SDK 等仍需显式 `@JustMock` / `@ThreadScopedMock`，后者优先于自动 Feign mock。
+- `@JustTestProject` 不默认关闭 OkHttp；`autoMockFeignClients` 默认 `false`，开启后只 mock `@FeignClient` 接口。Redis / OSS / SDK 等仍需显式 `@JustMock` / `@ThreadScopedMock`。显式 `@JustMock` / `@JustSpy` / `@ThreadScopedMock` 优先于自动 Feign mock。`@JustSpy` 只包裹已有 Bean，未 stub 的方法走真实逻辑。

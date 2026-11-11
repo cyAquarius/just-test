@@ -1,6 +1,7 @@
 package com.just.test.internal.mock;
 
 import com.just.test.annotation.JustMock;
+import com.just.test.annotation.JustSpy;
 import com.just.test.annotation.ThreadScopedMock;
 import com.just.test.demo.project.fixtures.feign.DemoFeignClient;
 import com.just.test.demo.project.fixtures.feign.DemoLocalClient;
@@ -10,6 +11,7 @@ import org.junit.jupiter.api.Test;
 import org.mybatis.spring.mapper.MapperFactoryBean;
 import org.springframework.aop.scope.ScopedProxyUtils;
 import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.beans.factory.config.BeanDefinition;
 import org.springframework.beans.factory.config.BeanDefinitionHolder;
 import org.springframework.beans.factory.support.AbstractBeanDefinition;
 import org.springframework.beans.factory.support.AutowireCandidateQualifier;
@@ -30,6 +32,7 @@ import java.lang.annotation.Target;
 import java.lang.reflect.Field;
 import java.util.Arrays;
 import java.util.Collections;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -329,6 +332,154 @@ class JustMockPostProcessorTest {
     }
 
     @Test
+    void spyRearrangesDefinitionWithoutCreatingTheRealBean() {
+        AtomicBoolean created = new AtomicBoolean();
+        DefaultListableBeanFactory beanFactory = beanFactory();
+        beanFactory.registerBeanDefinition("client", BeanDefinitionBuilder
+                .genericBeanDefinition(SampleClient.class, () -> {
+                    created.set(true);
+                    return new SampleClient();
+                })
+                .getBeanDefinition());
+
+        processSpy(beanFactory, field(SpyFields.class, "client"));
+
+        String hidden = JustMockPostProcessor.spyTargetBeanName("client");
+        assertFalse(created.get());
+        assertTrue(beanFactory.containsBeanDefinition(hidden));
+        assertFalse(beanFactory.getBeanDefinition(hidden).isAutowireCandidate());
+        assertFalse(beanFactory.getBeanDefinition(hidden).isPrimary());
+        assertEquals(BeanDefinition.ROLE_INFRASTRUCTURE, beanFactory.getBeanDefinition(hidden).getRole());
+        assertTrue(beanFactory.containsBeanDefinition("scopedTarget.client"));
+        assertTrue(beanFactory.getBeanDefinition("client").isAutowireCandidate());
+        assertFalse(created.get());
+    }
+
+    @Test
+    void spyKeepsMapperFactoryBeanAsHiddenTarget() {
+        DefaultListableBeanFactory beanFactory = beanFactory();
+        AbstractBeanDefinition definition = BeanDefinitionBuilder
+                .genericBeanDefinition(MapperFactoryBean.class)
+                .addPropertyValue("mapperInterface", SampleMapper.class)
+                .getBeanDefinition();
+        beanFactory.registerBeanDefinition("sampleMapper", definition);
+
+        processSpy(beanFactory, field(SpyFields.class, "sampleMapper"));
+
+        String hidden = JustMockPostProcessor.spyTargetBeanName("sampleMapper");
+        assertTrue(beanFactory.containsBeanDefinition(hidden));
+        assertEquals(MapperFactoryBean.class,
+                ((AbstractBeanDefinition) beanFactory.getBeanDefinition(hidden)).getBeanClass());
+        assertFalse(beanFactory.getBeanDefinition(hidden).isAutowireCandidate());
+        assertTrue(beanFactory.containsBeanDefinition("scopedTarget.sampleMapper"));
+        assertEquals(SampleMapper.class, beanFactory.getType("scopedTarget.sampleMapper"));
+    }
+
+    @Test
+    void failsWhenJustSpyBeanIsMissing() {
+        DefaultListableBeanFactory beanFactory = beanFactory();
+
+        IllegalStateException failure = assertThrows(IllegalStateException.class,
+                () -> processSpy(beanFactory, field(SpyFields.class, "client")));
+
+        assertTrue(failure.getMessage().contains("No existing bean"));
+        assertTrue(failure.getMessage().contains("does not create one"));
+        assertFalse(beanFactory.containsBeanDefinition("client"));
+    }
+
+    @Test
+    void failsWhenJustSpyAndJustMockDeclareTheSameType() {
+        DefaultListableBeanFactory beanFactory = beanFactory();
+        registerCandidate(beanFactory, "client", false, true, null);
+        registerCandidate(beanFactory, "otherClient", false, true, null);
+
+        IllegalStateException failure = assertThrows(IllegalStateException.class, () ->
+                new JustMockPostProcessor(
+                        Collections.singleton(definition(field(TestFields.class, "client"))),
+                        Collections.singleton(spyDefinition(field(SpyFields.class, "namedClient"))))
+                        .postProcessBeanFactory(beanFactory));
+
+        assertTrue(failure.getMessage().contains("Conflicting beans of type"));
+        assertTrue(failure.getMessage().contains(SampleClient.class.getName()));
+        assertTrue(failure.getMessage().contains("@JustSpy"));
+        assertTrue(failure.getMessage().contains("@JustMock"));
+        assertTrue(failure.getMessage().contains("Candidates:"));
+        assertTrue(beanFactory.containsBeanDefinition("client"));
+        assertFalse(beanFactory.containsBeanDefinition("scopedTarget.client"));
+    }
+
+    @Test
+    void failsWhenJustSpyAndJustMockResolveToTheSameBean() {
+        DefaultListableBeanFactory beanFactory = beanFactory();
+        beanFactory.registerBeanDefinition("concreteClient",
+                BeanDefinitionBuilder.genericBeanDefinition(ConcreteClient.class).getBeanDefinition());
+
+        IllegalStateException failure = assertThrows(IllegalStateException.class, () ->
+                new JustMockPostProcessor(
+                        Collections.singleton(definition(field(InterfaceMockFields.class, "client"))),
+                        Collections.singleton(spyDefinition(field(ConcreteSpyFields.class, "concreteClient"))))
+                        .postProcessBeanFactory(beanFactory));
+
+        assertTrue(failure.getMessage().contains("Conflicting beans named 'concreteClient'"));
+        assertTrue(failure.getMessage().contains("selected the same bean"));
+        assertTrue(failure.getMessage().contains("@JustSpy"));
+        assertTrue(failure.getMessage().contains("@JustMock"));
+        assertFalse(beanFactory.containsBeanDefinition("scopedTarget.concreteClient"));
+    }
+
+    @Test
+    void failsWhenJustSpyAndThreadScopedMockDeclareTheSameType() {
+        AnnotationConfigApplicationContext context = new AnnotationConfigApplicationContext();
+        context.register(ThreadScopedMockConfig.class);
+        context.addBeanFactoryPostProcessor(new JustMockPostProcessor(
+                Collections.<JustMockDefinition>emptySet(),
+                Collections.singleton(spyDefinition(field(SpyFields.class, "client")))));
+
+        IllegalStateException failure = assertThrows(IllegalStateException.class, context::refresh);
+        try {
+            assertTrue(failure.getMessage().contains("Conflicting beans of type"));
+            assertTrue(failure.getMessage().contains("@JustSpy"));
+            assertTrue(failure.getMessage().contains("@ThreadScopedMock"));
+        } finally {
+            context.close();
+        }
+    }
+
+    @Test
+    void explicitJustSpyWinsOverAutoFeignMock() {
+        DefaultListableBeanFactory beanFactory = beanFactory();
+        beanFactory.registerBeanDefinition("demoFeignClient",
+                BeanDefinitionBuilder.genericBeanDefinition(DemoFeignClient.class).getBeanDefinition());
+        JustTestProjectFeignAutoMock.register(beanFactory,
+                new String[] {"com.just.test.demo.project.fixtures.feign"}, new Class<?>[0]);
+
+        processSpy(beanFactory, field(SpyFeignFields.class, "demoFeignClient"));
+
+        String hidden = JustMockPostProcessor.spyTargetBeanName("demoFeignClient");
+        assertTrue(beanFactory.containsBeanDefinition(hidden));
+        assertEquals(DemoFeignClient.class,
+                ((AbstractBeanDefinition) beanFactory.getBeanDefinition(hidden)).getBeanClass());
+        assertFalse(beanFactory.getBeanDefinition(hidden).isAutowireCandidate());
+        assertTrue(beanFactory.getBeanDefinition("demoFeignClient").isAutowireCandidate());
+        assertEquals(1, countAutowireCandidates(beanFactory, DemoFeignClient.class));
+    }
+
+    @Test
+    void contextKeySeparatesJustSpyFromJustMockAndReusesEquivalentSpies() {
+        JustMockContextCustomizer mock = customizer(field(FirstTest.class, "client"));
+        JustMockContextCustomizer spy = new JustMockContextCustomizer(
+                Collections.<JustMockDefinition>emptySet(),
+                Collections.singleton(spyDefinition(field(SpyCacheTest.class, "client"))));
+        JustMockContextCustomizer equivalentSpy = new JustMockContextCustomizer(
+                Collections.<JustMockDefinition>emptySet(),
+                Collections.singleton(spyDefinition(field(EquivalentSpyTest.class, "client"))));
+
+        assertNotEquals(mock, spy);
+        assertEquals(spy, equivalentSpy);
+        assertEquals(spy.hashCode(), equivalentSpy.hashCode());
+    }
+
+    @Test
     void replacesMapperFactoryBeanByDefaultNameWhenObjectTypeIsNotVisible() {
         DefaultListableBeanFactory beanFactory = beanFactory();
         AbstractBeanDefinition definition = BeanDefinitionBuilder
@@ -358,8 +509,18 @@ class JustMockPostProcessorTest {
                 .postProcessBeanFactory(beanFactory);
     }
 
+    private void processSpy(DefaultListableBeanFactory beanFactory, Field field) {
+        new JustMockPostProcessor(Collections.<JustMockDefinition>emptySet(),
+                Collections.singleton(spyDefinition(field)))
+                .postProcessBeanFactory(beanFactory);
+    }
+
     private JustMockDefinition definition(Field field) {
         return JustMockDefinition.forField(field, field.getAnnotation(JustMock.class));
+    }
+
+    private JustMockDefinition spyDefinition(Field field) {
+        return JustMockDefinition.forSpyField(field, field.getAnnotation(JustSpy.class));
     }
 
     private Field field(Class<?> type, String name) {
@@ -414,7 +575,19 @@ class JustMockPostProcessorTest {
     private int countLogicalBeansOfType(DefaultListableBeanFactory beanFactory, Class<?> type) {
         int count = 0;
         for (String name : beanFactory.getBeanNamesForType(type, true, false)) {
-            if (!name.startsWith("scopedTarget.")) {
+            if (!name.startsWith("scopedTarget.")
+                    && !name.startsWith(JustMockPostProcessor.SPY_TARGET_PREFIX)) {
+                count++;
+            }
+        }
+        return count;
+    }
+
+    private int countAutowireCandidates(DefaultListableBeanFactory beanFactory, Class<?> type) {
+        int count = 0;
+        for (String name : beanFactory.getBeanNamesForType(type, true, false)) {
+            if (beanFactory.containsBeanDefinition(name)
+                    && beanFactory.getBeanDefinition(name).isAutowireCandidate()) {
                 count++;
             }
         }
@@ -424,6 +597,44 @@ class JustMockPostProcessorTest {
     private static class FeignTestFields {
         @JustMock
         private DemoFeignClient demoFeignClient;
+    }
+
+    private static class SpyFeignFields {
+        @JustSpy
+        private DemoFeignClient demoFeignClient;
+    }
+
+    private static class SpyFields {
+        @JustSpy
+        private SampleClient client;
+
+        @JustSpy(name = "otherClient")
+        private SampleClient namedClient;
+
+        @JustSpy
+        private SampleMapper sampleMapper;
+    }
+
+    private static class SpyCacheTest {
+        @JustSpy
+        @Qualifier("blue")
+        private SampleClient client;
+    }
+
+    private static class EquivalentSpyTest {
+        @JustSpy
+        @Qualifier("blue")
+        private SampleClient client;
+    }
+
+    private static class InterfaceMockFields {
+        @JustMock
+        private Client client;
+    }
+
+    private static class ConcreteSpyFields {
+        @JustSpy
+        private ConcreteClient concreteClient;
     }
 
     private static class TestFields {

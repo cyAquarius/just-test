@@ -2,6 +2,7 @@ package com.just.test.internal.mock;
 
 import com.just.test.annotation.ThreadScopedMock;
 import com.just.test.internal.project.JustTestProjectFeignAutoMock;
+import org.mockito.AdditionalAnswers;
 import org.mockito.Mockito;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -25,17 +26,24 @@ import java.util.Set;
 
 /**
  * 将 {@code @JustMock} 声明的类型 + {@code @ThreadScopedMock} 标记的 @Bean 方法
- * 统一替换为 thread-scoped + ScopedProxy 的 mock bean。
+ * 统一替换为 thread-scoped + ScopedProxy 的 mock bean，并把 {@code @JustSpy}
+ * 声明的已有 Bean 换成委托给真实实例的 thread-scoped mock。
  *
  * <p>对每个 mock 类型：找到现有 bean → 移除 → 注册 thread-scoped mock → 包装 ScopedProxy。
  * 原 bean 名称指向 proxy，每次方法调用委托给当前线程的 mock 实例。</p>
+ *
+ * <p>{@code @JustSpy} 不在这里实例化真实 Bean，只把原定义挪到隐藏名
+ * （非 autowire candidate）。公开名仍是 thread-scoped ScopedProxy；每个线程的 mock
+ * 用 {@code delegatesTo} 把未 stub 的调用转给 refresh 创建的那个容器 Bean
+ * （若该 Bean 是 AOP 代理，则委托给代理本身）。</p>
  *
  * <p>来源：
  * <ol>
  *   <li>{@code mockTypes} —— 测试类字段 {@code @JustMock} 扫描所得（per-test 差异化 mock）</li>
  *   <li>{@code @ThreadScopedMock} —— Configuration 类 {@code @Bean} 方法标记（全局外部依赖 mock）</li>
  *   <li>opt-in {@code @JustTestProject(autoMockFeignClients = true)} 发现的 {@code @FeignClient}
- *       接口；显式 {@code @JustMock} / {@code @ThreadScopedMock} 优先</li>
+ *       接口；显式 {@code @JustMock} / {@code @JustSpy} / {@code @ThreadScopedMock} 优先</li>
+ *   <li>{@code @JustSpy} —— 只包裹已有 Bean，找不到则失败，不会 create-if-absent</li>
  * </ol>
  * </p>
  */
@@ -43,11 +51,22 @@ class JustMockPostProcessor implements BeanFactoryPostProcessor {
 
     private static final Logger log = LoggerFactory.getLogger(JustMockPostProcessor.class);
     private static final String SCOPED_TARGET_PREFIX = "scopedTarget.";
+    static final String SPY_TARGET_PREFIX = "justSpy.target.";
 
     private final Set<JustMockDefinition> mockDefinitions;
+    private final Set<JustMockDefinition> spyDefinitions;
 
     JustMockPostProcessor(Set<JustMockDefinition> mockDefinitions) {
+        this(mockDefinitions, Collections.<JustMockDefinition>emptySet());
+    }
+
+    JustMockPostProcessor(Set<JustMockDefinition> mockDefinitions, Set<JustMockDefinition> spyDefinitions) {
         this.mockDefinitions = mockDefinitions;
+        this.spyDefinitions = spyDefinitions;
+    }
+
+    static String spyTargetBeanName(String publicName) {
+        return SPY_TARGET_PREFIX + publicName;
     }
 
     @Override
@@ -58,20 +77,43 @@ class JustMockPostProcessor implements BeanFactoryPostProcessor {
         }
         BeanDefinitionRegistry registry = (BeanDefinitionRegistry) beanFactory;
 
-        // 合并 @JustMock 字段类型 + @ThreadScopedMock @Bean 方法返回类型，再叠加 opt-in Feign
+        // 合并 @JustMock 字段类型 + @ThreadScopedMock @Bean 方法返回类型。
+        // 同类型的 @JustSpy 必须先失败，再决定是否跳过 auto @FeignClient。
         Set<JustMockDefinition> allMockDefinitions = new LinkedHashSet<>(mockDefinitions);
         allMockDefinitions.addAll(collectThreadScopedMockDefinitions(beanFactory));
-        allMockDefinitions.addAll(collectAutoMockedFeignClients(beanFactory, registry, allMockDefinitions));
+        rejectSpyMockTypeConflicts(spyDefinitions, allMockDefinitions);
+
+        java.util.Map<JustMockDefinition, String> spyNames =
+                new java.util.LinkedHashMap<JustMockDefinition, String>();
+        java.util.Map<String, JustMockDefinition> spiesByBeanName =
+                new java.util.LinkedHashMap<String, JustMockDefinition>();
+        for (JustMockDefinition spy : spyDefinitions) {
+            String beanName = resolveBeanName(beanFactory, registry, spy);
+            JustMockDefinition previous = spiesByBeanName.put(beanName, spy);
+            if (previous != null) {
+                throw duplicateSpyTarget(beanName, previous, spy);
+            }
+            spyNames.put(spy, beanName);
+        }
+
+        allMockDefinitions.addAll(collectAutoMockedFeignClients(
+                beanFactory, registry, allMockDefinitions, spyDefinitions));
 
         Set<String> registeredBeanNames = new LinkedHashSet<>();
         java.util.Map<JustMockDefinition, String> bindings = new java.util.LinkedHashMap<>();
         for (JustMockDefinition definition : allMockDefinitions) {
-            String beanName = registerThreadScopedMock(beanFactory, registry, definition);
+            String beanName = registerThreadScopedMock(beanFactory, registry, definition, spiesByBeanName);
             if (beanName != null) {
                 registeredBeanNames.add(beanName);
                 bindings.put(definition, beanName);
                 markMockSource(registry, beanName, definition);
             }
+        }
+        for (java.util.Map.Entry<JustMockDefinition, String> spy : spyNames.entrySet()) {
+            String beanName = registerThreadScopedSpy(beanFactory, registry, spy.getKey(), spy.getValue());
+            registeredBeanNames.add(beanName);
+            bindings.put(spy.getKey(), beanName);
+            markMockSource(registry, beanName, spy.getKey());
         }
 
         rejectMockAutoConfigurationConflicts(beanFactory, bindings);
@@ -133,7 +175,8 @@ class JustMockPostProcessor implements BeanFactoryPostProcessor {
     private Set<JustMockDefinition> collectAutoMockedFeignClients(
             ConfigurableListableBeanFactory beanFactory,
             BeanDefinitionRegistry registry,
-            Set<JustMockDefinition> alreadyMocked) {
+            Set<JustMockDefinition> alreadyMocked,
+            Set<JustMockDefinition> spies) {
         if (!registry.containsBeanDefinition(JustTestProjectFeignAutoMock.BEAN_NAME)
                 && !beanFactory.containsSingleton(JustTestProjectFeignAutoMock.BEAN_NAME)) {
             return Collections.emptySet();
@@ -141,11 +184,12 @@ class JustMockPostProcessor implements BeanFactoryPostProcessor {
         JustTestProjectFeignAutoMock settings = beanFactory.getBean(
                 JustTestProjectFeignAutoMock.BEAN_NAME, JustTestProjectFeignAutoMock.class);
         Set<Class<?>> mockedTypes = mockedTypes(alreadyMocked);
+        mockedTypes.addAll(mockedTypes(spies));
         Set<JustMockDefinition> definitions = new LinkedHashSet<>();
         for (Map.Entry<Class<?>, String> entry : settings.discover(beanFactory).entrySet()) {
             Class<?> type = entry.getKey();
             if (mockedTypes.contains(type)) {
-                log.debug("[JustMock] Skipping auto @FeignClient {} because an explicit mock already exists",
+                log.debug("[JustMock] Skipping auto @FeignClient {} because an explicit mock or @JustSpy already exists",
                         type.getName());
                 continue;
             }
@@ -168,8 +212,13 @@ class JustMockPostProcessor implements BeanFactoryPostProcessor {
 
     private String registerThreadScopedMock(ConfigurableListableBeanFactory beanFactory,
                                             BeanDefinitionRegistry registry,
-                                            JustMockDefinition definition) {
+                                            JustMockDefinition definition,
+                                            java.util.Map<String, JustMockDefinition> spiesByBeanName) {
         String targetBeanName = resolveBeanName(beanFactory, registry, definition);
+        JustMockDefinition spy = spiesByBeanName.get(targetBeanName);
+        if (spy != null) {
+            throw JustMockBeanOrigins.sameBeanSpyMockConflict(targetBeanName, spy, definition);
+        }
         Class<?> mockType = resolveMockType(beanFactory, registry, targetBeanName, definition);
         BeanDefinition originalDefinition = null;
         BeanDefinition originalScopedTarget = null;
@@ -258,7 +307,8 @@ class JustMockPostProcessor implements BeanFactoryPostProcessor {
         String[] candidates = beanFactory.getBeanNamesForType(type, true, allowEagerInit);
         java.util.LinkedHashSet<String> logicalCandidates = new java.util.LinkedHashSet<>();
         for (String candidate : candidates) {
-            if (!candidate.startsWith(SCOPED_TARGET_PREFIX)) {
+            if (!candidate.startsWith(SCOPED_TARGET_PREFIX)
+                    && !candidate.startsWith(SPY_TARGET_PREFIX)) {
                 logicalCandidates.add(candidate);
             }
         }
@@ -306,12 +356,15 @@ class JustMockPostProcessor implements BeanFactoryPostProcessor {
 
         if (injectableCandidates.isEmpty()) {
             if (definition.hasQualifierAnnotations()) {
-                throw new IllegalStateException("[JustMock] No autowire candidate matches the qualifier for "
+                throw new IllegalStateException(label(definition) + " No autowire candidate matches the qualifier for "
                         + definition.describe() + ". Type candidates: " + logicalCandidates);
             }
             String fallback = resolveNamedFallback(beanFactory, registry, definition, descriptor);
             if (fallback != null) {
                 return fallback;
+            }
+            if (definition.isSpy()) {
+                throw missingSpyBean(definition, logicalCandidates);
             }
             String generated = generateAvailableBeanName(
                     definition.getType(), beanFactory, registry);
@@ -391,6 +444,7 @@ class JustMockPostProcessor implements BeanFactoryPostProcessor {
                                               String requestedName) {
         for (String candidate : registry.getBeanDefinitionNames()) {
             if (!candidate.startsWith(SCOPED_TARGET_PREFIX)
+                    && !candidate.startsWith(SPY_TARGET_PREFIX)
                     && matchesName(beanFactory, candidate, requestedName)) {
                 return candidate;
             }
@@ -406,7 +460,7 @@ class JustMockPostProcessor implements BeanFactoryPostProcessor {
                 return candidate;
             }
         }
-        throw new IllegalStateException("[JustMock] No bean named '" + requestedName + "' for "
+        throw new IllegalStateException(label(definition) + " No bean named '" + requestedName + "' for "
                 + definition.describe() + ". Candidates: " + candidates);
     }
 
@@ -433,8 +487,131 @@ class JustMockPostProcessor implements BeanFactoryPostProcessor {
         if (JustMockBeanOrigins.hasAutoConfiguration(described)) {
             return JustMockBeanOrigins.conflict(definition.getType(), described);
         }
-        return new IllegalStateException("[JustMock] Multiple beans found for " + definition.describe()
-                + ": " + candidates + ". Use @JustMock(name = \"...\") or @Qualifier.");
+        String annotation = definition.isSpy() ? "@JustSpy" : "@JustMock";
+        return new IllegalStateException(label(definition) + " Multiple beans found for " + definition.describe()
+                + ": " + candidates + ". Use " + annotation + "(name = \"...\") or @Qualifier.");
+    }
+
+    private static String label(JustMockDefinition definition) {
+        return definition.isSpy() ? "[JustSpy]" : "[JustMock]";
+    }
+
+    private static IllegalStateException missingSpyBean(JustMockDefinition definition, Set<String> candidates) {
+        return new IllegalStateException("[JustSpy] No existing bean found for " + definition.describe()
+                + ". @JustSpy only wraps a bean that is already defined and does not create one."
+                + " Type candidates: " + candidates);
+    }
+
+    private static IllegalStateException duplicateSpyTarget(String beanName,
+                                                           JustMockDefinition first,
+                                                           JustMockDefinition second) {
+        return new IllegalStateException("[JustSpy] " + first.describe() + " and " + second.describe()
+                + " both resolved to bean '" + beanName + "'. One bean can only be wrapped once.");
+    }
+
+    private void rejectSpyMockTypeConflicts(Set<JustMockDefinition> spies, Set<JustMockDefinition> mocks) {
+        java.util.Map<Class<?>, java.util.List<JustMockDefinition>> mocksByType =
+                groupByType(mocks);
+        java.util.Map<Class<?>, java.util.List<JustMockDefinition>> spiesByType =
+                groupByType(spies);
+        for (java.util.Map.Entry<Class<?>, java.util.List<JustMockDefinition>> entry : spiesByType.entrySet()) {
+            java.util.List<JustMockDefinition> mockSide = mocksByType.get(entry.getKey());
+            if (mockSide == null || mockSide.isEmpty()) {
+                continue;
+            }
+            throw JustMockBeanOrigins.spyAndMockConflict(entry.getKey(), entry.getValue(), mockSide);
+        }
+    }
+
+    private static java.util.Map<Class<?>, java.util.List<JustMockDefinition>> groupByType(
+            Set<JustMockDefinition> definitions) {
+        java.util.Map<Class<?>, java.util.List<JustMockDefinition>> grouped =
+                new java.util.LinkedHashMap<Class<?>, java.util.List<JustMockDefinition>>();
+        for (JustMockDefinition definition : definitions) {
+            java.util.List<JustMockDefinition> group = grouped.get(definition.getType());
+            if (group == null) {
+                group = new java.util.ArrayList<JustMockDefinition>();
+                grouped.put(definition.getType(), group);
+            }
+            group.add(definition);
+        }
+        return grouped;
+    }
+
+    private String registerThreadScopedSpy(ConfigurableListableBeanFactory beanFactory,
+                                           BeanDefinitionRegistry registry,
+                                           JustMockDefinition definition,
+                                           String publicName) {
+        if (!registry.containsBeanDefinition(publicName)) {
+            throw new IllegalStateException("[JustSpy] No bean definition named '" + publicName
+                    + "' to wrap for " + definition.describe()
+                    + ". @JustSpy does not create a bean.");
+        }
+        Class<?> mockType = resolveMockType(beanFactory, registry, publicName, definition);
+        BeanDefinition original = registry.getBeanDefinition(publicName);
+        String scopedTargetName = ScopedProxyUtils.getTargetBeanName(publicName);
+        BeanDefinition originalScopedTarget = registry.containsBeanDefinition(scopedTargetName)
+                ? registry.getBeanDefinition(scopedTargetName) : null;
+        String hiddenName = spyTargetBeanName(publicName);
+
+        AbstractBeanDefinition mockDef = createSpyBeanDefinition(mockType, beanFactory, hiddenName);
+        copyAutowireMetadata(mockDef, original, originalScopedTarget);
+
+        if (originalScopedTarget != null) {
+            registry.removeBeanDefinition(scopedTargetName);
+            String hiddenScopedName = ScopedProxyUtils.getTargetBeanName(hiddenName);
+            retargetScopedProxy(original, hiddenScopedName);
+            hideRealTarget(originalScopedTarget);
+            registry.registerBeanDefinition(hiddenScopedName, originalScopedTarget);
+        }
+
+        BeanDefinitionHolder holder = new BeanDefinitionHolder(mockDef, publicName);
+        BeanDefinitionHolder proxy = ScopedProxyUtils.createScopedProxy(holder, registry, true);
+        if (proxy.getBeanDefinition() instanceof AbstractBeanDefinition) {
+            copyAutowireMetadata((AbstractBeanDefinition) proxy.getBeanDefinition(),
+                    original, originalScopedTarget);
+        }
+
+        registry.removeBeanDefinition(publicName);
+        hideRealTarget(original);
+        registry.registerBeanDefinition(hiddenName, original);
+        registry.registerBeanDefinition(publicName, proxy.getBeanDefinition());
+        log.info("[JustSpy] Registered thread-scoped spy for {} as '{}' delegating to '{}'",
+                mockType.getSimpleName(), publicName, hiddenName);
+        return publicName;
+    }
+
+    private void retargetScopedProxy(BeanDefinition definition, String hiddenScopedTargetName) {
+        if (definition.getPropertyValues().contains("targetBeanName")) {
+            definition.getPropertyValues().add("targetBeanName", hiddenScopedTargetName);
+        }
+    }
+
+    private void hideRealTarget(BeanDefinition definition) {
+        definition.setAutowireCandidate(false);
+        definition.setPrimary(false);
+        definition.setRole(BeanDefinition.ROLE_INFRASTRUCTURE);
+    }
+
+    private <T> AbstractBeanDefinition createSpyBeanDefinition(final Class<T> mockType,
+                                                               final ConfigurableListableBeanFactory beanFactory,
+                                                               final String realBeanName) {
+        return BeanDefinitionBuilder
+                .genericBeanDefinition(mockType, () -> createDelegatingMock(mockType, beanFactory, realBeanName))
+                .setScope("thread")
+                .getBeanDefinition();
+    }
+
+    private <T> T createDelegatingMock(Class<T> mockType,
+                                       ConfigurableListableBeanFactory beanFactory,
+                                       String realBeanName) {
+        Object realBean = beanFactory.getBean(realBeanName);
+        if (!mockType.isInstance(realBean)) {
+            throw new IllegalStateException("[JustSpy] Bean '" + realBeanName + "' is not a "
+                    + mockType.getName() + "; cannot delegate unstubbed calls to it.");
+        }
+        return Mockito.mock(mockType, Mockito.withSettings()
+                .defaultAnswer(AdditionalAnswers.delegatesTo(realBean)));
     }
 
     private void markMockSource(BeanDefinitionRegistry registry, String beanName,
