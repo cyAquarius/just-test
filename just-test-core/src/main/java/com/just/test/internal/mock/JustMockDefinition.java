@@ -95,6 +95,9 @@ final class JustMockDefinition {
     boolean isCreateIfAbsent() { return createIfAbsent; }
     boolean isSpy() { return spy; }
 
+    /** 测试字段上的 {@code @JustMock} / {@code @JustSpy}。全局来源（{@code @ThreadScopedMock}、Feign auto-mock）没有字段。 */
+    boolean isFieldDeclaration() { return field != null; }
+
     DependencyDescriptor toDependencyDescriptor() {
         if (field == null) {
             throw new IllegalStateException("No dependency field available for " + describe());

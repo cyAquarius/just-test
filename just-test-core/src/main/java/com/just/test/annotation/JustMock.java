@@ -34,10 +34,16 @@ import java.lang.annotation.Target;
  *
  * <p>未 stub 的方法只会返回 Mockito 默认值。要保留已有 Bean、只替换个别方法时使用
  * {@link JustSpy}，不要在本注解上增加 spy 开关。</p>
+ *
+ * <p>若目标 Bean 已经是线程级 mock（{@link ThreadScopedMock} 的 {@code @Bean}，或
+ * {@code @JustTestProject(autoMockFeignClients = true)} 创建的 Feign mock），本注解只绑定字段：
+ * 不重复注册 Bean 定义，也不把这条声明放进 Spring Test 上下文缓存 key。注入时会解开 scoped proxy，
+ * {@code when(field...)} 与 {@code doReturn(...).when(field)} 直接打在字段上。真实 Bean 仍会替换定义，
+ * 并继续参与缓存 key。</p>
  */
 @Target(ElementType.FIELD)
 @Retention(RetentionPolicy.RUNTIME)
 public @interface JustMock {
-    /** 显式指定要替换的 Bean 名；未指定时按 Spring 的常见注入语义解析。 */
+    /** 显式指定要替换或绑定的 Bean 名；未指定时按 Spring 的常见注入语义解析。 */
     String name() default "";
 }

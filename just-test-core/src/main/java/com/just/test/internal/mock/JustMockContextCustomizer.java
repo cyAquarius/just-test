@@ -4,18 +4,21 @@ import com.just.test.internal.config.JustTestDataSourceConfig;
 import org.springframework.beans.factory.support.BeanDefinitionRegistry;
 import org.springframework.context.ConfigurableApplicationContext;
 import org.springframework.context.annotation.AnnotatedBeanDefinitionReader;
+import org.springframework.test.context.ContextConfigurationAttributes;
 import org.springframework.test.context.ContextCustomizer;
 import org.springframework.test.context.MergedContextConfiguration;
 
 import java.util.Collections;
+import java.util.List;
 import java.util.Objects;
 import java.util.Set;
 
 /**
  * 将 {@link JustMockPostProcessor} 注册到 ApplicationContext。
  *
- * <p>equals/hashCode 基于影响 Bean 选择的 {@code @JustMock} 与 {@code @JustSpy} 语义，
- * 决定 Spring Context 缓存 key：相同组合共享 Context，不同组合独立 Context。</p>
+ * <p>equals/hashCode 只计入会改变 Bean 定义的 {@code @JustMock} 与全部 {@code @JustSpy}。
+ * 目标已经是 {@code @ThreadScopedMock} 或 Feign auto-mock 的 {@code @JustMock} 只绑定字段，
+ * 不进入缓存 key：不同子集可以共享 Context。真实 Bean 的 {@code @JustMock} 仍会拆开 Context。</p>
  *
  * <p>这里只隔离 JustTest 自己拥有的资源；业务 JVM 静态状态不属于
  * ApplicationContext，不能通过 Context 创建锁获得通用的并发隔离。</p>
@@ -24,6 +27,7 @@ class JustMockContextCustomizer implements ContextCustomizer {
 
     private final Set<JustMockDefinition> mockDefinitions;
     private final Set<JustMockDefinition> spyDefinitions;
+    private final Set<JustMockDefinition> cacheKeyMocks;
 
     JustMockContextCustomizer(Set<JustMockDefinition> mockDefinitions) {
         this(mockDefinitions, Collections.<JustMockDefinition>emptySet());
@@ -31,8 +35,25 @@ class JustMockContextCustomizer implements ContextCustomizer {
 
     JustMockContextCustomizer(Set<JustMockDefinition> mockDefinitions,
                               Set<JustMockDefinition> spyDefinitions) {
+        this(mockDefinitions, spyDefinitions, mockDefinitions);
+    }
+
+    private JustMockContextCustomizer(Set<JustMockDefinition> mockDefinitions,
+                                      Set<JustMockDefinition> spyDefinitions,
+                                      Set<JustMockDefinition> cacheKeyMocks) {
         this.mockDefinitions = mockDefinitions;
         this.spyDefinitions = spyDefinitions;
+        this.cacheKeyMocks = cacheKeyMocks;
+    }
+
+    static JustMockContextCustomizer forTestClass(Set<JustMockDefinition> mockDefinitions,
+                                                   Set<JustMockDefinition> spyDefinitions,
+                                                   Class<?> testClass,
+                                                   List<ContextConfigurationAttributes> attributes) {
+        return new JustMockContextCustomizer(
+                mockDefinitions,
+                spyDefinitions,
+                JustMockCacheKey.affecting(testClass, attributes, mockDefinitions, spyDefinitions));
     }
 
     @Override
@@ -63,12 +84,12 @@ class JustMockContextCustomizer implements ContextCustomizer {
         if (this == o) return true;
         if (o == null || getClass() != o.getClass()) return false;
         JustMockContextCustomizer that = (JustMockContextCustomizer) o;
-        return Objects.equals(mockDefinitions, that.mockDefinitions)
+        return Objects.equals(cacheKeyMocks, that.cacheKeyMocks)
                 && Objects.equals(spyDefinitions, that.spyDefinitions);
     }
 
     @Override
     public int hashCode() {
-        return Objects.hash(mockDefinitions, spyDefinitions);
+        return Objects.hash(cacheKeyMocks, spyDefinitions);
     }
 }
