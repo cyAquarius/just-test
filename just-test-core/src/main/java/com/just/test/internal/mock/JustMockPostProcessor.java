@@ -3,9 +3,11 @@ package com.just.test.internal.mock;
 import com.just.test.annotation.ThreadScopedMock;
 import com.just.test.internal.project.JustTestProjectFeignAutoMock;
 import org.mockito.AdditionalAnswers;
+import org.mockito.MockSettings;
 import org.mockito.Mockito;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.aop.framework.AopInfrastructureBean;
 import org.springframework.aop.scope.ScopedProxyUtils;
 import org.springframework.beans.factory.annotation.AnnotatedBeanDefinition;
 import org.springframework.beans.factory.config.BeanDefinition;
@@ -35,7 +37,10 @@ import java.util.Set;
  * <p>{@code @JustSpy} 不在这里实例化真实 Bean，只把原定义挪到隐藏名
  * （非 autowire candidate）。公开名仍是 thread-scoped ScopedProxy；每个线程的 mock
  * 用 {@code delegatesTo} 把未 stub 的调用转给 refresh 创建的那个容器 Bean
- * （若该 Bean 是 AOP 代理，则委托给代理本身）。</p>
+ * （若该 Bean 是 AOP 代理，则委托给代理本身）。线程作用域 mock 实现
+ * {@link AopInfrastructureBean}，创建后不再被 advising / auto-proxy 包一层；
+ * 隐藏的真实 Bean 不加这个标记，{@code @Repository} / {@code @Transactional}
+ * 仍作用在它上面。</p>
  *
  * <p>来源：
  * <ol>
@@ -610,7 +615,7 @@ class JustMockPostProcessor implements BeanFactoryPostProcessor {
             throw new IllegalStateException("[JustSpy] Bean '" + realBeanName + "' is not a "
                     + mockType.getName() + "; cannot delegate unstubbed calls to it.");
         }
-        return Mockito.mock(mockType, Mockito.withSettings()
+        return Mockito.mock(mockType, threadScopedMockSettings()
                 .defaultAnswer(AdditionalAnswers.delegatesTo(realBean)));
     }
 
@@ -674,9 +679,20 @@ class JustMockPostProcessor implements BeanFactoryPostProcessor {
     @SuppressWarnings("unchecked")
     private <T> AbstractBeanDefinition createMockBeanDefinition(Class<T> mockType) {
         return BeanDefinitionBuilder
-                .genericBeanDefinition(mockType, () -> Mockito.mock(mockType))
+                .genericBeanDefinition(mockType, () -> Mockito.mock(mockType, threadScopedMockSettings()))
                 .setScope("thread")
                 .getBeanDefinition();
+    }
+
+    /**
+     * {@code AbstractAdvisingBeanPostProcessor} 与 {@code AbstractAutoProxyCreator}
+     * 会跳过 {@link AopInfrastructureBean}。线程作用域 mock 带上这个标记后，
+     * {@code @Repository} 的异常转换、事务自动代理等不会再包住 mock 本身。
+     * 未 stub 的 {@code @JustSpy} 调用因此只经过真实 Bean 上的那一层 advisor。
+     * 隐藏真实 Bean 仍是普通实例，继续按原定义被自动代理。
+     */
+    private static MockSettings threadScopedMockSettings() {
+        return Mockito.withSettings().extraInterfaces(AopInfrastructureBean.class);
     }
 
     private void copyAutowireMetadata(AbstractBeanDefinition target,

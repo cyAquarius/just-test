@@ -10,8 +10,8 @@ JustTest 面向 **YAML 用例 + 薄 Java glue**，不是手写 assert 堆。本�
 
 | 消费工程 | Maven Central |
 | --- | --- |
-| Java 8 / Spring Boot 2 | `io.github.cyaquarius:just-test-boot2:1.2.4` |
-| Java 17 / Spring Boot 3 | `io.github.cyaquarius:just-test-boot3:1.2.4` |
+| Java 8 / Spring Boot 2 | `io.github.cyaquarius:just-test-boot2:1.2.5`（待发布；Central 当前仍是 `1.2.4`） |
+| Java 17 / Spring Boot 3 | `io.github.cyaquarius:just-test-boot3:1.2.5`（待发布；Central 当前仍是 `1.2.4`） |
 
 不要同时引入两个顶层 artifact。不要单独声明 `just-test-core`：它已 shade 进 boot JAR，Central 不上架。
 
@@ -39,7 +39,7 @@ public class JustTestApplication {
 
 从较窄的手写启动类迁到 `@JustTestProject` 会扩大扫描和自动配置面：把原来的 `excludeAutoConfiguration` 与 mock 一并迁过去。JustTest **不会**自动 exclude 第三方 `*AutoConfiguration`。若 `@JustMock` / `@ThreadScopedMock` 与某个 `*AutoConfiguration` 的同类型 Bean 共存，Context 启动会 fail-fast 一次（列出冲突类型、候选 Bean 名、mock / 自动配置来源，并建议 `excludeAutoConfiguration` 或删掉多余 mock），JUnit 中止该类，后续 YAML case 不会反复刷新同一个失败 Context。`@Resource` 语义不变，框架也不会静默让 mock 压过生产 Bean。
 
-当前已发布的 `1.2.4` 新增 `@JustSpy`。已发布的 `1.2.3` 会在 case 边界 fail-fast 检测未结束的 Spring 事务同步/线程状态，并只在检测到泄漏后隔离线程；泄漏源 case 即使匹配 `expect_exception.yaml` 也会失败。业务代码仍必须在所有路径 commit/rollback，框架隔离不是业务 rollback 的替代品。#6/#12 处理 holder，#67 补充事务同步与 active-transaction 状态。`1.2.2` 新增上述 mock 冲突 fail-fast。`1.2.1` 已包含撤回框架默认关闭 OkHttp，以及 opt-in `@JustTestProject(autoMockFeignClients)`（仅 `@FeignClient`）。
+主线 `1.2.5` 待发布，尚未上传 Maven Central；Central 上的当前版本仍是 `1.2.4`。待发布的 `1.2.5` 让线程作用域 `@JustSpy` / `@JustMock` 实例保持为可 stub 的 Mockito mock，Spring 自动代理的 advisor 留在真实 Bean 上。已发布的 `1.2.4` 新增 `@JustSpy`。已发布的 `1.2.3` 会在 case 边界 fail-fast 检测未结束的 Spring 事务同步/线程状态，并只在检测到泄漏后隔离线程；泄漏源 case 即使匹配 `expect_exception.yaml` 也会失败。业务代码仍必须在所有路径 commit/rollback，框架隔离不是业务 rollback 的替代品。#6/#12 处理 holder，#67 补充事务同步与 active-transaction 状态。`1.2.2` 新增上述 mock 冲突 fail-fast。`1.2.1` 已包含撤回框架默认关闭 OkHttp，以及 opt-in `@JustTestProject(autoMockFeignClients)`（仅 `@FeignClient`）。
 3. `@JustTest` 已包含 Boot TestContext 与 `test` profile；不要再叠 `@SpringBootTest` 或 `@BootstrapWith`。启动配置不得加载生产 `DataSource` / 事务管理器。
 
 三层职责（框架拥有 / 默认可覆盖 / 项目必须声明）见 README「编写测试」。用例目录仍是 Support + 方法包，不要改成别的 case 根。
@@ -134,7 +134,7 @@ class CreateJustTest extends OrderJustTestSupport {
 - 外部依赖在 `beforeExecute` 或 `@BeforeCase("case-name")` 里 stub；不要把未定义返回值交给业务 fail-open。
 - 替换 Spring Bean 用 `@JustMock`；只 stub 已有 Bean 的个别方法、其余走真实逻辑（包括 `prepare.yaml` / H2）时用 `@JustSpy`。静态 Context / 工厂入口用 `configureStaticMocks` + `StaticMockContext`。
 - `@JustSpy` 必须 stub 成 `doReturn` / `doThrow` / `doNothing`。`when(spy.foo())` 会先调用真实方法。真实 Bean 内部的 `this.bar()` 不会被 spy 拦截。
-- `@JustSpy` 委托的是容器里的那个 Bean。若它是 `@Transactional` 等 AOP 代理，未 stub 的调用仍走代理，不会拆到 target。MyBatis Mapper 与 Feign 这类 JDK 代理用 `delegatesTo`，不要用 `Mockito.spy`。
+- `@JustSpy` 委托的是容器里的那个 Bean。若它是 `@Transactional` 等 AOP 代理，未 stub 的调用仍走代理，不会拆到 target。线程作用域的 `@JustSpy` / `@JustMock` 实例不会再被自动代理包一层（例如 `@Repository` 的异常转换、具体类上的 `@Transactional`），advisor 留在真实 Bean 上，测试字段可以直接 `doReturn` / `doThrow`。MyBatis Mapper 与 Feign 这类 JDK 代理用 `delegatesTo`，不要用 `Mockito.spy`。
 - 找不到 Bean 时 `@JustSpy` 启动失败，不会自动创建。同一字段不能同时标 `@JustMock` 和 `@JustSpy`。同一类型或同一个已解析 Bean 不能再被 `@JustMock` / `@ThreadScopedMock`，启动期 fail-fast 一次（类型、候选、来源）。显式 `@JustSpy` 优先于 `autoMockFeignClients`。case 重置后 stub 不泄漏。
 - 稳定公开 API 仅限 `annotation`（含 `@JustSpy`）、`CaseContext`、`JustTestLifecycle`、`StaticMockContext`，以及 Boot 模块的 `@JustTest` / `@JustTestProject`。不要依赖 `com.just.test.internal`，也不要直接使用 `JustTestClassValidationExtension`。
 

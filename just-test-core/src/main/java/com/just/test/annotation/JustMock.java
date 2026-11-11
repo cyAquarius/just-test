@@ -9,7 +9,9 @@ import java.lang.annotation.Target;
  * 线程安全的 Mock 注解，替代 {@code @MockBean} 解决并行测试下 mock 互相覆盖的问题。
  *
  * <p>底层通过线程作用域 ScopedProxy 实现：每个线程拿到独立的 Mockito mock 实例，
- * when() stubbing 天然线程隔离，与 H2 数据库路由完全对称。</p>
+ * when() stubbing 天然线程隔离，与 H2 数据库路由完全对称。这个线程作用域实例不会再被
+ * Spring 自动代理包裹，因此被替换的具体类即使带 {@code @Repository} 等会被自动代理的注解，
+ * 测试字段仍然是可 stub 的 Mockito mock。</p>
  *
  * <p>字段只在 {@code @JustTest} 的 {@link CaseSource} invocation 生命周期内注入；
  * 它不是普通 JUnit 测试类中的通用 Mock 注解。</p>
