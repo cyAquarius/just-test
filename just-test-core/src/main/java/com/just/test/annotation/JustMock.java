@@ -44,8 +44,10 @@ import java.lang.annotation.Target;
  * 启动时该类型已经包成线程级 Mockito mock，真实 Bean 被藏起来，advisor 留在真实 Bean 上。
  * 当前测试类声明了本注解时，未 stub 的调用返回 Mockito 默认值；没有声明的测试类仍调用真实 Bean。
  * 激活看的是「本测试类声明了 {@code @JustMock}」，不是「当前有 stub」。case 结束会重置 stub。
- * 这条声明不进入上下文缓存 key。类型全集在第一次启动前确定
- * （{@code @JustTestProject(interceptMocks)} 加上使用同一个启动类的 {@code @JustTest} 扫描结果）。
+ * 这条声明不进入上下文缓存 key。类型全集在该共享 Context 第一次启动前确定，之后不能再增加
+ * （{@code @JustTestProject(interceptMocks)}，加上该启动类所在包及其子包里、解析出的启动类
+ * 就是这个 {@code @JustTestProject} 类的 {@code @JustTest} 扫描结果）。
+ * 包树之外的测试若需要拦截，必须把类型写进 {@code interceptMocks}。
  * 没装上拦截的类型会 fail-fast，不会退回替换定义。真实 Bean 内部的 {@code this.foo()} 自调不会进拦截。
  * 没有 {@code @JustTestProject} 时，真实 Bean 仍会替换定义并参与缓存 key。</p>
  */
