@@ -67,6 +67,10 @@ junit.jupiter.execution.parallel.mode.classes.default=concurrent
 
 `@TestInstance(PER_CLASS)` 不能与类内并发 case 组合——仅当 JUnit 并行已启用（`junit.jupiter.execution.parallel.enabled=true`），且 case 会并发执行（`@Execution(CONCURRENT)` 或 `mode.default=concurrent`）时：共享测试实例会竞态 `@JustMock` 字段注入。若并行未启用，残留的 `@Execution` / `mode.default=concurrent` 不触发该检查。并发 case 请使用 JUnit 默认的 `PER_METHOD`；需要 `PER_CLASS` 时保持 `SAME_THREAD`。类间并行（`mode.classes.default`）不等于类内 case 并发。
 
+需要 N 方同时到达的重叠或屏障契约，也必须从同一个线程池拿到 N 个空闲 worker。本仓库的契约测试在 `src/contract-test/resources/junit-platform.properties` 里把并行池固定为 2（`junit.jupiter.execution.parallel.config.strategy=fixed`，`junit.jupiter.execution.parallel.config.fixed.parallelism=2`）。2 方屏障会占住一个 worker，直到另一方进入。若这些参与方与默认套件里的其他并发类共享这个池，一个 worker 可能停在别的类里，缺的一方不会被调度，屏障就会超时。这是固定池被占满时的 JUnit 调度问题。JustTest 的隔离不变：消费方仍可让测试类并行，并在确认安全后让同一类中的 case 并行。拆分 Surefire 只是为了把池里的两个 worker 留给屏障。
+
+本仓库的 `just-test-boot2` 与 `just-test-boot3` 每次 Surefire 执行都使用这份 properties。`ConcurrentCasesJustTest`（类内 case 重叠）跑在 `concurrent-case-contract`；`ParallelFirstJustTest` 与 `ParallelSecondJustTest`（类间重叠）跑在 `parallel-class-contract`。`default-test` 仍并发运行其余契约类。这些重叠类留在各自的 execution。放回 `default-test`、把 case 改成串行、放宽重叠断言，或只加大屏障超时，都解决不了同一处调度停滞。
+
 ### 并行落地反模式
 
 并行失败不一定是 JustTest 隔离失效；先排查下游项目的替身、静态状态和资源生命周期。以下用法会把使用错误伪装成 framework flake：
