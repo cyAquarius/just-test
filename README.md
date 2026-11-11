@@ -2,102 +2,26 @@
 
 [中文文档](README.zh-CN.md)
 
-`just-test` is a reusable Java test toolkit licensed under the [Apache License 2.0](LICENSE). JustTest provides the same public packages and core semantics for Spring Boot 2 and Spring Boot 3 through two independent product lines.
+Reusable Java test toolkit under the [Apache License 2.0](LICENSE).
 
-It is deliberately a test-scope framework: it supplies repeatable test setup, assertions, and test doubles, but it does not replace application design, production database compatibility testing, or concurrency control in application code.
+- Two product lines, one public API: Spring Boot 2 and Spring Boot 3 share `com.just.test` and the same core semantics.
+- Test scope only: repeatable setup, assertions, and test doubles.
+- It does not replace application design, production database compatibility testing, or concurrency control in application code.
 
-## Compatibility and version matrix
+Adopt in this order: [coordinates](#coordinates), [write a test](#write-a-test), then [rules](#rules) when a startup or mock does not match the sample.
 
-| Component | `just-test-boot2` | `just-test-boot3` |
+<a id="coordinates"></a>
+
+## Coordinates
+
+Maven Central group is `io.github.cyaquarius`. The current released version is `1.2.7`.
+
+| | Boot 2 | Boot 3 |
 | --- | --- | --- |
-| Java | 8 | 17 |
-| Spring Boot | 2.7.18 | 3.5.16 |
-| Spring Framework | 5.3.31 | 6.2.19 |
-| JUnit Jupiter | 5.14.4 | 5.12.2 |
-| Mockito | 4.11.0 | 5.17.0 |
-| MyBatis / mybatis-spring | 3.5.19 / 2.1.2 | 3.5.19 / 3.0.6 |
-| H2 | 2.1.214 | 2.3.232 |
-| SnakeYAML | 1.33 | 2.4 |
-| fastjson2 | 2.0.64 | 2.0.64 |
-| SLF4J | 1.7.36 | 2.0.18 |
-
-The Boot 2 line retains the final 2.7.18 release and a real Java 8 baseline. The Boot 3 line uses stable Boot 3.5.16 on Java 17 and does not move to Boot 4. Versions come from the corresponding Spring Boot BOM except for MyBatis, mybatis-spring, fastjson2, Boot 2 Mockito/SnakeYAML, the Boot 2 `junit-bom` override (JUnit Jupiter 5.14.4), and build plugins. Builds use Maven Compiler Plugin 3.15.0 and Surefire 3.5.6; CI uses `actions/checkout@v7` and `actions/setup-java@v6`.
-
-The matrix is the standalone build and validation baseline for both product lines. CI also runs consumer smoke tests under the matching Spring Boot parent/BOM to cover a common application layout.
-
-## What JustTest provides
-
-- `@JustTest` configures Spring Test, H2, `JdbcTemplate`, and a transaction manager so application services can exercise their normal transaction behavior; it registers a `refresh` scope stand-in when none exists, so business beans using `@RefreshScope` or `@Scope("refresh")` can load without Spring Cloud refresh infrastructure, but tests do not get real refresh semantics.
-- `@JustTestProject` is the recommended consumer startup annotation: an empty class with `basePackages` (and optional `mapperPackages`) gets `@SpringBootConfiguration`, `@EnableAutoConfiguration`, opinionated component-scan excludes, optional MyBatis wiring to JustTest's DataSource, and `dataSource` / `transactionManager` aliases (plus optional legacy names via `dataSourceAliases` / `transactionManagerAliases`). Transport / OkHttp is the consuming project's choice — JustTest does not write `feign.okhttp.enabled=false` / `spring.cloud.openfeign.okhttp.enabled=false`. `FeignAutoConfiguration` / `FeignContext` stay available. Opt in to `@JustTestProject(autoMockFeignClients = true)` to register thread-scoped Mockito mocks for interfaces annotated with `@FeignClient` only (not `*Client` names, not Redis/OSS/SDK beans). Explicit `@JustMock` / `@JustSpy` / `@ThreadScopedMock` win; `autoMockFeignClientExcludes` opts selected Feign types out. Existing hand-written startup classes keep working.
-- `@CaseSource` discovers YAML cases and creates one full JUnit test-template invocation per case, with `CaseContext` available to the test and standard per-test lifecycle methods.
-- `prepare.yaml`, `response.yaml`, `expect.yaml`, and `expect_exception.yaml` cover data setup and result, database, and exception verification.
-- `@JustMock` creates a thread-scoped Mockito mock. Spring auto-proxy leaves that per-thread instance unwrapped, so the injected field stays a Mockito mock when the concrete class would otherwise be advised, such as a `@Repository` implementation. When several beans share a type, an explicit `name` wins only for a type-compatible bean; if an existing bean's type cannot be resolved (for example, a `FactoryBean` hides its object type), name fallback still applies. A same-named bean of an unrelated type is not replaced, and a wrong explicit name fails with a missing-candidate error. If the resolved target is already a thread-scoped mock from a `@ThreadScopedMock` `@Bean` or from `@JustTestProject(autoMockFeignClients = true)`, the field only binds to that mock: JustTest does not register another bean definition, and that declaration is not part of the Spring Test context cache key. Classes that bind different subsets of those existing mocks share one `ApplicationContext`. Injection unwraps the scoped proxy, so `when(field...)` and `doReturn(...).when(field)` stub the field directly, and per-case reset is unchanged. When the test uses `@JustTestProject`, `@JustMock` of a real bean is also a bind: the real bean is hidden at startup (its advisors stay on it) and the public bean is a thread-scoped Mockito mock whose default answer switches per thread. If this test class declared `@JustMock` for that type, unstubbed calls return Mockito defaults; otherwise the call goes to the real bean. That follows the declaration, not whether any stub is registered. Stubs reset at case end. The declaration does not enter the context cache key, so different real-bean subsets share one context. The set of intercepted types is fixed before the first start of that shared context and cannot grow afterward: `interceptMocks` on that `@JustTestProject`, plus real-bean `@JustMock` types on `@JustTest` classes in that startup class's package and subpackages whose resolved startup class is that same `@JustTestProject` class. A test outside that package tree that needs intercept must list the types in `interceptMocks`. A later `@JustMock` of a type that was not installed fails fast; JustTest does not fall back to replacing the definition. A call the real bean makes to itself (`this.foo()`) does not enter the intercept. Without `@JustTestProject`, a real bean is still replaced and still participates in the cache key. Multiple candidates of the same type still fail fast at startup; JustTest does not auto-exclude `*AutoConfiguration`.
-- `@JustSpy` partially stubs an existing bean: unstubbed methods run that real bean, including `prepare.yaml` / H2 data. It uses the same `name` / `@Qualifier` / candidate rules as `@JustMock`. If no bean exists, startup fails; JustTest never creates one. The real bean stays a hidden singleton and is not a second injectable bean of that type. The original name becomes a thread-scoped scoped proxy whose per-thread instance is `mock(type, withSettings().defaultAnswer(delegatesTo(realBean)))`, which covers MyBatis `MapperFactoryBean` and Feign-style JDK proxies without `Mockito.spy`. The delegate is the container bean as Spring exposes it. When that bean is an AOP proxy such as `@Transactional`, unstubbed calls go through the proxy and its advisors, not the unwrapped target. Spring auto-proxy leaves the thread-scoped mock unwrapped, so `@Repository` exception translation and `@Transactional` stay on the real bean and `doReturn` / `doThrow` apply directly to the injected field. Stub with `doReturn` / `doThrow` / `doNothing`; `when(spy.foo())` invokes the real method. Self-invocation (`this.bar()`) inside the real bean is not intercepted. An explicit `@JustSpy` wins over `autoMockFeignClients` for that type. The same field cannot carry both `@JustMock` and `@JustSpy`. The same type, or the same resolved bean, cannot also be `@JustMock` or `@ThreadScopedMock`; startup fails once with a class-level diagnostic (type, candidates, sources) and JUnit aborts the class. `@JustSpy` stays in the Spring Test context cache key. Each case reset builds a new delegating mock, so stubs do not leak.
-- `@ThreadScopedMock` applies the same scoped-mock model to an annotated `@Bean` method.
-- If a `@JustMock` / `@ThreadScopedMock` bean still coexists with a same-type bean from an `*AutoConfiguration`, JustTest fails fast once at context startup (conflicting type, candidate names, mock vs auto-configuration origin, and `excludeAutoConfiguration` / remove-mock next steps). It does not auto-exclude auto-configurations, silently prefer the mock, or change `@Resource` matching. JUnit aborts the test class so YAML `@CaseSource` cases do not each rebuild the same failed context.
-- `StaticMockContext` can replace an application static context/factory gateway per case thread and restores it automatically at case end.
-- The H2 test database is isolated per JustTest `ApplicationContext` and active case; cleaned DDL is cached, and the schema is cloned from a template database by default (disable with `justtest.schema.clone=false`); each case database is released at case end, and schema initialization is retried after failure. For MySQL `schema.sql` dumps, the cleaner strips common `SHOW CREATE TABLE` extras such as table `ROW_FORMAT`, `UNSIGNED`, `ON UPDATE CURRENT_TIMESTAMP`, column `CHARACTER SET`, and `DEFAULT b'0'`; it does not cover every MySQL dialect.
-- MyBatis test SQL receives narrowly scoped MySQL-to-H2 rewrites: `IF(...)` becomes `CASEWHEN(...)`, and `DATE_FORMAT(...)` becomes `FORMATDATETIME(...)`; the `DATE_FORMAT` rewrite runs through the MyBatis `StatementHandler` interceptor path (the same path as `IF(...)` → `CASEWHEN(...)`), so plain `JdbcTemplate` SQL is not rewritten unless it goes through that interceptor. Legacy double-quoted string literals are supported inside known string functions and on the right side of comparison operators.
-
-## Boundaries and concurrency
-
-JustTest isolates the test resources it owns. It does **not** make arbitrary application code globally parallel-safe.
-
-- Static registries initialized by application code remain an application concern.
-- Case static mocks affect only the current thread. They are active for user `@BeforeEach`, the test, and user `@AfterEach`; they cannot cover Spring context refresh or Spring Test listeners that run before the case invocation, and do not propagate to application-created asynchronous threads.
-- When multiple Spring contexts are detected, JustTest emits one risk warning. A related case failure adds a diagnostic log without replacing the original exception. The presence of an arbitrary static mock does not suppress this hint because the framework cannot know whether it covers the relevant gateway.
-- New and legacy test classes can coexist; legacy classes without `@JustTest` do not activate the JustTest lifecycle. If both run in parallel while application code shares a JVM-static ContextHolder or factory, JustTest cannot protect the legacy test thread. Keep affected legacy tests serial or migrate their static gateway.
-- Manually created threads, `CompletableFuture` common-pool tasks, and executors not managed by JustTest do not receive mock or database context automatically; database or thread-scoped mock access without an active case fails fast instead of creating an empty H2 database or an unstubbed mock. When `@JustTest` owns H2 infrastructure, a missing framework `JdbcTemplate` or `JustTestRoutingDataSource` is also a configuration error and fails fast rather than skipping prepare/verify.
-- Spring `@Transactional` and `@Sql` are unsupported on a JustTest class or `@CaseSource` method because their lifecycle runs before a case is bound; JustTest fails fast on these configurations. Use `prepare.yaml` and `expect.yaml` for deterministic case data instead.
-- A passing rerun is not proof of concurrency safety. Keep flaky suites serial until their ownership and lifecycle boundaries are established.
-- Write new SQL with standard single-quoted strings. The double-quote rewrite is only a compatibility bridge for existing MySQL mapper SQL.
-
-### Parallel execution configuration
-
-The consumer project's JUnit configuration controls scheduling; JustTest isolates framework-owned resources once tests run in parallel. Start by running test classes concurrently while keeping cases within each class sequential:
-
-```properties
-# src/test/resources/junit-platform.properties
-junit.jupiter.execution.parallel.enabled=true
-junit.jupiter.execution.parallel.mode.default=same_thread
-junit.jupiter.execution.parallel.mode.classes.default=concurrent
-```
-
-After verifying that application static state, external shared resources, and asynchronous threads are safe, set `mode.default` to `concurrent` to run cases within the same class concurrently. Normal tests do not need `@Execution`; use `@Execution(ExecutionMode.SAME_THREAD)` only to downgrade an exceptional class that cannot satisfy the concurrency boundaries.
-
-`@TestInstance(PER_CLASS)` cannot be combined with concurrent case execution when JUnit parallel is enabled (`junit.jupiter.execution.parallel.enabled=true`) and cases would run concurrently (`@Execution(CONCURRENT)` or `mode.default=concurrent`). Cases would share one test instance and can race `@JustMock` field injection. If parallel is disabled, leftover `@Execution` / `mode.default=concurrent` settings are ignored for this check. Use the JUnit default `PER_METHOD` with concurrent cases, or keep `PER_CLASS` with `SAME_THREAD`. Class-level parallelism (`mode.classes.default`) is not case concurrency.
-
-An overlap or barrier contract that needs N parties also needs N free workers from the same pool. This repository's contract tests pin that pool at 2 in `src/contract-test/resources/junit-platform.properties` (`junit.jupiter.execution.parallel.config.strategy=fixed`, `junit.jupiter.execution.parallel.config.fixed.parallelism=2`). A 2-party barrier holds one worker until the other party enters. If those parties share the default suite's pool with other concurrent classes, one worker can stay inside another class, the missing party is never scheduled, and the barrier times out. That timeout is JUnit scheduling on a saturated fixed pool. JustTest isolation is unchanged: consumers may still run test classes concurrently and, after the safety check above, cases within a class. The Surefire split only reserves both workers for the barrier.
-
-In this repository, `just-test-boot2` and `just-test-boot3` keep that properties file for every Surefire execution. `ConcurrentCasesJustTest` (in-class case overlap) runs in `concurrent-case-contract`. `ParallelFirstJustTest` and `ParallelSecondJustTest` (class-level overlap) run in `parallel-class-contract`. The `default-test` execution still runs the other contract classes concurrently. Leave the overlap classes in those executions. Moving them back into `default-test`, serializing their cases, weakening the overlap assertions, or only raising the barrier timeout leaves the same stall in place.
-
-### Parallel rollout antipatterns
-
-A parallel failure is not automatically a JustTest isolation failure; first inspect the downstream project's test doubles, static state, and resource lifecycle. The following patterns can make usage errors look like framework flakes:
-
-1. **Replacing an `@JustMock` proxy with `ReflectionTestUtils`**
-   - **Wrong:** In `beforeExecute`, use `ReflectionTestUtils` to write a raw Mockito mock into a business bean field, replacing the `ThreadScope` proxy created by `@JustMock`. Business beans are often singletons, so this pollutes a singleton field and lets other threads or cases see the wrong stub.
-   - **Right:** Stub only the test-class `@JustMock` field and keep business beans wired to the scoped proxy. Use `StaticMockContext` / `configureStaticMocks` to configure static factory or context gateways per case.
-
-2. **Adding a keep-alive flag to the case H2 URL**
-   - **Wrong:** Add `DB_CLOSE_DELAY=-1` (or a similar keep-alive flag) to the case URL to hide `already closed`. This only defers the lifecycle problem and can cause memory growth, slower full runs, or OOM.
-   - **Right:** Follow the resource boundary described in [#12 (`already closed`)](https://github.com/cyAquarius/just-test/issues/12): when switching cases, unbind thread-bound JDBC/MyBatis holders first, then release the old `DataSource` and rebuild the current case `DataSource`. The template database may use `DB_CLOSE_DELAY=-1` internally for schema cloning (see [#16](https://github.com/cyAquarius/just-test/issues/16)); that is not permission to add it to case URLs. The default case URL contains no `DB_CLOSE_DELAY`.
-
-3. **Expecting JustTest to repair application static registries**
-   - **Wrong:** Blame JustTest for concurrency pollution in an application static context, factory, or registry, expect the framework to repair it automatically, or default to adding a global `ContextCreationLock` upstream. JustTest does not own the isolation or concurrency governance of those application static gateways.
-   - **Right:** Use this rollout checklist:
-     - Multiple Spring Context warning → check whether `StaticMockContext` / `configureStaticMocks` covers the relevant static context or factory gateway.
-     - Diagnose Bean wiring issues such as the Mapper `#0` dual-bean case by name, qualifier, and startup configuration; see [#11](https://github.com/cyAquarius/just-test/issues/11) instead of hiding them with a global lock.
-     - Tests that cannot be isolated stay serial: use `@Execution(ExecutionMode.SAME_THREAD)` or run the test class serially.
-     - Do not default to adding a global `ContextCreationLock` upstream; fix the static gateway isolation first, and keep unisolated tests serial.
-
-4. **Unstubbed external dependencies plus business fail-open**
-   - **Wrong:** Leave critical external dependencies unstubbed while business code swallows an exception or treats it as success; parallel timing and return values can make this look like a framework flake.
-   - **Right:** Stub critical collaborators in `beforeExecute` / `@BeforeCase` and assert success and exception paths explicitly; do not pass undefined external return values into business fail-open logic.
-
-## Maven Central
-
-Coordinates use `io.github.cyaquarius`. Java packages remain `com.just.test`. Maven Central publishes only `just-test-boot2` and `just-test-boot3` (`just-test-core` is shaded into those JARs). The current released version on Maven Central is `1.2.7`. Local `mvn install` remains for developing from this repo.
+| `artifactId` | `just-test-boot2` | `just-test-boot3` |
+| Java / Spring Boot | 8 / 2.7.18 | 17 / 3.5.16 |
+| Java package | `com.just.test` | `com.just.test` |
+| Released version | `1.2.7` | `1.2.7` |
 
 Java 8 / Boot 2:
 
@@ -110,29 +34,98 @@ Java 8 / Boot 2:
 </dependency>
 ```
 
-Java 17 / Boot 3: use `just-test-boot3`. Do not depend on both top-level artifacts. Do not declare `just-test-core` separately — it is shaded into the boot JAR and is not published as its own Central coordinate.
+- Java 17 / Boot 3: use `just-test-boot3`. Do not depend on both top-level artifacts.
+- Do not declare `just-test-core`. It is shaded into the boot JAR and has no Central coordinate of its own.
+- Central publishes only `just-test-boot2` and `just-test-boot3`.
+- A repository that already proxies Central only needs the dependency above.
+- Without Central access, proxy Central, or upload the boot2 / boot3 artifacts to a private release repository and keep group `io.github.cyaquarius`.
+- `mvn install` from this repository is for local development. Release history: [changelog](#changelog). Library baseline: [compatibility](#compatibility).
 
-A company Maven proxying Central only needs the dependency declaration. Environments without Central access can proxy Central or upload the boot2/boot3 artifacts to a private release repository while keeping coordinates `io.github.cyaquarius`.
+<a id="capabilities"></a>
 
-`1.2.7` intercepts `@JustMock` of a real bean instead of replacing that bean and splitting the Spring Test context. Tests that use the same `@JustTestProject` startup class share one `ApplicationContext`. The intercept set is fixed before the first start of that shared context and cannot grow afterward: `@JustTestProject(interceptMocks = ...)` plus real-bean `@JustMock` types from `@JustTest` classes in that startup class's package and subpackages whose resolved startup class is that same `@JustTestProject` class. A test outside that package tree that needs intercept must list the types in `interceptMocks`. On the current thread, a declared `@JustMock` returns Mockito defaults until stubbed; a test class that did not declare `@JustMock` for that type still calls the real bean and its advisors. Stubs reset at case end. These declarations do not register another bean definition and do not enter the context cache key. A `@JustMock` whose type was not installed fails fast. `@JustSpy` is unchanged and still part of the cache key. Self-invocation (`this.foo()`) inside the real bean does not enter the intercept. Issue #88. `1.2.6` treats `@JustMock` of an already thread-scoped mock — a `@ThreadScopedMock` `@Bean`, or a Feign client created by `autoMockFeignClients` — as a bind. The field is injected and unwrapped for stubbing, the bean definition is not registered again, and the declaration does not create a new Spring Test context. `@JustSpy` still changes the context cache key. Issue #85. `1.2.5` keeps thread-scoped `@JustSpy` and `@JustMock` instances stubbable when Spring would otherwise auto-proxy the concrete class (`@Repository`, `@Transactional`): advisors stay on the real bean. Issue #81. `1.2.4` adds `@JustSpy` so a test can stub some methods of an existing bean while unstubbed methods keep the real bean, including `prepare.yaml` / H2. `1.2.3` detects unfinished Spring transaction synchronization/thread state at every case boundary and fails the case that leaked it, even when that case's `expect_exception.yaml` matched. Business code must commit or roll back on every path (or validate before calling `getTransaction`). JustTest quarantines a detected leak so the next case is isolated, but that quarantine is not a substitute for business rollback. Issues #6/#12 covered MyBatis/JDBC holders; #67 additionally covers Spring transaction synchronization and active-transaction thread state.
+## Capabilities
 
-`1.2.2` fails fast when `@JustMock` / `@ThreadScopedMock` coexists with a same-type bean from an `*AutoConfiguration`, with a class-level diagnostic instead of a repeated `NoUniqueBeanDefinitionException` per YAML case. It still does not auto-exclude auto-configurations. `1.2.1` withdrew the framework default OkHttp disable and added opt-in `@JustTestProject(autoMockFeignClients)` for `@FeignClient` interfaces only.
+```mermaid
+flowchart TB
+  subgraph lines [Product lines]
+    boot2["just-test-boot2<br>Java 8, Boot 2.7.18"]
+    boot3["just-test-boot3<br>Java 17, Boot 3.5.16"]
+  end
+  subgraph run [One JustTest class]
+    project["@JustTestProject"]
+    jt["@JustTest plus YAML cases"]
+    h2node["H2 per context and case"]
+  end
+  subgraph doubles [Doubles]
+    mockNode["@JustMock"]
+    spyNode["@JustSpy"]
+    beanNode["@ThreadScopedMock"]
+    statNode["StaticMockContext"]
+  end
+  boot2 --> project
+  boot3 --> project
+  project --> jt
+  jt --> h2node
+  jt --> mockNode
+  jt --> spyNode
+  jt --> beanNode
+  jt --> statNode
+```
 
-AI-authored tests: follow the in-repo recipe in [docs/ai-justtest-authoring.md](docs/ai-justtest-authoring.md).
+- [`@JustTest`](#justtest) runs the Boot test class on framework H2, JDBC, and transactions.
+- [`@JustTestProject`](#justtestproject) is the consumer startup annotation.
+- [`@CaseSource`](#casesource) turns each YAML case into one JUnit invocation. Files: `prepare.yaml`, `response.yaml`, `expect.yaml`, `expect_exception.yaml`.
+- [`@JustMock`](#justmock), [`@JustSpy`](#justspy), and [`@ThreadScopedMock`](#threadscoped) are thread-scoped doubles.
+- [`StaticMockContext`](#static-mocks) replaces a static context or factory for one case thread.
+- [H2](#h2) isolates each case database. [SQL rewrite](#sql-rewrite) is a narrow MySQL-to-H2 bridge for MyBatis.
 
-## Public API
-
-The stable public API stays under `com.just.test`: `annotation` (`@JustTest`, `@JustTestProject`, `@CaseSource`, `@JustMock`, `@JustSpy`, `@BeforeCase`, `@ThreadScopedMock`), `CaseContext`, `JustTestLifecycle`, and `StaticMockContext`. `JustTestMarker` and the Boot `JustTestClassValidationExtension` exist so `@JustTest` can register JUnit/Spring infrastructure; do not depend on them directly. Engine types live in `com.just.test.internal` and are unsupported for consumers even when they remain public for JUnit or Spring registration. When moving an application to Boot 3, migrate its Java EE types to Jakarta as required by Spring Boot 3; Java SE `javax.sql.DataSource` is not part of that migration.
+<a id="write-a-test"></a>
 
 ## Write a test
 
-For the AI authoring recipe (method-package layout, Java glue, flags, anti-patterns), see [docs/ai-justtest-authoring.md](docs/ai-justtest-authoring.md).
+AI-authored cases: [docs/ai-justtest-authoring.md](docs/ai-justtest-authoring.md).
 
-JustTest always uses the Spring Boot TestContext. Startup knowledge is split into three layers:
+```mermaid
+flowchart LR
+  app["JustTestApplication<br>@JustTestProject"] --> sup["Support<br>JustTestLifecycle"]
+  sup --> cls["Concrete class<br>@JustTest"]
+  cls --> src["One @CaseSource<br>void, setResult"]
+  src --> yaml["Sibling YAML directories"]
+```
 
-1. **Framework-owned:** H2, the transaction manager, `JdbcTemplate`, default component-scan denylist (`FeignAutoConfiguration` / `FeignContext` are not excluded), and (when `mapperPackages` is set) MyBatis `SqlSessionFactory` / `SqlSessionTemplate` / MapperScan bound to JustTest's DataSource. The framework does not choose a Feign HTTP client and does not auto-mock Redis, object storage, SDKs, or other non-Feign beans.
-2. **Defaults you may overlay:** `excludeClasses`, `excludeFilters`, `includeFilters`, `excludeAutoConfiguration`, `autoMockFeignClients`, and `autoMockFeignClientExcludes`. You do not need to copy the default denylist. `enableFeignOkHttp` is a deprecated no-op kept for source compatibility.
-3. **Project must declare:** `basePackages` (no guessed business root), `src/test/resources/sql/schema.sql`, and explicit `@JustMock` / `@ThreadScopedMock` for non-Feign external dependencies. Do not put production DataSource / transaction-manager configuration on the test startup class.
+```mermaid
+classDiagram
+  class JustTestProject {
+    <<annotation>>
+    basePackages
+    mapperPackages
+    autoMockFeignClients
+    interceptMocks
+  }
+  class JustTest {
+    <<annotation>>
+  }
+  class JustTestLifecycle {
+    <<interface>>
+    beforeExecute()
+    afterExecute()
+    configureStaticMocks()
+  }
+  class OrderJustTestSupport {
+    <<abstract>>
+  }
+  class CreateJustTest {
+    createOrder()
+  }
+  OrderJustTestSupport ..|> JustTestLifecycle
+  CreateJustTest --|> OrderJustTestSupport
+  CreateJustTest .. JustTest
+  JustTestProject .. CreateJustTest
+```
+
+<a id="startup-class"></a>
+
+### Startup class
 
 ```java
 // src/test/java/com/example/justtest/JustTestApplication.java
@@ -148,15 +141,17 @@ public class JustTestApplication {
 }
 ```
 
-`@JustTestProject` meta-annotates `@SpringBootConfiguration` and `@EnableAutoConfiguration`. The class body can stay empty. Default scan excludes other `@SpringBootApplication` / `@SpringBootConfiguration` types under `basePackages`, plus `@Controller` / `@RestController` / `@ControllerAdvice` when those annotations exist, `@FeignClient` when OpenFeign is present, and known job/scheduling stereotypes when they can be detected without a hard dependency. OkHttp / Feign transport stays a project setting: JustTest does not write `feign.okhttp.enabled` or `spring.cloud.openfeign.okhttp.enabled`. If `OkHttpFeignConfiguration` registers a bean named `client` that collides with `@Resource private XxxClient client`, disable OkHttp in the project or rename / use `@Resource(name = ...)`. `FeignAutoConfiguration` and `FeignContext` stay enabled. `autoMockFeignClients` defaults to `false`; when `true`, JustTest discovers interfaces annotated with `@FeignClient` (annotation presence only; no `*Client` name heuristic) and registers the same thread-scoped Mockito mocks as `@JustMock`. Explicit `@JustMock` / `@JustSpy` / `@ThreadScopedMock` replace those auto mocks for the same type; `@JustSpy` wraps the existing bean instead of replacing it with a pure mock. `autoMockFeignClientExcludes` skips selected Feign types. Redis, OSS, SDKs, and other clients stay explicit mocks on Support / MockConfig. `dataSource` and `transactionManager` are registered as aliases of the JustTest primaries when those names are free. Additional names in `dataSourceAliases` / `transactionManagerAliases` are registered the same way for legacy `@Qualifier` / `@Transactional` values; blank entries are ignored, duplicates are discarded, and a name that already exists as a bean definition or alias is left unchanged (JustTest logs the skip). Setting `mapperPackages` without mybatis-spring fails fast; mybatis-spring without `mapperPackages` does not invent a scan root.
+- `JustTestApplication` is the consumer startup configuration for JustTest. It needs no `main` method. The class body can stay empty.
+- Put it in a dedicated test package. Put every JustTest class in that package or a child package, for example `com.example.justtest.order`.
+- Spring Boot finds this nearer test configuration before the parent package that holds the production `Application`.
+- Placing the class only under `src/test` does not prevent a clash: the test classpath contains production classes and test classes.
+- Keep ordinary JUnit tests that are not JustTest outside that tree.
+- A hand-written `@SpringBootConfiguration` + `@EnableAutoConfiguration` + `@ComponentScan` startup class still works. Prefer `@JustTestProject` for new projects.
+- Scan excludes, OkHttp, Feign auto-mock, aliases, and intercept membership: [`@JustTestProject`](#justtestproject) and [`@JustMock`](#justmock).
 
-A hand-written `@SpringBootConfiguration` + `@EnableAutoConfiguration` + `@ComponentScan` startup class still works. Prefer `@JustTestProject` for new projects.
+<a id="test-class"></a>
 
-Migrating a narrow hand-written startup class to `@JustTestProject` widens component scan and Boot auto-configuration. Move the project's `excludeAutoConfiguration` / mock declarations with that wider surface. JustTest will not auto-exclude third-party `*AutoConfiguration` classes to make a mock win.
-
-`JustTestApplication` is the consumer-owned startup configuration dedicated to JustTest and needs no `main` method. Put it in a dedicated test package and place every JustTest class in that package or a child package, for example `com.example.justtest.order`. Spring Boot finds this nearer test configuration before searching the parent package that contains the production `Application`. Merely placing it under `src/test` does not prevent a conflict because the test classpath contains both production and test classes. Keep ordinary JUnit tests that are not JustTest outside that tree. The case layout stays Support + method packages; do not invent a second case-root convention.
-
-The JustTest context uses the H2 `DataSource`, transaction manager, and `JdbcTemplate` supplied by the framework. Exclude remaining production persistence configuration with the `test` profile or `excludeClasses` / `excludeFilters`. The framework does not rewrite user Bean `@Primary` metadata or choose between production and test data sources on the consumer's behalf. It does not auto-mock non-Feign business clients; Feign auto-mock is opt-in via `autoMockFeignClients`.
+### Test class and case method
 
 ```java
 // src/test/java/com/example/justtest/order/OrderJustTestSupport.java
@@ -180,16 +175,22 @@ class CreateJustTest extends OrderJustTestSupport {
 }
 ```
 
-JustTest does not collect the `@CaseSource` method's Java return value (the method is `void`). Call `context.setResult(...)` when `response.yaml` or `verifyResult` should see a result; omitting it asserts against `null`.
+- JustTest does not collect the `@CaseSource` method's Java return value. The method is `void`.
+- Call `context.setResult(...)` when `response.yaml` or `verifyResult` should see a result. Omitting it asserts against `null`.
+- `@JustTest` already includes the Spring Boot bootstrapper and loads `application-test.yml` through the `test` profile.
+- Do not combine `@JustTest` with `@SpringBootTest` or another `@BootstrapWith`.
+- The dedicated test package should expose exactly one `@SpringBootConfiguration`.
+- Use `@ContextConfiguration(classes = JustTestApplication.class)` only when a test is outside that package hierarchy, several startup configurations are candidates, or that test needs a special configuration.
+- Use `@JustMock(name = "beanName")` or `@Qualifier("beanName")` when a type has multiple candidates. Candidate rules: [`@JustMock`](#justmock).
+- Prefer `@JustMock` when replacing Spring beans. `@MockBean` is not required.
+- Do not use `ReflectionTestUtils` to replace an `@JustMock` `ThreadScope` proxy with a raw Mockito mock in a business bean field. Stub only the test-class `@JustMock` field. Detail: [antipatterns](#antipatterns).
+- Use `@JustSpy` when only some methods should be stubbed and the rest must hit the real bean, including `prepare.yaml`. Stubbing, self-invocation, and AOP: [`@JustSpy`](#justspy).
 
-`@JustTest` already includes the Spring Boot bootstrapper and loads `application-test.yml` through the `test` profile. Do not combine it with `@SpringBootTest` or declare another `@BootstrapWith`. The dedicated test package should expose exactly one `@SpringBootConfiguration`. Use `@ContextConfiguration(classes = JustTestApplication.class)` only when a test is outside that package hierarchy, several startup configurations are candidates, or that test needs a special configuration.
+<a id="static-gateways"></a>
 
-Use `@JustMock(name = "beanName")` or `@Qualifier("beanName")` when a type has multiple candidates. Prefer `@JustMock` when replacing Spring beans; `@MockBean` is not required.
-Do not use `ReflectionTestUtils` to replace an `@JustMock` `ThreadScope` proxy with a raw Mockito mock in a business bean field; stub only the test-class `@JustMock` field.
+### Static gateways
 
-Use `@JustSpy` when only some methods should be stubbed and the rest must hit the real bean (`prepare.yaml` still applies). Stub with `doReturn` / `doThrow` / `doNothing`. `when(spy.method())` calls the real method before the stub is registered. A call the real bean makes to itself (`this.other()`) is not intercepted. If the bean is an AOP proxy, unstubbed calls still pass through that proxy.
-
-If application code obtains Spring through a static gateway, bind that gateway explicitly per case:
+Bind a static Spring gateway per case:
 
 ```java
 @Override
@@ -200,13 +201,23 @@ public void configureStaticMocks(CaseContext context, StaticMockContext mocks) {
 }
 ```
 
-Unstubbed static methods continue to call their real implementation. Do not close the returned `MockedStatic` manually; JustTest closes all registrations after user `@AfterEach` on the original case thread.
+- Unstubbed static methods keep calling the real implementation.
+- Do not close the returned `MockedStatic`. JustTest closes every registration after user `@AfterEach`, on the original case thread.
+- Boot 2 uses Mockito 4. Static mocks and final-type mocks need the inline mock maker: put `mock-maker-inline` in `src/test/resources/mockito-extensions/org.mockito.plugins.MockMaker`, or add the matching `mockito-inline`.
+- Boot 3 uses Mockito 5. Its default mock maker is inline. A consumer that overrides MockMaker still owns static and final mock support.
+- JustTest does not select a MockMaker globally.
 
-Boot 2 uses Mockito 4, so static mocks and final-type mocks require the consumer to enable the inline mock maker explicitly, for example by putting `mock-maker-inline` in `src/test/resources/mockito-extensions/org.mockito.plugins.MockMaker` or adding the matching `mockito-inline`. Boot 3 uses Mockito 5, whose default mock maker is inline; consumers that override the MockMaker still own static/final mock support. JustTest does not select a MockMaker globally, avoiding conflicts with consumer configuration.
+<a id="case-directories"></a>
 
-The default case root is the test class package. Case directories are siblings of the `.java` file on the classpath (`{packagePath}/*/*.yaml|yml`). JustTest does not probe `{packagePath}/{SimpleClassName}/`. A package may contain at most one concrete class that **directly** declares `@JustTest`; inheriting the marker from a parent is not enough. Abstract Support bases belong in the parent business-class directory, hold shared lifecycle and mocks only, must not be `@JustTest`, and must not own case YAML. Annotating an abstract Support fails fast. Put one `@CaseSource` method on the concrete class — several `@CaseSource` methods on the same class share every sibling case.
+### Case directories
 
-Recommended tree (co-located under `src/test/java`):
+- The default case root is the test class package. Case directories are siblings of the `.java` file on the classpath: `{packagePath}/*/*.yaml|yml`.
+- JustTest does not probe `{packagePath}/{SimpleClassName}/`.
+- A package may contain at most one concrete class that **directly** declares `@JustTest`. Inheriting the marker from a parent is not enough.
+- Abstract Support bases belong in the parent business-class directory. They hold shared lifecycle and mocks only. They must not be `@JustTest`, and they must not own case YAML. Annotating an abstract Support fails fast.
+- Put one `@CaseSource` method on the concrete class. Several `@CaseSource` methods on the same class share every sibling case.
+- The case layout stays Support + method packages. Do not invent a second case-root convention.
+- `@CaseSource("custom-root")` resolves to `{packagePath}/{custom-root}/`. A missing package root or custom root fails with `No YAML case directories found` and names the expected sibling layout. There is no silent fallback to a class-named directory or any other root.
 
 ```text
 src/test/java/com/example/justtest/order/
@@ -240,9 +251,242 @@ Map those YAML files onto the test classpath:
 </testResources>
 ```
 
-Keep `src/test/resources` for `schema.sql` and `application-test.yml`. YAML can also live under `src/test/resources` at the same package path; the discovery path does not change.
+- Keep `src/test/resources` for `schema.sql` and `application-test.yml`.
+- YAML may also live under `src/test/resources` at the same package path. The discovery path does not change.
+- Flag meanings: [YAML files and flags](#yaml).
 
-`@CaseSource("custom-root")` is the explicit escape hatch and resolves to `{packagePath}/{custom-root}/`. A missing package root or custom root fails with `No YAML case directories found` and names the expected sibling layout; there is no silent fallback to a class-named directory or any other root.
+<a id="rules"></a>
+
+## Rules
+
+<a id="justtest"></a>
+
+### `@JustTest`
+
+- Configures Spring Test, H2, `JdbcTemplate`, and a transaction manager so application services can exercise their normal transaction behavior.
+- Registers a `refresh` scope stand-in when none exists, so beans that use `@RefreshScope` or `@Scope("refresh")` load without Spring Cloud refresh infrastructure.
+- Tests do not get real refresh semantics.
+- Class-level execution contract: [lifecycle](#lifecycle).
+
+<a id="justtestproject"></a>
+
+### `@JustTestProject`
+
+Recommended consumer startup annotation. An empty class is enough.
+
+- `@JustTestProject` meta-annotates `@SpringBootConfiguration` and `@EnableAutoConfiguration`.
+
+**Framework-owned**
+
+- H2, the transaction manager, and `JdbcTemplate`.
+- The default component-scan denylist. `FeignAutoConfiguration` and `FeignContext` are not excluded.
+- When `mapperPackages` is set: MyBatis `SqlSessionFactory`, `SqlSessionTemplate`, and MapperScan, bound to JustTest's DataSource.
+- The framework does not choose a Feign HTTP client.
+- The framework does not auto-mock Redis, object storage, SDKs, or other non-Feign beans.
+
+**Defaults you may overlay**
+
+- `excludeClasses`, `excludeFilters`, `includeFilters`, `excludeAutoConfiguration`, `autoMockFeignClients`, and `autoMockFeignClientExcludes`.
+- You do not need to copy the default denylist.
+- `enableFeignOkHttp` is a deprecated no-op kept for source compatibility.
+
+**The project must declare**
+
+- `basePackages`. JustTest does not guess a business root.
+- `src/test/resources/sql/schema.sql`.
+- Explicit `@JustMock` or `@ThreadScopedMock` for non-Feign external dependencies.
+- Do not put production DataSource or transaction-manager configuration on the test startup class.
+
+**Scan excludes**
+
+- Other `@SpringBootApplication` / `@SpringBootConfiguration` types under `basePackages`.
+- `@Controller`, `@RestController`, and `@ControllerAdvice`, when those annotations exist.
+- `@FeignClient`, when OpenFeign is present.
+- Known job and scheduling stereotypes, when they can be detected without a hard dependency.
+
+**Transport and Feign**
+
+- OkHttp / Feign transport stays a project setting. JustTest does not write `feign.okhttp.enabled` or `spring.cloud.openfeign.okhttp.enabled`, including the value `false`.
+- If `OkHttpFeignConfiguration` registers a bean named `client` that collides with `@Resource private XxxClient client`, disable OkHttp in the project, or rename the field, or use `@Resource(name = ...)`.
+- `FeignAutoConfiguration` and `FeignContext` stay enabled.
+- `autoMockFeignClients` defaults to `false`.
+- When it is `true`, JustTest discovers interfaces annotated with `@FeignClient` (annotation presence only; no `*Client` name heuristic) and registers the same thread-scoped Mockito mocks as `@JustMock`.
+- Explicit `@JustMock`, `@JustSpy`, and `@ThreadScopedMock` replace those auto mocks for the same type. `@JustSpy` wraps the existing bean instead of replacing it with a pure mock.
+- `autoMockFeignClientExcludes` skips selected Feign types.
+- Redis, OSS, SDKs, and other clients stay explicit mocks on Support or MockConfig.
+
+**Aliases and MyBatis**
+
+- `dataSource` and `transactionManager` are registered as aliases of the JustTest primaries when those names are free.
+- Extra names in `dataSourceAliases` / `transactionManagerAliases` are registered the same way for legacy `@Qualifier` / `@Transactional` values.
+- Blank alias entries are ignored. Duplicates are discarded.
+- A name that already exists as a bean definition or alias is left unchanged. JustTest logs the skip.
+- `mapperPackages` without mybatis-spring fails fast.
+- mybatis-spring without `mapperPackages` does not invent a scan root.
+
+**Moving an existing startup class**
+
+- A hand-written startup class still works.
+- Migrating a narrow hand-written startup class to `@JustTestProject` widens component scan and Boot auto-configuration. Move the project's `excludeAutoConfiguration` and mock declarations with that wider surface.
+- JustTest will not auto-exclude third-party `*AutoConfiguration` classes to make a mock win. Conflict behavior: [`@ThreadScopedMock` and auto-configuration](#threadscoped).
+
+<a id="casesource"></a>
+
+### `@CaseSource`
+
+- Discovers YAML cases and creates one full JUnit test-template invocation per case.
+- `CaseContext` is available to the test and to standard per-test lifecycle methods.
+- `@CaseSource` is itself the test annotation. Do not combine it with another JUnit test annotation.
+- Directory rules: [case directories](#case-directories). Step order: [lifecycle](#lifecycle).
+
+<a id="justmock"></a>
+
+### `@JustMock`
+
+```mermaid
+sequenceDiagram
+  participant Test as Test class
+  participant Ctx as ApplicationContext
+  participant Bean as Real bean
+  alt With JustTestProject
+    Test->>Ctx: Bind JustMock of a real bean
+    Note over Ctx: Intercept set is frozen before first start
+    alt This class declared JustMock
+      Test->>Bean: Unstubbed call returns a Mockito default
+    else This class did not declare it
+      Test->>Bean: Call reaches the real bean and its advisors
+    end
+    Note over Bean: Self-call this.foo does not enter the intercept
+  else Without JustTestProject
+    Test->>Ctx: Replace the bean definition
+    Note over Ctx: Replacement stays in the cache key
+  end
+```
+
+**Thread-scoped mock**
+
+- `@JustMock` creates a thread-scoped Mockito mock.
+- Spring auto-proxy leaves that per-thread instance unwrapped, so the injected field stays a Mockito mock when the concrete class would otherwise be advised, such as a `@Repository` implementation.
+
+**Choosing a bean**
+
+- When several beans share a type, an explicit `name` wins only for a type-compatible bean.
+- If an existing bean's type cannot be resolved (for example, a `FactoryBean` hides its object type), name fallback still applies.
+- A same-named bean of an unrelated type is not replaced.
+- A wrong explicit name fails with a missing-candidate error.
+- Multiple candidates of the same type still fail fast at startup.
+- JustTest does not auto-exclude `*AutoConfiguration`.
+
+**Bind an existing thread-scoped mock**
+
+- If the resolved target is already a thread-scoped mock from a `@ThreadScopedMock` `@Bean`, or from `@JustTestProject(autoMockFeignClients = true)`, the field only binds to that mock.
+- JustTest does not register another bean definition.
+- That declaration is not part of the Spring Test context cache key.
+- Classes that bind different subsets of those existing mocks share one `ApplicationContext`.
+- Injection unwraps the scoped proxy, so `when(field...)` and `doReturn(...).when(field)` stub the field directly.
+- Per-case reset is unchanged.
+
+**Real bean, with `@JustTestProject`**
+
+- `@JustMock` of a real bean is also a bind.
+- The real bean is hidden at startup. Its advisors stay on it.
+- The public bean is a thread-scoped Mockito mock whose default answer switches per thread.
+- If this test class declared `@JustMock` for that type, unstubbed calls return Mockito defaults. Otherwise the call goes to the real bean.
+- Activation follows the declaration, not whether any stub is registered.
+- Stubs reset at case end.
+- The declaration does not enter the context cache key, so different real-bean subsets share one context.
+- The intercept set is fixed before the first start of that shared context and cannot grow afterward.
+- The set is `interceptMocks` on that `@JustTestProject`, plus real-bean `@JustMock` types on `@JustTest` classes in that startup class's package and subpackages whose resolved startup class is that same `@JustTestProject` class.
+- A test outside that package tree that needs intercept must list the types in `interceptMocks`.
+- A later `@JustMock` of a type that was not installed fails fast. JustTest does not replace the bean and does not split the cache.
+- A call the real bean makes to itself (`this.foo()`) does not enter the intercept.
+
+**Real bean, without `@JustTestProject`**
+
+- A real bean is still replaced.
+- That replacement still participates in the cache key.
+
+```mermaid
+flowchart TD
+  subgraph miss [Missing intercept]
+    missIn["Real-bean JustMock type was not installed"] --> missOut["Fail fast<br>Do not replace the bean<br>Do not split the cache"]
+  end
+  subgraph many [Same type]
+    multiIn["Several candidates"] --> multiOut["Fail fast at startup<br>No auto-exclude"]
+    autoIn["Mock coexists with a same-type AutoConfiguration bean"] --> autoOut["Fail fast once and abort the class<br>No silent preference"]
+  end
+  subgraph spyclash [Spy clash]
+    spyIn["JustSpy shares a type or bean with JustMock or ThreadScopedMock"] --> spyOut["Fail once with a class diagnostic<br>Abort the class"]
+  end
+```
+
+- Any matching check fails startup. The figure groups the checks; it is not an execution order. Diagnostics for the auto-configuration case: [`@ThreadScopedMock` and auto-configuration](#threadscoped).
+
+<a id="justspy"></a>
+
+### `@JustSpy`
+
+- Partially stubs an existing bean. Unstubbed methods run that real bean, including `prepare.yaml` / H2 data.
+- Bean selection uses the same `name` / `@Qualifier` / candidate rules as `@JustMock`.
+- If no bean exists, startup fails. JustTest never creates one.
+- The real bean stays a hidden singleton. It is not a second injectable bean of that type.
+- The original name becomes a thread-scoped scoped proxy. Each thread's instance is `mock(type, withSettings().defaultAnswer(delegatesTo(realBean)))`.
+- That covers MyBatis `MapperFactoryBean` and Feign-style JDK proxies without `Mockito.spy`.
+- The delegate is the container bean as Spring exposes it.
+- When that bean is an AOP proxy such as `@Transactional`, unstubbed calls go through the proxy and its advisors, not the unwrapped target.
+- Spring auto-proxy leaves the thread-scoped mock unwrapped, so `@Repository` exception translation and `@Transactional` stay on the real bean.
+- `doReturn` / `doThrow` apply directly to the injected field.
+- Stub with `doReturn`, `doThrow`, or `doNothing`. `when(spy.foo())` invokes the real method.
+- Self-invocation inside the real bean (`this.bar()`) is not intercepted.
+- An explicit `@JustSpy` wins over `autoMockFeignClients` for that type.
+- The same field cannot carry both `@JustMock` and `@JustSpy`.
+- The same type, or the same resolved bean, cannot also be `@JustMock` or `@ThreadScopedMock`. Startup fails once with a class-level diagnostic (type, candidates, sources), and JUnit aborts the class.
+- `@JustSpy` stays in the Spring Test context cache key. It is unchanged by the real-bean `@JustMock` intercept.
+- Each case reset builds a new delegating mock, so stubs do not leak.
+
+<a id="threadscoped"></a>
+
+### `@ThreadScopedMock` and auto-configuration
+
+- `@ThreadScopedMock` applies the same scoped-mock model to an annotated `@Bean` method.
+- If a `@JustMock` or `@ThreadScopedMock` bean still coexists with a same-type bean from an `*AutoConfiguration`, JustTest fails fast once at context startup.
+- The diagnostic names the conflicting type, candidate names, mock versus auto-configuration origin, and the next step: `excludeAutoConfiguration` or remove the extra mock.
+- JustTest does not auto-exclude auto-configurations, does not silently prefer the mock, and does not change `@Resource` matching.
+- JUnit aborts the test class, so YAML `@CaseSource` cases do not each rebuild the same failed context.
+
+<a id="static-mocks"></a>
+
+### `StaticMockContext`
+
+- Can replace an application static context or factory gateway on the current case thread, and restores it at case end.
+- Active window, async threads, and legacy tests: [boundaries](#boundaries).
+
+<a id="h2"></a>
+
+### H2
+
+- The JustTest context uses the H2 `DataSource`, transaction manager, and `JdbcTemplate` supplied by the framework.
+- Exclude remaining production persistence configuration with the `test` profile or with `excludeClasses` / `excludeFilters`.
+- The framework does not rewrite user bean `@Primary` metadata.
+- The framework does not choose between production and test data sources on the consumer's behalf.
+- The H2 database is isolated per JustTest `ApplicationContext` and active case.
+- Cleaned DDL is cached. The schema is cloned from a template database by default. Disable cloning with `justtest.schema.clone=false`.
+- Each case database is released at case end. Schema initialization is retried after failure.
+- For MySQL `schema.sql` dumps, the cleaner strips common `SHOW CREATE TABLE` extras: table `ROW_FORMAT`, `UNSIGNED`, `ON UPDATE CURRENT_TIMESTAMP`, column `CHARACTER SET`, and `DEFAULT b'0'`.
+- The cleaner does not cover every MySQL dialect.
+- A missing framework `JdbcTemplate` or `JustTestRoutingDataSource`, when `@JustTest` owns H2, is a configuration error and fails fast. It does not skip prepare or verify. See [boundaries](#boundaries).
+
+<a id="sql-rewrite"></a>
+
+### MySQL-to-H2 rewrites
+
+- MyBatis test SQL gets a narrow rewrite: `IF(...)` becomes `CASEWHEN(...)`, and `DATE_FORMAT(...)` becomes `FORMATDATETIME(...)`.
+- The `DATE_FORMAT` rewrite runs through the MyBatis `StatementHandler` interceptor, the same path as `IF(...)` to `CASEWHEN(...)`.
+- Plain `JdbcTemplate` SQL is not rewritten unless it goes through that interceptor.
+- Legacy double-quoted string literals are supported inside known string functions and on the right side of comparison operators.
+- New SQL should use standard single-quoted strings. That limit is also stated under [boundaries](#boundaries).
+
+<a id="yaml"></a>
 
 ## YAML files and flags
 
@@ -252,7 +496,14 @@ Keep `src/test/resources` for `schema.sql` and `application-test.yml`. YAML can 
 - `expect.yaml`: expected database rows.
 - `expect_exception.yaml`: expected exception type and optional message.
 
-Field suffix flags are stage-specific: `[C]` selects rows in `expect.yaml` and enables unordered List matching in `response.yaml`. Once any List item uses `[C]`, every expected item must be an object with at least one `[C]` field; JustTest rejects unordered expectations that mix keyed and unkeyed items. `[CN]` applies only to `expect.yaml`, `[F]` applies only to `prepare.yaml`, and the remaining flags apply to the corresponding preparation or assertion stage shown below:
+Field suffix flags are stage-specific:
+
+- `[C]` selects rows in `expect.yaml` and enables unordered List matching in `response.yaml`.
+- Once any List item uses `[C]`, every expected item must be an object with at least one `[C]` field.
+- JustTest rejects unordered expectations that mix keyed and unkeyed items.
+- `[CN]` applies only to `expect.yaml`.
+- `[F]` applies only to `prepare.yaml`.
+- The remaining flags apply to the preparation or assertion stage in the table.
 
 | Flag | Meaning |
 | --- | --- |
@@ -267,11 +518,32 @@ Field suffix flags are stage-specific: `[C]` selects rows in `expect.yaml` and e
 
 For database expectations, prefer explicit `[C]` fields so the intended row is unambiguous.
 
+<a id="lifecycle"></a>
+
 ## Lifecycle
 
-`@JustTest` is a class-level execution contract: the test class must implement `JustTestLifecycle`, and every executable test method in the class must use `@CaseSource`. If the class does not implement the interface, or it contains `@Test`, `@RepeatedTest`, `@ParameterizedTest`, `@TestFactory`, or another ordinary JUnit test method, JustTest fails in `BeforeAll` and asks you to fix the class. Combining `@TestInstance(PER_CLASS)` with concurrent case execution (only when `junit.jupiter.execution.parallel.enabled=true`) also fails in `BeforeAll`. For incremental adoption, leave existing JUnit test classes unchanged and put new cases in a separate `@JustTest` class; legacy classes without `@JustTest` are unaffected.
+```mermaid
+sequenceDiagram
+  participant J as JUnit
+  participant C as Case
+  participant DB as Case database
+  participant M as Mocks
+  J->>C: 1. Invocation and CaseContext
+  C->>DB: 2. Bind case, init database, load prepare.yaml
+  C->>M: 3. Reset mocks, inject fields, static mocks
+  C->>C: 4. User BeforeEach
+  C->>C: 5. BeforeCase, test, afterExecute, YAML verify
+  C->>C: 6. User AfterEach
+  M->>DB: 7. Close mocks and release the case database
+```
 
-`@CaseSource` is itself the test annotation; do not combine it with another JUnit test annotation. For every YAML case JustTest performs:
+- `@JustTest` is a class-level execution contract: the test class must implement `JustTestLifecycle`, and every executable test method in the class must use `@CaseSource`.
+- If the class does not implement the interface, or it contains `@Test`, `@RepeatedTest`, `@ParameterizedTest`, `@TestFactory`, or another ordinary JUnit test method, JustTest fails in `BeforeAll` and asks you to fix the class.
+- Combining `@TestInstance(PER_CLASS)` with concurrent case execution (only when `junit.jupiter.execution.parallel.enabled=true`) also fails in `BeforeAll`. See [parallel execution](#parallel).
+- For incremental adoption, leave existing JUnit test classes unchanged and put new cases in a separate `@JustTest` class. Legacy classes without `@JustTest` are unaffected.
+- `@CaseSource` is itself the test annotation. Do not combine it with another JUnit test annotation.
+
+For every YAML case JustTest performs:
 
 1. create an independent JUnit invocation and its `CaseContext`;
 2. bind the case, create and initialize a fresh case database, and load `prepare.yaml`;
@@ -281,9 +553,163 @@ For database expectations, prefer explicit `[C]` fields so the intended row is u
 6. execute user `@AfterEach` methods;
 7. close static and scoped mocks and release the case database, retaining cleanup failures without hiding the original test failure.
 
+<a id="compatibility"></a>
+
+## Compatibility
+
+| Component | `just-test-boot2` | `just-test-boot3` |
+| --- | --- | --- |
+| Java | 8 | 17 |
+| Spring Boot | 2.7.18 | 3.5.16 |
+| Spring Framework | 5.3.31 | 6.2.19 |
+| JUnit Jupiter | 5.14.4 | 5.12.2 |
+| Mockito | 4.11.0 | 5.17.0 |
+| MyBatis / mybatis-spring | 3.5.19 / 2.1.2 | 3.5.19 / 3.0.6 |
+| H2 | 2.1.214 | 2.3.232 |
+| SnakeYAML | 1.33 | 2.4 |
+| fastjson2 | 2.0.64 | 2.0.64 |
+| SLF4J | 1.7.36 | 2.0.18 |
+
+- The Boot 2 line retains the final 2.7.18 release and a real Java 8 baseline.
+- The Boot 3 line uses stable Boot 3.5.16 on Java 17 and does not move to Boot 4.
+- Versions come from the corresponding Spring Boot BOM except for MyBatis, mybatis-spring, fastjson2, Boot 2 Mockito / SnakeYAML, the Boot 2 `junit-bom` override (JUnit Jupiter 5.14.4), and build plugins.
+- Builds use Maven Compiler Plugin 3.15.0 and Surefire 3.5.6.
+- CI uses `actions/checkout@v7` and `actions/setup-java@v6`.
+- The matrix is the standalone build and validation baseline for both product lines.
+- CI also runs consumer smoke tests under the matching Spring Boot parent / BOM to cover a common application layout.
+
+<a id="boundaries"></a>
+
+## Boundaries and concurrency
+
+JustTest isolates the test resources it owns. It does **not** make arbitrary application code globally parallel-safe.
+
+- Static registries initialized by application code remain an application concern.
+- Case static mocks affect only the current thread. They are active for user `@BeforeEach`, the test, and user `@AfterEach`; they cannot cover Spring context refresh or Spring Test listeners that run before the case invocation, and do not propagate to application-created asynchronous threads.
+- When multiple Spring contexts are detected, JustTest emits one risk warning. A related case failure adds a diagnostic log without replacing the original exception. The presence of an arbitrary static mock does not suppress this hint because the framework cannot know whether it covers the relevant gateway.
+- New and legacy test classes can coexist; legacy classes without `@JustTest` do not activate the JustTest lifecycle. If both run in parallel while application code shares a JVM-static ContextHolder or factory, JustTest cannot protect the legacy test thread. Keep affected legacy tests serial or migrate their static gateway.
+- Manually created threads, `CompletableFuture` common-pool tasks, and executors not managed by JustTest do not receive mock or database context automatically; database or thread-scoped mock access without an active case fails fast instead of creating an empty H2 database or an unstubbed mock. When `@JustTest` owns H2 infrastructure, a missing framework `JdbcTemplate` or `JustTestRoutingDataSource` is also a configuration error and fails fast rather than skipping prepare/verify.
+- Spring `@Transactional` and `@Sql` are unsupported on a JustTest class or `@CaseSource` method because their lifecycle runs before a case is bound; JustTest fails fast on these configurations. Use `prepare.yaml` and `expect.yaml` for deterministic case data instead.
+- A passing rerun is not proof of concurrency safety. Keep flaky suites serial until their ownership and lifecycle boundaries are established.
+- Write new SQL with standard single-quoted strings. The double-quote rewrite is only a compatibility bridge for existing MySQL mapper SQL.
+
+<a id="parallel"></a>
+
+### Parallel execution
+
+The consumer project's JUnit configuration controls scheduling. JustTest isolates framework-owned resources once tests run in parallel.
+
+```mermaid
+flowchart TD
+  on["classes.default = concurrent"] --> ask{"Static state, shared resources,<br>and async threads are safe?"}
+  ask -->|no| seq["Keep mode.default = same_thread"]
+  ask -->|yes| conc["Set mode.default = concurrent"]
+  conc --> per{"PER_CLASS, parallel enabled,<br>and cases would run concurrently?"}
+  per -->|yes| fail["BeforeAll fails"]
+  per -->|no| go["Cases may run together<br>Use PER_METHOD"]
+```
+
+Start with classes concurrent and cases inside each class sequential:
+
+```properties
+# src/test/resources/junit-platform.properties
+junit.jupiter.execution.parallel.enabled=true
+junit.jupiter.execution.parallel.mode.default=same_thread
+junit.jupiter.execution.parallel.mode.classes.default=concurrent
+```
+
+- After verifying that application static state, external shared resources, and asynchronous threads are safe, set `mode.default` to `concurrent` to run cases within the same class concurrently.
+- Normal tests do not need `@Execution`. Use `@Execution(ExecutionMode.SAME_THREAD)` only to downgrade an exceptional class that cannot satisfy the concurrency boundaries.
+- `@TestInstance(PER_CLASS)` cannot be combined with concurrent case execution when JUnit parallel is enabled (`junit.jupiter.execution.parallel.enabled=true`) and cases would run concurrently (`@Execution(CONCURRENT)` or `mode.default=concurrent`).
+- Those cases would share one test instance and can race `@JustMock` field injection.
+- If parallel is disabled, leftover `@Execution` or `mode.default=concurrent` settings are ignored for this check.
+- Use the JUnit default `PER_METHOD` with concurrent cases, or keep `PER_CLASS` with `SAME_THREAD`.
+- Class-level parallelism (`mode.classes.default`) is not case concurrency.
+- An overlap or barrier contract that needs N parties also needs N free workers from the same pool.
+- This repository's contract tests pin that pool at 2 in `src/contract-test/resources/junit-platform.properties` (`junit.jupiter.execution.parallel.config.strategy=fixed`, `junit.jupiter.execution.parallel.config.fixed.parallelism=2`).
+- A 2-party barrier holds one worker until the other party enters. If those parties share the default suite's pool with other concurrent classes, one worker can stay inside another class, the missing party is never scheduled, and the barrier times out.
+- That timeout is JUnit scheduling on a saturated fixed pool. JustTest isolation is unchanged: consumers may still run test classes concurrently and, after the safety check above, cases within a class.
+- The Surefire split only reserves both workers for the barrier.
+- In this repository, `just-test-boot2` and `just-test-boot3` keep that properties file for every Surefire execution.
+- `ConcurrentCasesJustTest` (in-class case overlap) runs in `concurrent-case-contract`.
+- `ParallelFirstJustTest` and `ParallelSecondJustTest` (class-level overlap) run in `parallel-class-contract`.
+- The `default-test` execution still runs the other contract classes concurrently.
+- Leave the overlap classes in those executions. Moving them back into `default-test`, serializing their cases, weakening the overlap assertions, or only raising the barrier timeout leaves the same stall in place.
+
+<a id="antipatterns"></a>
+
+### Parallel rollout antipatterns
+
+A parallel failure is not automatically a JustTest isolation failure; first inspect the downstream project's test doubles, static state, and resource lifecycle. The following patterns can make usage errors look like framework flakes:
+
+1. **Replacing an `@JustMock` proxy with `ReflectionTestUtils`**
+   - **Wrong:** In `beforeExecute`, use `ReflectionTestUtils` to write a raw Mockito mock into a business bean field, replacing the `ThreadScope` proxy created by `@JustMock`. Business beans are often singletons, so this pollutes a singleton field and lets other threads or cases see the wrong stub.
+   - **Right:** Stub only the test-class `@JustMock` field and keep business beans wired to the scoped proxy. Use `StaticMockContext` / `configureStaticMocks` to configure static factory or context gateways per case.
+
+2. **Adding a keep-alive flag to the case H2 URL**
+   - **Wrong:** Add `DB_CLOSE_DELAY=-1` (or a similar keep-alive flag) to the case URL to hide `already closed`. This only defers the lifecycle problem and can cause memory growth, slower full runs, or OOM.
+   - **Right:** Follow the resource boundary described in [#12 (`already closed`)](https://github.com/cyAquarius/just-test/issues/12): when switching cases, unbind thread-bound JDBC/MyBatis holders first, then release the old `DataSource` and rebuild the current case `DataSource`. The template database may use `DB_CLOSE_DELAY=-1` internally for schema cloning (see [#16](https://github.com/cyAquarius/just-test/issues/16)); that is not permission to add it to case URLs. The default case URL contains no `DB_CLOSE_DELAY`.
+
+3. **Expecting JustTest to repair application static registries**
+   - **Wrong:** Blame JustTest for concurrency pollution in an application static context, factory, or registry, expect the framework to repair it automatically, or default to adding a global `ContextCreationLock` upstream. JustTest does not own the isolation or concurrency governance of those application static gateways.
+   - **Right:** Use this rollout checklist:
+     - Multiple Spring Context warning → check whether `StaticMockContext` / `configureStaticMocks` covers the relevant static context or factory gateway.
+     - Diagnose Bean wiring issues such as the Mapper `#0` dual-bean case by name, qualifier, and startup configuration; see [#11](https://github.com/cyAquarius/just-test/issues/11) instead of hiding them with a global lock.
+     - Tests that cannot be isolated stay serial: use `@Execution(ExecutionMode.SAME_THREAD)` or run the test class serially.
+     - Do not default to adding a global `ContextCreationLock` upstream; fix the static gateway isolation first, and keep unisolated tests serial.
+
+4. **Unstubbed external dependencies plus business fail-open**
+   - **Wrong:** Leave critical external dependencies unstubbed while business code swallows an exception or treats it as success; parallel timing and return values can make this look like a framework flake.
+   - **Right:** Stub critical collaborators in `beforeExecute` / `@BeforeCase` and assert success and exception paths explicitly; do not pass undefined external return values into business fail-open logic.
+
+<a id="changelog"></a>
+
+## Changelog
+
+The current Maven Central release is `1.2.7`. The rules above match that release.
+
+- **1.2.7** — `@JustMock` of a real bean intercepts that bean instead of replacing it and splitting the Spring Test context. [Issue #88](https://github.com/cyAquarius/just-test/issues/88). Canonical rules: [`@JustMock`](#justmock).
+  - Tests that use the same `@JustTestProject` startup class share one `ApplicationContext`.
+  - The intercept set is fixed before the first start of that shared context and cannot grow afterward.
+  - The set is `@JustTestProject(interceptMocks = ...)` plus real-bean `@JustMock` types from `@JustTest` classes in that startup class's package and subpackages whose resolved startup class is that same `@JustTestProject` class.
+  - A test outside that package tree that needs intercept must list the types in `interceptMocks`.
+  - On the current thread, a declared `@JustMock` returns Mockito defaults until stubbed.
+  - A test class that did not declare `@JustMock` for that type still calls the real bean and its advisors.
+  - Stubs reset at case end.
+  - These declarations do not register another bean definition and do not enter the context cache key.
+  - A `@JustMock` whose type was not installed fails fast. JustTest does not replace the bean and does not split the cache.
+  - `@JustSpy` is unchanged and still part of the cache key.
+  - Self-invocation (`this.foo()`) inside the real bean does not enter the intercept.
+- **1.2.6** — `@JustMock` of an already thread-scoped mock is a bind. [Issue #85](https://github.com/cyAquarius/just-test/issues/85).
+  - The target is a `@ThreadScopedMock` `@Bean`, or a Feign client created by `autoMockFeignClients`.
+  - The field is injected and unwrapped for stubbing.
+  - The bean definition is not registered again, and the declaration does not create a new Spring Test context.
+  - `@JustSpy` still changes the context cache key.
+- **1.2.5** — thread-scoped `@JustSpy` and `@JustMock` stay stubbable when Spring would otherwise auto-proxy the concrete class (`@Repository`, `@Transactional`). Advisors stay on the real bean. [Issue #81](https://github.com/cyAquarius/just-test/issues/81).
+- **1.2.4** — adds `@JustSpy`, so a test can stub some methods of an existing bean while unstubbed methods keep the real bean, including `prepare.yaml` / H2.
+- **1.2.3** — unfinished Spring transaction synchronization or thread state fails the case that leaked it.
+  - The check runs at every case boundary, including when that case's `expect_exception.yaml` matched.
+  - Business code must commit or roll back on every path, or validate before calling `getTransaction`.
+  - JustTest quarantines a detected leak so the next case is isolated. That quarantine is not a substitute for business rollback.
+  - [Issues #6](https://github.com/cyAquarius/just-test/issues/6) and [#12](https://github.com/cyAquarius/just-test/issues/12) covered MyBatis / JDBC holders. [#67](https://github.com/cyAquarius/just-test/issues/67) additionally covers Spring transaction synchronization and active-transaction thread state.
+- **1.2.2** — `@JustMock` / `@ThreadScopedMock` coexisting with a same-type bean from an `*AutoConfiguration` fails fast, with a class-level diagnostic instead of a repeated `NoUniqueBeanDefinitionException` per YAML case. JustTest still does not auto-exclude auto-configurations.
+- **1.2.1** — withdrew the framework default OkHttp disable, and added opt-in `@JustTestProject(autoMockFeignClients)` for `@FeignClient` interfaces only.
+
+<a id="public-api"></a>
+
+## Public API
+
+- Stable public API, under `com.just.test`: `annotation` (`@JustTest`, `@JustTestProject`, `@CaseSource`, `@JustMock`, `@JustSpy`, `@BeforeCase`, `@ThreadScopedMock`), `CaseContext`, `JustTestLifecycle`, and `StaticMockContext`.
+- `JustTestMarker` and the Boot `JustTestClassValidationExtension` exist so `@JustTest` can register JUnit / Spring infrastructure. Do not depend on them directly.
+- Engine types live in `com.just.test.internal`. They are unsupported for consumers even when they remain public for JUnit or Spring registration.
+- When moving an application to Boot 3, migrate its Java EE types to Jakarta as required by Spring Boot 3.
+- Java SE `javax.sql.DataSource` is not part of that migration.
+
+<a id="build"></a>
+
 ## Build and verify
 
-An environment with only Java 8 can verify the Boot 2 line independently:
+An environment with only Java 8 can verify the Boot 2 line:
 
 ```bash
 JAVA_HOME=/path/to/jdk8 PATH="$JAVA_HOME/bin:$PATH" \
@@ -292,7 +718,7 @@ JAVA_HOME=/path/to/jdk8 PATH="$JAVA_HOME/bin:$PATH" \
   mvn --batch-mode --no-transfer-progress -f smoke-tests/boot2/pom.xml clean test
 ```
 
-A Java 17 environment can verify the Boot 3 line independently:
+A Java 17 environment can verify the Boot 3 line:
 
 ```bash
 JAVA_HOME=/path/to/jdk17 PATH="$JAVA_HOME/bin:$PATH" \
@@ -301,6 +727,8 @@ JAVA_HOME=/path/to/jdk17 PATH="$JAVA_HOME/bin:$PATH" \
   mvn --batch-mode --no-transfer-progress -f smoke-tests/boot3/pom.xml clean test
 ```
 
-Both product lines run the same contract suite from `src/contract-test`. Each second command runs the matching project under `smoke-tests/`. On Java 17, `mvn clean install` builds the entire reactor, but it does not replace the real Java 8 verification above.
-
-CI provides independent complete jobs for both JDKs, including consumer smoke tests. This repository contains reusable framework code and minimal demos only; do not add product-specific packages, schemas, or tests.
+- Both product lines run the same contract suite from `src/contract-test`.
+- Each second command runs the matching project under `smoke-tests/`.
+- On Java 17, `mvn clean install` builds the entire reactor. It does not replace the real Java 8 verification above.
+- CI provides independent complete jobs for both JDKs, including consumer smoke tests.
+- This repository contains reusable framework code and minimal demos only. Do not add product-specific packages, schemas, or tests.

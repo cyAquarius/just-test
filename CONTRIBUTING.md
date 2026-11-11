@@ -12,14 +12,14 @@ GitHub 的 `[skip ci]` / `[ci skip]` 会跳过本仓库的验证与发布工作�
 
 不要用 `[skip ci]` 代替本应执行的验证。纯 Markdown / `LICENSE` 路径的 push 仍会跑双产品线 verify。
 
-## SNAPSHOT 与正式版本
+## 版本与发布
 
-当前坐标为 `io.github.cyaquarius:*:1.0.0-SNAPSHOT`，供本地 `mvn install` 与契约/烟测使用。正式版发到 Maven Central，只上传 `just-test-boot2` 与 `just-test-boot3`（core 打进 JAR），不走 GitHub Packages。
+父 POM 当前版本为 `1.2.7`，与 Maven Central 已发布版本一致。本地 `mvn install` 使用该坐标。正式版只上传 `just-test-boot2` 与 `just-test-boot3`（core 打进 JAR），不走 GitHub Packages。
 
-发布正式版本时：
+发布时：
 
 1. `main` 上验证通过，不要使用 `[skip ci]`；
-2. 打 tag（例如 `v1.0.0`）并 push。CI 会去掉 SNAPSHOT、签名并上传 Central；
+2. 打 `v*` tag 并 push。CI 用去掉前缀 `v` 后的 tag 设置版本、签名并上传 Central；
 3. 仓库需已配置 Secrets：`CENTRAL_USERNAME`、`CENTRAL_PASSWORD`、`GPG_PRIVATE_KEY`、`GPG_PASSPHRASE`。
 
 ## 如何构建双产品线
