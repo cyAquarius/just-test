@@ -18,6 +18,11 @@ import java.lang.annotation.Target;
  * 委托目标是容器里暴露的那个 Bean：若它本身是 Spring AOP 代理（例如 {@code @Transactional}），
  * 未 stub 的调用走该代理及其 advisor，不会拆到被代理的 target。</p>
  *
+ * <p>线程作用域上的这个 mock 不会再被 Spring 自动代理包一层。
+ * {@code @Repository} 的持久化异常转换、{@code @Transactional} 等 advisor 留在真实 Bean 上，
+ * 注入测试字段的是可直接 {@code doReturn} / {@code doThrow} 的 Mockito mock。
+ * 未 stub 的调用只经过真实 Bean 上的那一层 advisor。</p>
+ *
  * <p>真实 Bean 只在 Context refresh 时按原定义创建。BeanFactoryPostProcessor 只挪动定义，
  * 把它藏成非 autowire candidate，避免同类型出现第二个可注入 Bean。</p>
  *

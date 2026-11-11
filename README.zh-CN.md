@@ -31,8 +31,8 @@ Boot 2 线保留最后一个正式版本 2.7.18 和真实 Java 8 基线；Boot 3
 - `@JustTestProject` 是推荐的消费方启动注解：空类加上 `basePackages`（以及可选的 `mapperPackages`）即可组合 `@SpringBootConfiguration`、`@EnableAutoConfiguration`、默认组件扫描排除、可选的 MyBatis→JustTest 数据源装配，以及 `dataSource` / `transactionManager` 别名（还可用 `dataSourceAliases` / `transactionManagerAliases` 声明存量 Bean 名）。传输层 / OkHttp 由消费工程自行选择，框架不会写入 `feign.okhttp.enabled=false` / `spring.cloud.openfeign.okhttp.enabled=false`；`FeignAutoConfiguration` / `FeignContext` 仍保留。需要时设 `autoMockFeignClients = true`，只为带 `@FeignClient` 的接口注册与 `@JustMock` 相同的线程作用域 Mockito mock（不按 `*Client` 名字推断，也不自动 mock Redis / OSS / SDK）。显式 `@JustMock` / `@JustSpy` / `@ThreadScopedMock` 优先；`autoMockFeignClientExcludes` 可对选定 Feign 类型 opt-out。已有手写启动类可继续使用。
 - `@CaseSource` 发现 YAML 用例，并为每个 case 创建完整的 JUnit test-template invocation；测试方法和标准单测生命周期方法均可注入 `CaseContext`。
 - 通过 `prepare.yaml`、`response.yaml`、`expect.yaml`、`expect_exception.yaml` 完成数据准备以及结果、数据库和异常验证。
-- `@JustMock` 创建线程作用域 Mockito mock；同类型多 Bean 时，显式 `name` 只命中类型兼容的 Bean；如果现有 Bean 类型无法解析（例如 `FactoryBean` 隐藏了对象类型），仍会使用名称回退。名称相同但类型无关的 Bean 不会被替换，错误的显式名称仍会以缺少候选 Bean 的错误失败。
-- `@JustSpy` 对已有 Bean 做部分 stub：未 stub 的方法走真实 Bean，`prepare.yaml` / H2 数据仍然生效。Bean 选择规则与 `@JustMock` 相同（`name` / `@Qualifier` / 候选）。找不到 Bean 时启动失败，不会自动创建。真实 Bean 被藏成非注入候选的 singleton，不会变成同类型的第二个可注入 Bean。原 Bean 名变成线程作用域 ScopedProxy，每个线程的实例是 `mock(type, withSettings().defaultAnswer(delegatesTo(realBean)))`，因此 MyBatis `MapperFactoryBean` 和 Feign 风格的 JDK 代理不需要 `Mockito.spy`。委托目标是容器里的那个 Bean：若它是 `@Transactional` 等 AOP 代理，未 stub 的调用仍走代理及其 advisor，不会拆到 target。Stub 用 `doReturn` / `doThrow` / `doNothing`；`when(spy.foo())` 会调用真实方法。真实 Bean 内部的 `this.bar()` 不会被拦截。显式 `@JustSpy` 优先于 `autoMockFeignClients`。同一字段不能同时标注 `@JustMock` 与 `@JustSpy`。同一类型，或解析到同一个 Bean 时，不能再被 `@JustMock` / `@ThreadScopedMock` 替换；启动期只失败一次，并给出类级诊断（类型、候选、来源），JUnit 中止该类。`@JustSpy` 与 `@JustMock` 一起进入 Spring Test Context 缓存 key。每个 case 重置后会新建委托 mock，stub 不会泄漏到下一个 case。
+- `@JustMock` 创建线程作用域 Mockito mock。Spring 自动代理不会再包裹这个线程实例，被替换的具体类即使带 `@Repository` 这类会被自动代理的注解，注入字段仍然是可 stub 的 Mockito mock。同类型多 Bean 时，显式 `name` 只命中类型兼容的 Bean；如果现有 Bean 类型无法解析（例如 `FactoryBean` 隐藏了对象类型），仍会使用名称回退。名称相同但类型无关的 Bean 不会被替换，错误的显式名称仍会以缺少候选 Bean 的错误失败。
+- `@JustSpy` 对已有 Bean 做部分 stub：未 stub 的方法走真实 Bean，`prepare.yaml` / H2 数据仍然生效。Bean 选择规则与 `@JustMock` 相同（`name` / `@Qualifier` / 候选）。找不到 Bean 时启动失败，不会自动创建。真实 Bean 被藏成非注入候选的 singleton，不会变成同类型的第二个可注入 Bean。原 Bean 名变成线程作用域 ScopedProxy，每个线程的实例是 `mock(type, withSettings().defaultAnswer(delegatesTo(realBean)))`，因此 MyBatis `MapperFactoryBean` 和 Feign 风格的 JDK 代理不需要 `Mockito.spy`。委托目标是容器里的那个 Bean：若它是 `@Transactional` 等 AOP 代理，未 stub 的调用仍走代理及其 advisor，不会拆到 target。线程作用域 mock 保持未被自动代理再次包裹，`@Repository` 的异常转换和 `@Transactional` 留在真实 Bean 上，测试字段可以直接 `doReturn` / `doThrow`。Stub 用 `doReturn` / `doThrow` / `doNothing`；`when(spy.foo())` 会调用真实方法。真实 Bean 内部的 `this.bar()` 不会被拦截。显式 `@JustSpy` 优先于 `autoMockFeignClients`。同一字段不能同时标注 `@JustMock` 与 `@JustSpy`。同一类型，或解析到同一个 Bean 时，不能再被 `@JustMock` / `@ThreadScopedMock` 替换；启动期只失败一次，并给出类级诊断（类型、候选、来源），JUnit 中止该类。`@JustSpy` 与 `@JustMock` 一起进入 Spring Test Context 缓存 key。每个 case 重置后会新建委托 mock，stub 不会泄漏到下一个 case。
 - `@ThreadScopedMock` 将同一 scoped mock 模型用于标注的 `@Bean` 方法。
 - 若 `@JustMock` / `@ThreadScopedMock` 仍与某个 `*AutoConfiguration` 的同类型 Bean 共存，JustTest 在 Context 启动时 fail-fast 一次（冲突类型、候选 Bean 名、mock / 自动配置来源，以及 `excludeAutoConfiguration` 或删掉多余 mock 的下一步）。框架不会自动 exclude 自动配置、不会静默让 mock 胜出，也不会改 `@Resource` 匹配。JUnit 会中止该测试类，避免每个 YAML `@CaseSource` case 都重新加载同一个失败 Context。
 - `StaticMockContext` 可在每个 case 线程中替换业务静态 Context/工厂入口，并在 case 结束时自动恢复。
@@ -97,7 +97,7 @@ junit.jupiter.execution.parallel.mode.classes.default=concurrent
 
 ## Maven Central
 
-坐标为 `io.github.cyaquarius`。Java 包名仍是 `com.just.test`。Maven Central **只发布** `just-test-boot2` 与 `just-test-boot3`（`just-test-core` 打进这两个 JAR，不单独上架）。当前已发布到 Maven Central 的版本为 `1.2.4`。本地 `mvn install` 仍用于基于本仓库开发。
+坐标为 `io.github.cyaquarius`。Java 包名仍是 `com.just.test`。Maven Central **只发布** `just-test-boot2` 与 `just-test-boot3`（`just-test-core` 打进这两个 JAR，不单独上架）。当前已发布到 Maven Central 的版本为 `1.2.4`。本主线使用待发布的 `1.2.5` 坐标，尚未发布；在明确批准之前不要打 tag，也不要上传到 Central。本地 `mvn install` 仍用于基于本仓库开发。
 
 Java 8 / Boot 2：
 
@@ -105,7 +105,7 @@ Java 8 / Boot 2：
 <dependency>
     <groupId>io.github.cyaquarius</groupId>
     <artifactId>just-test-boot2</artifactId>
-    <version>1.2.4</version>
+    <version>1.2.5</version>
     <scope>test</scope>
 </dependency>
 ```
@@ -114,7 +114,7 @@ Java 17 / Boot 3：把 `artifactId` 换成 `just-test-boot3`。不要同时引�
 
 若公司私服已代理 Central，只需声明依赖。若环境无法访问 Central，可代理 Central，或将 boot2/boot3 制品上传到私服 release 仓库，并保持坐标为 `io.github.cyaquarius`。
 
-`1.2.4` 新增 `@JustSpy`：只 stub 已有 Bean 的部分方法，未 stub 的方法仍走真实 Bean（包括 `prepare.yaml` / H2）。`1.2.3` 会在每个 case 边界检测未结束的 Spring 事务同步/线程状态；即使该 case 的 `expect_exception.yaml` 已匹配，泄漏源 case 仍会失败。业务代码必须保证所有路径都 commit/rollback（或把校验移到 `getTransaction` 之前）。JustTest 仅在确认泄漏时隔离线程状态，避免污染下一个 case；该隔离不是业务 rollback 的替代品。#6/#12 处理 MyBatis/JDBC holder，#67 进一步处理 Spring 事务同步与 active-transaction 线程状态。
+待发布的 `1.2.5` 让线程作用域 `@JustSpy` / `@JustMock` 在具体类会被 Spring 自动代理（`@Repository`、`@Transactional`）时仍可直接 stub：advisor 留在真实 Bean 上。#81。`1.2.4` 新增 `@JustSpy`：只 stub 已有 Bean 的部分方法，未 stub 的方法仍走真实 Bean（包括 `prepare.yaml` / H2）。`1.2.3` 会在每个 case 边界检测未结束的 Spring 事务同步/线程状态；即使该 case 的 `expect_exception.yaml` 已匹配，泄漏源 case 仍会失败。业务代码必须保证所有路径都 commit/rollback（或把校验移到 `getTransaction` 之前）。JustTest 仅在确认泄漏时隔离线程状态，避免污染下一个 case；该隔离不是业务 rollback 的替代品。#6/#12 处理 MyBatis/JDBC holder，#67 进一步处理 Spring 事务同步与 active-transaction 线程状态。
 
 `1.2.2` 在 `@JustMock` / `@ThreadScopedMock` 与某个 `*AutoConfiguration` 的同类型 Bean 共存时 fail-fast，给出类级诊断，而不再让每个 YAML case 重复刷 `NoUniqueBeanDefinitionException`。框架仍然不会自动 exclude 自动配置。`1.2.1` 撤回框架默认关闭 OkHttp，并提供 opt-in 的 `@JustTestProject(autoMockFeignClients)`，仅自动 mock `@FeignClient` 接口。
 
