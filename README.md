@@ -97,7 +97,7 @@ A parallel failure is not automatically a JustTest isolation failure; first insp
 
 ## Maven Central
 
-Coordinates use `io.github.cyaquarius`. Java packages remain `com.just.test`. Maven Central publishes only `just-test-boot2` and `just-test-boot3` (`just-test-core` is shaded into those JARs). The current released version on Maven Central is `1.2.4`. This mainline uses the upcoming `1.2.5` coordinates and is not published; do not tag or upload it to Central until that release is explicitly approved. Local `mvn install` remains for developing from this repo.
+Coordinates use `io.github.cyaquarius`. Java packages remain `com.just.test`. Maven Central publishes only `just-test-boot2` and `just-test-boot3` (`just-test-core` is shaded into those JARs). The current released version on Maven Central is `1.2.5`. Local `mvn install` remains for developing from this repo.
 
 Java 8 / Boot 2:
 
@@ -114,7 +114,7 @@ Java 17 / Boot 3: use `just-test-boot3`. Do not depend on both top-level artifac
 
 A company Maven proxying Central only needs the dependency declaration. Environments without Central access can proxy Central or upload the boot2/boot3 artifacts to a private release repository while keeping coordinates `io.github.cyaquarius`.
 
-The upcoming `1.2.5` keeps thread-scoped `@JustSpy` and `@JustMock` instances stubbable when Spring would otherwise auto-proxy the concrete class (`@Repository`, `@Transactional`): advisors stay on the real bean. Issue #81. `1.2.4` adds `@JustSpy` so a test can stub some methods of an existing bean while unstubbed methods keep the real bean, including `prepare.yaml` / H2. `1.2.3` detects unfinished Spring transaction synchronization/thread state at every case boundary and fails the case that leaked it, even when that case's `expect_exception.yaml` matched. Business code must commit or roll back on every path (or validate before calling `getTransaction`). JustTest quarantines a detected leak so the next case is isolated, but that quarantine is not a substitute for business rollback. Issues #6/#12 covered MyBatis/JDBC holders; #67 additionally covers Spring transaction synchronization and active-transaction thread state.
+`1.2.5` keeps thread-scoped `@JustSpy` and `@JustMock` instances stubbable when Spring would otherwise auto-proxy the concrete class (`@Repository`, `@Transactional`): advisors stay on the real bean. Issue #81. `1.2.4` adds `@JustSpy` so a test can stub some methods of an existing bean while unstubbed methods keep the real bean, including `prepare.yaml` / H2. `1.2.3` detects unfinished Spring transaction synchronization/thread state at every case boundary and fails the case that leaked it, even when that case's `expect_exception.yaml` matched. Business code must commit or roll back on every path (or validate before calling `getTransaction`). JustTest quarantines a detected leak so the next case is isolated, but that quarantine is not a substitute for business rollback. Issues #6/#12 covered MyBatis/JDBC holders; #67 additionally covers Spring transaction synchronization and active-transaction thread state.
 
 `1.2.2` fails fast when `@JustMock` / `@ThreadScopedMock` coexists with a same-type bean from an `*AutoConfiguration`, with a class-level diagnostic instead of a repeated `NoUniqueBeanDefinitionException` per YAML case. It still does not auto-exclude auto-configurations. `1.2.1` withdrew the framework default OkHttp disable and added opt-in `@JustTestProject(autoMockFeignClients)` for `@FeignClient` interfaces only.
 
