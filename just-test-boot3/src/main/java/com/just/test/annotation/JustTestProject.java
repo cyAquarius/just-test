@@ -114,8 +114,10 @@ public @interface JustTestProject {
     Class<?>[] autoMockFeignClientExcludes() default {};
 
     /**
-     * 要按线程拦截的真实 Bean 类型。与使用同一个本启动类的 {@code @JustTest}
-     * 上声明的真实 Bean {@code @JustMock} 类型求并集，在第一次 Context 启动前确定，之后不再增加。
+     * 要按线程拦截的真实 Bean 类型。与本启动类所在包及其子包里、解析出的启动类
+     * 就是本类的 {@code @JustTest} 上声明的真实 Bean {@code @JustMock} 类型求并集，
+     * 在该共享 Context 第一次启动前确定，之后不再增加。包树之外的测试若需要拦截，
+     * 必须把类型写在这里。
      *
      * <p>这些类型会藏起真实 Bean（已有 advisor 留在真实 Bean 上），对外是线程级 Mockito mock。
      * 当前测试类声明了该类型的 {@link JustMock} 时，未 stub 的调用返回 Mockito 默认值；
