@@ -22,7 +22,9 @@ jobs:
     name: 签名并发布到 Maven Central
     needs: [verify]
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    # publish-central-modules.sh 对每个模块最多等待 60 分钟。两个慢的
+    # PUBLISHING 加上本 job 的构建会超过原先的 45 分钟，第二个制品来不及上传。
+    timeout-minutes: 180
     steps:
       - name: 检出代码
         uses: actions/checkout@v7

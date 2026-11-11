@@ -4,6 +4,12 @@
 # Do not trust central-publishing's zip: it packs maven-metadata-local.xml and
 # _remote.repositories, and Sonatype rejects with "missing .pom".
 # Build+sign with Maven, assemble a clean bundle by hand, upload via API.
+#
+# Skip a module whose pom and jar are already on repo1, so a retry can finish
+# a version that only partly reached Central. Poll PUBLISHING for 60 minutes:
+# the previous 15 minute budget (90 x 10s) timed out on v1.2.5 while boot2 was
+# still PUBLISHING, and that artifact reached repo1 about 21 minutes after
+# upload. The publish job timeout must cover two of these waits.
 set -euo pipefail
 
 root="$(cd "$(dirname "$0")/.." && pwd)"
@@ -14,8 +20,12 @@ cd "${root}"
 
 auth_header="Authorization: Bearer $(printf '%s:%s' "${CENTRAL_USERNAME}" "${CENTRAL_PASSWORD}" | base64 | tr -d '\n')"
 api="https://central.sonatype.com/api/v1/publisher"
+repo1="https://repo1.maven.org/maven2"
 mvn_cmd=(mvn --batch-mode --no-transfer-progress)
 group_path="io/github/cyaquarius"
+# 360 * 10s = 60 minutes per deployment.
+publish_wait_attempts=360
+publish_wait_interval_seconds=10
 
 write_checksums() {
   local file="$1"
@@ -23,6 +33,44 @@ write_checksums() {
   sha1sum "$file" | awk '{print $1}' > "${file}.sha1"
   sha256sum "$file" | awk '{print $1}' > "${file}.sha256"
   sha512sum "$file" | awk '{print $1}' > "${file}.sha512"
+}
+
+http_code() {
+  local url="$1"
+  local code
+  # return, do not exit: this runs inside a command substitution.
+  if ! code="$(curl -sS -o /dev/null -w '%{http_code}' --head --location --retry 3 --retry-delay 2 --max-time 60 "${url}")"; then
+    echo "Failed to query ${url}" >&2
+    return 1
+  fi
+  printf '%s' "${code}"
+}
+
+# Both the pom and the jar must already be on Central. A 200/404 split is not
+# treated as published; anything other than 200 or 404 aborts before upload.
+central_release_present() {
+  local module="$1"
+  local version="$2"
+  local base="${module}-${version}"
+  local pom_url="${repo1}/${group_path}/${module}/${version}/${base}.pom"
+  local jar_url="${repo1}/${group_path}/${module}/${version}/${base}.jar"
+  local pom_code jar_code
+  if ! pom_code="$(http_code "${pom_url}")"; then
+    exit 1
+  fi
+  if ! jar_code="$(http_code "${jar_url}")"; then
+    exit 1
+  fi
+  echo "repo1 ${module} ${version}: pom=${pom_code} jar=${jar_code}"
+  if [[ "${pom_code}" != "200" && "${pom_code}" != "404" ]]; then
+    echo "Unexpected HTTP ${pom_code} for ${pom_url}" >&2
+    exit 1
+  fi
+  if [[ "${jar_code}" != "200" && "${jar_code}" != "404" ]]; then
+    echo "Unexpected HTTP ${jar_code} for ${jar_url}" >&2
+    exit 1
+  fi
+  [[ "${pom_code}" == "200" && "${jar_code}" == "200" ]]
 }
 
 upload_and_wait() {
@@ -45,8 +93,9 @@ upload_and_wait() {
     exit 1
   fi
   echo "Deployment id: ${deployment_id}"
+  echo "Waiting up to $((publish_wait_attempts * publish_wait_interval_seconds))s for PUBLISHED"
 
-  for i in $(seq 1 90); do
+  for i in $(seq 1 "${publish_wait_attempts}"); do
     state="$(curl -sS -X POST \
       -H "${auth_header}" \
       "${api}/status?id=${deployment_id}")"
@@ -59,13 +108,23 @@ upload_and_wait() {
       echo "Central deployment failed: ${state}" >&2
       exit 1
     fi
-    sleep 10
+    sleep "${publish_wait_interval_seconds}"
   done
-  echo "Timed out waiting for PUBLISHED: ${state}" >&2
+  echo "Timed out after $((publish_wait_attempts * publish_wait_interval_seconds))s waiting for PUBLISHED: ${state}" >&2
   exit 1
 }
 
 for module in just-test-boot2 just-test-boot3; do
+  version="$(mvn --quiet -pl "${module}" help:evaluate -Dexpression=project.version -DforceStdout)"
+  if [[ ! "${version}" =~ ^[0-9A-Za-z][0-9A-Za-z._+-]*$ ]]; then
+    echo "Failed to resolve version for ${module}: ${version}" >&2
+    exit 1
+  fi
+  if central_release_present "${module}" "${version}"; then
+    echo "::notice::Skip ${module} ${version}: pom and jar already on Maven Central"
+    continue
+  fi
+
   echo "::notice::Central publish ${module}"
 
   "${mvn_cmd[@]}" \
@@ -76,7 +135,6 @@ for module in just-test-boot2 just-test-boot3; do
     -Dgpg.passphraseEnvName=MAVEN_GPG_PASSPHRASE \
     clean verify
 
-  version="$(mvn --quiet -pl "${module}" help:evaluate -Dexpression=project.version -DforceStdout)"
   base="${module}-${version}"
   target="${module}/target"
   pom_src="${module}/.flattened-pom.xml"
