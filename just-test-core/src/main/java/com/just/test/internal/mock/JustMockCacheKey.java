@@ -13,7 +13,10 @@ import java.util.Set;
  * 决定哪些 {@code @JustMock} 进入 Spring Test 上下文缓存 key。
  *
  * <p>已经能确定只会绑定到既有线程级 mock 的声明不改变 Bean 定义，因此不参与 key。
- * 判断不确定时保留声明，行为与原先一致。</p>
+ * 使用 {@code @JustTestProject} 时，真实 Bean 的 {@code @JustMock} 走线程拦截，
+ * 也不参与 key；没装上拦截的类型在启动或注入时 fail-fast，不会退回替换定义。
+ * 与 {@code @JustSpy} 重叠的声明仍留在 key 里。没有 {@code @JustTestProject}
+ * 且又不能确定是绑定时，保留声明，行为与原先一致。</p>
  */
 final class JustMockCacheKey {
 
@@ -39,14 +42,25 @@ final class JustMockCacheKey {
                     + "keeping them in the context cache key", testClass.getName(), ex);
             return mocks;
         }
+        JustMockInterceptPlan intercepts = JustMockInterceptPlan.forTest(testClass, attributes);
         Set<JustMockDefinition> affecting = new LinkedHashSet<JustMockDefinition>();
         for (JustMockDefinition mock : mocks) {
-            if (overlapsSpy(mock, spies) || !sources.isConfidentBind(mock)) {
+            if (overlapsSpy(mock, spies)) {
                 affecting.add(mock);
                 continue;
             }
-            log.debug("[JustMock] {} binds an existing thread-scoped mock and is omitted from the context cache key",
-                    mock.describe());
+            if (sources.isConfidentBind(mock)) {
+                log.debug("[JustMock] {} binds an existing thread-scoped mock and is omitted from the context cache key",
+                        mock.describe());
+                continue;
+            }
+            if (intercepts.isProject()) {
+                log.debug("[JustMock] {} is a real-bean @JustMock on @JustTestProject {} and is omitted "
+                                + "from the context cache key",
+                        mock.describe(), intercepts.startupClass().getName());
+                continue;
+            }
+            affecting.add(mock);
         }
         return Collections.unmodifiableSet(affecting);
     }

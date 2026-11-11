@@ -38,8 +38,16 @@ import java.lang.annotation.Target;
  * <p>若目标 Bean 已经是线程级 mock（{@link ThreadScopedMock} 的 {@code @Bean}，或
  * {@code @JustTestProject(autoMockFeignClients = true)} 创建的 Feign mock），本注解只绑定字段：
  * 不重复注册 Bean 定义，也不把这条声明放进 Spring Test 上下文缓存 key。注入时会解开 scoped proxy，
- * {@code when(field...)} 与 {@code doReturn(...).when(field)} 直接打在字段上。真实 Bean 仍会替换定义，
- * 并继续参与缓存 key。</p>
+ * {@code when(field...)} 与 {@code doReturn(...).when(field)} 直接打在字段上。</p>
+ *
+ * <p>若目标是真实 Bean，并且测试使用 {@code @JustTestProject}，本注解同样只绑定：
+ * 启动时该类型已经包成线程级 Mockito mock，真实 Bean 被藏起来，advisor 留在真实 Bean 上。
+ * 当前测试类声明了本注解时，未 stub 的调用返回 Mockito 默认值；没有声明的测试类仍调用真实 Bean。
+ * 激活看的是「本测试类声明了 {@code @JustMock}」，不是「当前有 stub」。case 结束会重置 stub。
+ * 这条声明不进入上下文缓存 key。类型全集在第一次启动前确定
+ * （{@code @JustTestProject(interceptMocks)} 加上使用同一个启动类的 {@code @JustTest} 扫描结果）。
+ * 没装上拦截的类型会 fail-fast，不会退回替换定义。真实 Bean 内部的 {@code this.foo()} 自调不会进拦截。
+ * 没有 {@code @JustTestProject} 时，真实 Bean 仍会替换定义并参与缓存 key。</p>
  */
 @Target(ElementType.FIELD)
 @Retention(RetentionPolicy.RUNTIME)
