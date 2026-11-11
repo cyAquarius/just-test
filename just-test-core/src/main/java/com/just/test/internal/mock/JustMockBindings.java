@@ -15,9 +15,15 @@ import java.util.Map;
 public class JustMockBindings {
 
     private final Map<JustMockDefinition, String> beanNames;
+    private final JustMockInterceptPlan interceptPlan;
 
     JustMockBindings(Map<JustMockDefinition, String> beanNames) {
+        this(beanNames, JustMockInterceptPlan.none());
+    }
+
+    JustMockBindings(Map<JustMockDefinition, String> beanNames, JustMockInterceptPlan interceptPlan) {
         this.beanNames = Collections.unmodifiableMap(new LinkedHashMap<JustMockDefinition, String>(beanNames));
+        this.interceptPlan = interceptPlan == null ? JustMockInterceptPlan.none() : interceptPlan;
     }
 
     String getBeanName(JustMockDefinition definition) {
@@ -28,14 +34,33 @@ public class JustMockBindings {
         if (exact != null) {
             return exact;
         }
-        if (definition.isSpy() || !definition.isFieldDeclaration() || definition.hasQualifierAnnotations()) {
+        if (definition.isSpy() || !definition.isFieldDeclaration()) {
             return null;
         }
+        String matched = matchShared(definition);
+        if (matched != null) {
+            return matched;
+        }
+        if (interceptPlan.isProject()) {
+            throw interceptPlan.notInstalled(definition);
+        }
+        return null;
+    }
+
+    private String matchShared(JustMockDefinition definition) {
         String explicit = definition.getExplicitBeanName();
         String matched = null;
         for (Map.Entry<JustMockDefinition, String> entry : beanNames.entrySet()) {
             JustMockDefinition source = entry.getKey();
-            if (source.isFieldDeclaration() || source.isSpy() || !isKnownThreadScopedSource(source)) {
+            if (source.isFieldDeclaration() || source.isSpy()) {
+                continue;
+            }
+            boolean intercept = JustMockInterceptActivation.SOURCE.equals(source.sourceLabel());
+            boolean threadScoped = isKnownThreadScopedSource(source);
+            if (!intercept && !threadScoped) {
+                continue;
+            }
+            if (definition.hasQualifierAnnotations() && !intercept) {
                 continue;
             }
             if (!typesCompatible(definition.getType(), source.getType())) {

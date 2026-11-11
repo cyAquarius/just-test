@@ -114,6 +114,19 @@ public @interface JustTestProject {
     Class<?>[] autoMockFeignClientExcludes() default {};
 
     /**
+     * 要按线程拦截的真实 Bean 类型。与使用同一个本启动类的 {@code @JustTest}
+     * 上声明的真实 Bean {@code @JustMock} 类型求并集，在第一次 Context 启动前确定，之后不再增加。
+     *
+     * <p>这些类型会藏起真实 Bean（已有 advisor 留在真实 Bean 上），对外是线程级 Mockito mock。
+     * 当前测试类声明了该类型的 {@link JustMock} 时，未 stub 的调用返回 Mockito 默认值；
+     * 否则委托给真实 Bean。真实 Bean 内部的 {@code this.foo()} 自调不会进拦截。
+     * 已是 {@link ThreadScopedMock} 或 Feign auto-mock 的类型不要写在这里。
+     * 不能被 Mockito 代理的类型（final、缺少 mock-maker）会在启动期失败。
+     * 同类型多个候选仍 fail-fast，不会因此再露出一个 Bean，也不会自动 exclude 自动配置。</p>
+     */
+    Class<?>[] interceptMocks() default {};
+
+    /**
      * 历史上用于让框架默认关闭 Feign OkHttp。现已无效果：JustTest 不再向
      * Environment 写入 {@code feign.okhttp.enabled} /
      * {@code spring.cloud.openfeign.okhttp.enabled}。传输层由消费工程自行选择。

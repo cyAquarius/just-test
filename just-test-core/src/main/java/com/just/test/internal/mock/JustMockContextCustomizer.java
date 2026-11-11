@@ -18,7 +18,8 @@ import java.util.Set;
  *
  * <p>equals/hashCode 只计入会改变 Bean 定义的 {@code @JustMock} 与全部 {@code @JustSpy}。
  * 目标已经是 {@code @ThreadScopedMock} 或 Feign auto-mock 的 {@code @JustMock} 只绑定字段，
- * 不进入缓存 key：不同子集可以共享 Context。真实 Bean 的 {@code @JustMock} 仍会拆开 Context。</p>
+ * 不进入缓存 key。使用同一个 {@code @JustTestProject} 启动类时，真实 Bean 的
+ * {@code @JustMock} 也不进入缓存 key：不同字段子集共享 Context，拦截类型在第一次启动前确定。</p>
  *
  * <p>这里只隔离 JustTest 自己拥有的资源；业务 JVM 静态状态不属于
  * ApplicationContext，不能通过 Context 创建锁获得通用的并发隔离。</p>
@@ -28,6 +29,7 @@ class JustMockContextCustomizer implements ContextCustomizer {
     private final Set<JustMockDefinition> mockDefinitions;
     private final Set<JustMockDefinition> spyDefinitions;
     private final Set<JustMockDefinition> cacheKeyMocks;
+    private final JustMockInterceptPlan interceptPlan;
 
     JustMockContextCustomizer(Set<JustMockDefinition> mockDefinitions) {
         this(mockDefinitions, Collections.<JustMockDefinition>emptySet());
@@ -35,15 +37,17 @@ class JustMockContextCustomizer implements ContextCustomizer {
 
     JustMockContextCustomizer(Set<JustMockDefinition> mockDefinitions,
                               Set<JustMockDefinition> spyDefinitions) {
-        this(mockDefinitions, spyDefinitions, mockDefinitions);
+        this(mockDefinitions, spyDefinitions, mockDefinitions, JustMockInterceptPlan.none());
     }
 
     private JustMockContextCustomizer(Set<JustMockDefinition> mockDefinitions,
                                       Set<JustMockDefinition> spyDefinitions,
-                                      Set<JustMockDefinition> cacheKeyMocks) {
+                                      Set<JustMockDefinition> cacheKeyMocks,
+                                      JustMockInterceptPlan interceptPlan) {
         this.mockDefinitions = mockDefinitions;
         this.spyDefinitions = spyDefinitions;
         this.cacheKeyMocks = cacheKeyMocks;
+        this.interceptPlan = interceptPlan == null ? JustMockInterceptPlan.none() : interceptPlan;
     }
 
     static JustMockContextCustomizer forTestClass(Set<JustMockDefinition> mockDefinitions,
@@ -53,14 +57,16 @@ class JustMockContextCustomizer implements ContextCustomizer {
         return new JustMockContextCustomizer(
                 mockDefinitions,
                 spyDefinitions,
-                JustMockCacheKey.affecting(testClass, attributes, mockDefinitions, spyDefinitions));
+                JustMockCacheKey.affecting(testClass, attributes, mockDefinitions, spyDefinitions),
+                JustMockInterceptPlan.forTest(testClass, attributes));
     }
 
     @Override
     public void customizeContext(ConfigurableApplicationContext context,
                                  MergedContextConfiguration mergedConfig) {
         registerJustTestConfiguration(context);
-        JustMockPostProcessor postProcessor = new JustMockPostProcessor(mockDefinitions, spyDefinitions);
+        JustMockPostProcessor postProcessor =
+                new JustMockPostProcessor(mockDefinitions, spyDefinitions, interceptPlan);
         // 仅通过 addBeanFactoryPostProcessor 注册一次。
         // 之前同时 registerSingleton + addBeanFactoryPostProcessor 会让 Spring 执行 PostProcessor 两次
         // （一次作为 BeanFactoryPostProcessor bean,一次来自 context.beanFactoryPostProcessors 列表),

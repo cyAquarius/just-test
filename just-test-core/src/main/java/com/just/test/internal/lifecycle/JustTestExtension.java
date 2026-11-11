@@ -8,6 +8,7 @@ import com.just.test.internal.datasource.SchemaInitializer;
 import com.just.test.internal.datasource.JustTestRoutingDataSource;
 import com.just.test.internal.loader.DataSetLoader;
 import com.just.test.internal.mock.JustMockInjector;
+import com.just.test.internal.mock.JustMockInterceptActivation;
 import com.just.test.mock.StaticMockContext;
 import com.just.test.internal.mock.ThreadScopedMockRegistry;
 import com.just.test.internal.scope.ThreadScope;
@@ -109,6 +110,7 @@ public final class JustTestExtension implements BeforeEachCallback, AfterEachCal
             prepareCaseData();
 
             ThreadScope.resetCurrentThread();
+            JustMockInterceptActivation.activate(testInstance, applicationContext);
             prewarmThreadScopedMocks(applicationContext);
             JustMockInjector.injectJustMocks(testInstance, applicationContext);
 
@@ -225,6 +227,7 @@ public final class JustTestExtension implements BeforeEachCallback, AfterEachCal
         }
         Throwable failure = null;
         failure = closeStaticMocks(failure);
+        failure = resetInterceptStubs(failure);
         failure = clearThreadScope(failure);
         failure = TRANSACTION_THREAD_CLEANUP.cleanup(
                 applicationContext, caseContext.getCaseName(), LeakPhase.AFTER_CASE, failure);
@@ -247,6 +250,15 @@ public final class JustTestExtension implements BeforeEachCallback, AfterEachCal
             failure = appendFailure(failure, cleanupFailure);
         } finally {
             staticMockContext = null;
+        }
+        return failure;
+    }
+
+    private Throwable resetInterceptStubs(Throwable failure) {
+        try {
+            JustMockInterceptActivation.resetStubsAndClear(applicationContext);
+        } catch (Throwable cleanupFailure) {
+            failure = appendFailure(failure, cleanupFailure);
         }
         return failure;
     }

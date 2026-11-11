@@ -10,6 +10,8 @@ import com.just.test.internal.project.JustTestProjectFeignAutoMock;
 import com.just.test.internal.scope.ThreadScope;
 import org.junit.jupiter.api.Test;
 import org.mybatis.spring.mapper.MapperFactoryBean;
+import org.mockito.AdditionalAnswers;
+import org.mockito.Mockito;
 import org.springframework.aop.scope.ScopedProxyUtils;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.config.BeanDefinition;
@@ -40,6 +42,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNotSame;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -53,6 +56,119 @@ class JustMockPostProcessorTest {
                 () -> process(beanFactory, field(TestFields.class, "client")));
 
         assertTrue(failure.getMessage().contains("Multiple beans"));
+    }
+
+    @Test
+    void interceptsARealBeanWithoutExposingASecondCandidate() {
+        DefaultListableBeanFactory beanFactory = beanFactory();
+        registerCandidate(beanFactory, "sampleClient", false, true, null);
+
+        process(beanFactory, field(TestFields.class, "client"), JustMockInterceptPlan.project(
+                JustMockPostProcessorTest.class,
+                Collections.<Class<?>>emptySet(),
+                Collections.singleton(SampleClient.class)));
+
+        assertTrue(beanFactory.containsBeanDefinition(JustMockPostProcessor.INTERCEPT_TARGET_PREFIX + "sampleClient"));
+        assertFalse(beanFactory.getBeanDefinition(JustMockPostProcessor.INTERCEPT_TARGET_PREFIX + "sampleClient")
+                .isAutowireCandidate());
+        assertEquals(1, countAutowireCandidates(beanFactory, SampleClient.class));
+        assertEquals("sampleClient", beanFactory.getBean(JustMockBindings.class)
+                .getBeanName(definition(field(OtherClientField.class, "client"))));
+    }
+
+    @Test
+    void projectJustMockThatWasNotInstalledDoesNotReplaceTheBean() {
+        DefaultListableBeanFactory beanFactory = beanFactory();
+        registerCandidate(beanFactory, "sampleClient", false, true, null);
+        JustMockInterceptPlan plan = JustMockInterceptPlan.project(
+                JustMockPostProcessorTest.class,
+                Collections.<Class<?>>emptySet(),
+                Collections.<Class<?>>emptySet());
+
+        IllegalStateException failure = assertThrows(IllegalStateException.class,
+                () -> process(beanFactory, field(TestFields.class, "client"), plan));
+
+        assertTrue(failure.getMessage().contains("was not installed"));
+        assertTrue(failure.getMessage().contains("interceptMocks"));
+        assertTrue(failure.getMessage().contains("startup-class scan"));
+        assertEquals(SampleClient.class.getName(), beanFactory.getBeanDefinition("sampleClient").getBeanClassName());
+        assertFalse(beanFactory.containsBeanDefinition("scopedTarget.sampleClient"));
+    }
+
+    @Test
+    void finalInterceptTypeFailsAtContextStart() {
+        DefaultListableBeanFactory beanFactory = beanFactory();
+        beanFactory.registerBeanDefinition("finalClient",
+                BeanDefinitionBuilder.genericBeanDefinition(FinalClient.class).getBeanDefinition());
+        JustMockInterceptPlan plan = JustMockInterceptPlan.project(
+                JustMockPostProcessorTest.class,
+                Collections.<Class<?>>singleton(FinalClient.class),
+                Collections.<Class<?>>emptySet());
+
+        IllegalStateException failure = assertThrows(IllegalStateException.class,
+                () -> new JustMockPostProcessor(Collections.<JustMockDefinition>emptySet(),
+                        Collections.<JustMockDefinition>emptySet(), plan)
+                        .postProcessBeanFactory(beanFactory));
+
+        assertTrue(failure.getMessage().contains("Cannot intercept"));
+        assertTrue(failure.getMessage().contains(FinalClient.class.getName()));
+        assertEquals(FinalClient.class.getName(), beanFactory.getBeanDefinition("finalClient").getBeanClassName());
+    }
+
+    @Test
+    void ambiguousInterceptCandidatesFailFastAndLeaveBothBeans() {
+        DefaultListableBeanFactory beanFactory = beanFactoryWithTwoCandidates();
+        JustMockInterceptPlan plan = JustMockInterceptPlan.project(
+                JustMockPostProcessorTest.class,
+                Collections.<Class<?>>emptySet(),
+                Collections.singleton(SampleClient.class));
+
+        IllegalStateException failure = assertThrows(IllegalStateException.class,
+                () -> process(beanFactory, field(TestFields.class, "client"), plan));
+
+        assertTrue(failure.getMessage().contains("Multiple beans")
+                || failure.getMessage().contains("Conflicting beans"));
+        assertEquals(SampleClient.class.getName(), beanFactory.getBeanDefinition("firstClient").getBeanClassName());
+        assertEquals(SampleClient.class.getName(), beanFactory.getBeanDefinition("secondClient").getBeanClassName());
+        assertFalse(beanFactory.containsBeanDefinition("scopedTarget.firstClient"));
+    }
+
+    @Test
+    void spyIsNotWrappedAroundAnIntercept() {
+        DefaultListableBeanFactory beanFactory = beanFactory();
+        registerCandidate(beanFactory, "client", false, true, null);
+        JustMockInterceptPlan plan = JustMockInterceptPlan.project(
+                JustMockPostProcessorTest.class,
+                Collections.<Class<?>>emptySet(),
+                Collections.singleton(SampleClient.class));
+
+        new JustMockPostProcessor(Collections.<JustMockDefinition>emptySet(),
+                Collections.singleton(spyDefinition(field(SpyFields.class, "client"))), plan)
+                .postProcessBeanFactory(beanFactory);
+
+        assertTrue(beanFactory.containsBeanDefinition(JustMockPostProcessor.SPY_TARGET_PREFIX + "client"));
+        assertFalse(beanFactory.containsBeanDefinition(JustMockPostProcessor.INTERCEPT_TARGET_PREFIX + "client"));
+    }
+
+    @Test
+    void switchingAnswerFollowsTheDeclaringTestRatherThanLeftoverStubsOnAnotherMock() {
+        AnswerTarget real = new AnswerTarget();
+        AnswerTarget mock = Mockito.mock(AnswerTarget.class, Mockito.withSettings().defaultAnswer(
+                new JustMockInterceptActivation.AnswerSwitch(
+                        "bean", AdditionalAnswers.delegatesTo(real))));
+        assertEquals("live", mock.value());
+        JustMockInterceptActivation.bindActiveBeans(Collections.singleton("bean"));
+        try {
+            assertNull(mock.value());
+            Mockito.when(mock.value()).thenReturn("stub");
+            assertEquals("stub", mock.value());
+        } finally {
+            JustMockInterceptActivation.resetStubsAndClear(null);
+        }
+        AnswerTarget fresh = Mockito.mock(AnswerTarget.class, Mockito.withSettings().defaultAnswer(
+                new JustMockInterceptActivation.AnswerSwitch(
+                        "bean", AdditionalAnswers.delegatesTo(real))));
+        assertEquals("live", fresh.value());
     }
 
     @Test
@@ -538,6 +654,12 @@ class JustMockPostProcessorTest {
                 .postProcessBeanFactory(beanFactory);
     }
 
+    private void process(DefaultListableBeanFactory beanFactory, Field field, JustMockInterceptPlan plan) {
+        new JustMockPostProcessor(Collections.singleton(definition(field)),
+                Collections.<JustMockDefinition>emptySet(), plan)
+                .postProcessBeanFactory(beanFactory);
+    }
+
     private void processSpy(DefaultListableBeanFactory beanFactory, Field field) {
         new JustMockPostProcessor(Collections.<JustMockDefinition>emptySet(),
                 Collections.singleton(spyDefinition(field)))
@@ -605,7 +727,8 @@ class JustMockPostProcessorTest {
         int count = 0;
         for (String name : beanFactory.getBeanNamesForType(type, true, false)) {
             if (!name.startsWith("scopedTarget.")
-                    && !name.startsWith(JustMockPostProcessor.SPY_TARGET_PREFIX)) {
+                    && !name.startsWith(JustMockPostProcessor.SPY_TARGET_PREFIX)
+                    && !name.startsWith(JustMockPostProcessor.INTERCEPT_TARGET_PREFIX)) {
                 count++;
             }
         }
@@ -743,7 +866,24 @@ class JustMockPostProcessorTest {
     private static class ConcreteClient implements Client {
     }
 
+    private static class OtherClientField {
+        @JustMock
+        private SampleClient client;
+    }
+
     private static class SampleClient {
+    }
+
+    public static final class FinalClient {
+        public String id() {
+            return "live";
+        }
+    }
+
+    public static class AnswerTarget {
+        public String value() {
+            return "live";
+        }
     }
 
     @Configuration

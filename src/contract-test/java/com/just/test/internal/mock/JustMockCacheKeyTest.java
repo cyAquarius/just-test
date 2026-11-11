@@ -7,6 +7,11 @@ import com.just.test.demo.project.feignautoapp.JustTestApplication;
 import com.just.test.demo.project.feignautoapp.bind.demo.DemoFeignBindJustTest;
 import com.just.test.demo.project.feignautoapp.bind.other.OtherFeignBindJustTest;
 import com.just.test.demo.project.fixtures.feign.ExcludedFeignClient;
+import com.just.test.mock.intercept.advised.AdvisedInterceptJustTest;
+import com.just.test.mock.intercept.eastern.EasternInterceptJustTest;
+import com.just.test.mock.intercept.plain.PlainInterceptJustTest;
+import com.just.test.mock.intercept.spy.EasternSpyJustTest;
+import com.just.test.mock.intercept.western.WesternInterceptJustTest;
 import com.just.test.mock.bind.BindMockConfiguration;
 import com.just.test.mock.bind.BindMockConfiguration.GlobalCos;
 import com.just.test.mock.bind.BindMockConfiguration.GlobalRedis;
@@ -48,7 +53,21 @@ class JustMockCacheKeyTest {
 
         assertEquals(demo, other);
         assertEquals(demo.hashCode(), other.hashCode());
-        assertNotEquals(demo, customizer(ExcludedFeignJustTest.class));
+        assertEquals(demo, customizer(ExcludedFeignJustTest.class));
+    }
+
+    @Test
+    void realBeanInterceptSubsetsShareACacheKeyAndSpiesDoNot() {
+        ContextCustomizer eastern = customizer(EasternInterceptJustTest.class);
+        ContextCustomizer western = customizer(WesternInterceptJustTest.class);
+        ContextCustomizer plain = customizer(PlainInterceptJustTest.class);
+        ContextCustomizer advised = customizer(AdvisedInterceptJustTest.class);
+
+        assertEquals(eastern, western);
+        assertEquals(eastern.hashCode(), western.hashCode());
+        assertEquals(eastern, plain);
+        assertEquals(eastern, advised);
+        assertNotEquals(eastern, customizer(EasternSpyJustTest.class));
     }
 
     @Test
