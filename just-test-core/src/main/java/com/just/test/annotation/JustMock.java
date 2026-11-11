@@ -48,6 +48,9 @@ import java.lang.annotation.Target;
  * （{@code @JustTestProject(interceptMocks)}，加上该启动类所在包及其子包里、解析出的启动类
  * 就是这个 {@code @JustTestProject} 类的 {@code @JustTest} 扫描结果）。
  * 包树之外的测试若需要拦截，必须把类型写进 {@code interceptMocks}。
+ * 接口与实现解析到同一个 Bean 时只注册一次拦截，两个字段绑定该线程级 mock；
+ * 当前测试类声明了其中任一类型即激活。无法安全合并（mock 类型不兼容、多个候选 Bean）时在启动期失败，
+ * 并列出声明类型、Bean 名和声明它们的测试类。
  * 没装上拦截的类型会 fail-fast，不会退回替换定义。真实 Bean 内部的 {@code this.foo()} 自调不会进拦截。
  * 没有 {@code @JustTestProject} 时，真实 Bean 仍会替换定义并参与缓存 key。</p>
  */

@@ -14,7 +14,7 @@ Adopt in this order: [coordinates](#coordinates), [write a test](#write-a-test),
 
 ## Coordinates
 
-Maven Central group is `io.github.cyaquarius`. The current released version is `1.2.7`.
+Maven Central group is `io.github.cyaquarius`. The current released version is `1.2.7`. This repository's upcoming version is `1.2.8` (not tagged and not published).
 
 | | Boot 2 | Boot 3 |
 | --- | --- | --- |
@@ -22,6 +22,7 @@ Maven Central group is `io.github.cyaquarius`. The current released version is `
 | Java / Spring Boot | 8 / 2.7.18 | 17 / 3.5.16 |
 | Java package | `com.just.test` | `com.just.test` |
 | Released version | `1.2.7` | `1.2.7` |
+| Upcoming version | `1.2.8` | `1.2.8` |
 
 Java 8 / Boot 2:
 
@@ -39,7 +40,7 @@ Java 8 / Boot 2:
 - Central publishes only `just-test-boot2` and `just-test-boot3`.
 - A repository that already proxies Central only needs the dependency above.
 - Without Central access, proxy Central, or upload the boot2 / boot3 artifacts to a private release repository and keep group `io.github.cyaquarius`.
-- `mvn install` from this repository is for local development. Release history: [changelog](#changelog). Library baseline: [compatibility](#compatibility).
+- `mvn install` from this repository is for local development and installs unreleased `1.2.8`. Release history: [changelog](#changelog). Library baseline: [compatibility](#compatibility).
 
 <a id="capabilities"></a>
 
@@ -401,6 +402,24 @@ sequenceDiagram
 - A later `@JustMock` of a type that was not installed fails fast. JustTest does not replace the bean and does not split the cache.
 - A call the real bean makes to itself (`this.foo()`) does not enter the intercept.
 
+**Same bean, interface and implementation (`1.2.8`, upcoming)**
+
+```mermaid
+flowchart TD
+  iface["@JustMock on the interface"] --> same{"Same unique bean?"}
+  impl["@JustMock on the implementation"] --> same
+  same -->|yes| once["One thread intercept<br/>Both fields bind to it"]
+  same -->|unsafe| stop["Fail fast at startup<br/>Types, bean name, test classes"]
+```
+
+- `1.2.7` still intercepts a real bean and still shares one context. Registration in that release is per declaration type.
+- `1.2.8` registers one thread intercept per resolved bean name.
+- An interface declaration and an implementation declaration that resolve to that same unique bean share the intercept. Both `@JustMock` fields bind to it.
+- Declaring either type activates Mockito defaults for the current test class. A class that declared neither still calls the real bean.
+- A second declaration that cannot be merged (incompatible mock type, or more than one matching bean) fails at context startup.
+- That failure names the declaration types, the bean name, and the test classes that declared them.
+- A mixed interface / implementation pair that resolves to the same bean stays valid. JustTest does not require those declarations to be rewritten.
+
 **Real bean, without `@JustTestProject`**
 
 - A real bean is still replaced.
@@ -666,8 +685,14 @@ A parallel failure is not automatically a JustTest isolation failure; first insp
 
 ## Changelog
 
-The current Maven Central release is `1.2.7`. The rules above match that release.
+The current Maven Central release is `1.2.7`. This repository's upcoming version is `1.2.8` (not tagged and not published). The rules above keep the `1.2.7` intercept behavior. Bean-name dedup in [`@JustMock`](#justmock) is `1.2.8`.
 
+- **1.2.8** (upcoming) — one thread intercept per resolved bean name. [Issue #93](https://github.com/cyAquarius/just-test/issues/93).
+  - An interface `@JustMock` and an implementation `@JustMock` that resolve to the same unique bean register once. Both fields bind to that thread-scoped mock.
+  - Declaring either type activates Mockito defaults. A test class that declared neither still calls the real bean.
+  - A declaration that cannot be merged (incompatible mock type, ambiguous beans) fails at context startup.
+  - The failure lists the declaration types, the bean name, and the test classes that declared them.
+  - The `1.2.7` context-sharing intercept stays. This release does not replace it with a fail-fast that rejects every mixed interface / implementation pair.
 - **1.2.7** — `@JustMock` of a real bean intercepts that bean instead of replacing it and splitting the Spring Test context. [Issue #88](https://github.com/cyAquarius/just-test/issues/88). Canonical rules: [`@JustMock`](#justmock).
   - Tests that use the same `@JustTestProject` startup class share one `ApplicationContext`.
   - The intercept set is fixed before the first start of that shared context and cannot grow afterward.
