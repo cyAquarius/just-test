@@ -7,6 +7,7 @@ import com.just.test.demo.project.fixtures.feign.DemoFeignClient;
 import com.just.test.demo.project.fixtures.feign.DemoLocalClient;
 import com.just.test.demo.project.fixtures.feign.ExcludedFeignClient;
 import com.just.test.internal.project.JustTestProjectFeignAutoMock;
+import com.just.test.internal.scope.ThreadScope;
 import org.junit.jupiter.api.Test;
 import org.mybatis.spring.mapper.MapperFactoryBean;
 import org.springframework.aop.scope.ScopedProxyUtils;
@@ -32,6 +33,7 @@ import java.lang.annotation.Target;
 import java.lang.reflect.Field;
 import java.util.Arrays;
 import java.util.Collections;
+import java.util.concurrent.Callable;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -329,6 +331,33 @@ class JustMockPostProcessorTest {
                 beanFactory.getBean(JustMockBindings.class).getBeanName(definition(field)));
         assertTrue(beanFactory.containsBeanDefinition("scopedTarget.demoFeignClient"));
         assertEquals(1, countLogicalBeansOfType(beanFactory, DemoFeignClient.class));
+        assertEquals(JustTestProjectFeignAutoMock.SOURCE,
+                beanFactory.getBeanDefinition("demoFeignClient")
+                        .getAttribute(JustMockBeanOrigins.SOURCE_ATTRIBUTE));
+    }
+
+    @Test
+    void bindsFieldToThreadScopedMockAndStillReplacesARealBean() {
+        AnnotationConfigApplicationContext context = new AnnotationConfigApplicationContext();
+        context.register(RunnableThreadScopedConfig.class);
+        context.getBeanFactory().registerScope("thread", new ThreadScope());
+        Field real = field(RunnableFields.class, "realClient");
+        context.addBeanFactoryPostProcessor(
+                new JustMockPostProcessor(Collections.singleton(definition(real))));
+        context.refresh();
+        try {
+            assertEquals("@ThreadScopedMock", context.getBeanFactory().getBeanDefinition("mockClient")
+                    .getAttribute(JustMockBeanOrigins.SOURCE_ATTRIBUTE));
+            assertEquals("@JustMock", context.getBeanFactory().getBeanDefinition("realClient")
+                    .getAttribute(JustMockBeanOrigins.SOURCE_ATTRIBUTE));
+            JustMockBindings bindings = context.getBean(JustMockBindings.class);
+            assertEquals("realClient", bindings.getBeanName(definition(real)));
+            assertEquals("mockClient", bindings.getBeanName(definition(field(RunnableFields.class, "renamed"))));
+            assertTrue(context.getBeanFactory().containsBeanDefinition("scopedTarget.mockClient"));
+            assertTrue(context.getBeanFactory().containsBeanDefinition("scopedTarget.realClient"));
+        } finally {
+            context.close();
+        }
     }
 
     @Test
@@ -715,6 +744,36 @@ class JustMockPostProcessorTest {
     }
 
     private static class SampleClient {
+    }
+
+    @Configuration
+    static class RunnableThreadScopedConfig {
+        @Bean
+        @ThreadScopedMock
+        Runnable mockClient() {
+            return mock(Runnable.class);
+        }
+
+        @Bean
+        Callable<String> realClient() {
+            return new Callable<String>() {
+                @Override
+                public String call() {
+                    return "real";
+                }
+            };
+        }
+    }
+
+    static class RunnableFields {
+        @JustMock
+        private Runnable mockClient;
+
+        @JustMock
+        private Runnable renamed;
+
+        @JustMock
+        private Callable<String> realClient;
     }
 
     @Configuration

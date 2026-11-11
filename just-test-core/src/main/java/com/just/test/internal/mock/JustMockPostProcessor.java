@@ -21,8 +21,11 @@ import org.springframework.beans.factory.support.BeanDefinitionRegistry;
 import org.springframework.beans.factory.config.BeanFactoryPostProcessor;
 import org.springframework.core.type.MethodMetadata;
 
+import java.util.ArrayList;
 import java.util.Collections;
+import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
@@ -47,7 +50,9 @@ import java.util.Set;
  *   <li>{@code mockTypes} —— 测试类字段 {@code @JustMock} 扫描所得（per-test 差异化 mock）</li>
  *   <li>{@code @ThreadScopedMock} —— Configuration 类 {@code @Bean} 方法标记（全局外部依赖 mock）</li>
  *   <li>opt-in {@code @JustTestProject(autoMockFeignClients = true)} 发现的 {@code @FeignClient}
- *       接口；显式 {@code @JustMock} / {@code @JustSpy} / {@code @ThreadScopedMock} 优先</li>
+ *       接口。{@code @JustMock} 若解析到这些已经是线程级 mock 的 Bean，只绑定字段，不再次注册。
+ *       指向真实 Bean 的 {@code @JustMock} 仍替换定义，并阻止该类型再被自动 mock。
+ *       {@code @JustSpy} / {@code @ThreadScopedMock} 优先</li>
  *   <li>{@code @JustSpy} —— 只包裹已有 Bean，找不到则失败，不会 create-if-absent</li>
  * </ol>
  * </p>
@@ -82,16 +87,18 @@ class JustMockPostProcessor implements BeanFactoryPostProcessor {
         }
         BeanDefinitionRegistry registry = (BeanDefinitionRegistry) beanFactory;
 
-        // 合并 @JustMock 字段类型 + @ThreadScopedMock @Bean 方法返回类型。
-        // 同类型的 @JustSpy 必须先失败，再决定是否跳过 auto @FeignClient。
-        Set<JustMockDefinition> allMockDefinitions = new LinkedHashSet<>(mockDefinitions);
-        allMockDefinitions.addAll(collectThreadScopedMockDefinitions(beanFactory));
-        rejectSpyMockTypeConflicts(spyDefinitions, allMockDefinitions);
+        // 同类型的 @JustSpy 必须先失败。已经是线程级 mock 的 @JustMock 只绑定，不重复注册。
+        Set<JustMockDefinition> threadScoped = collectThreadScopedMockDefinitions(beanFactory);
+        Map<String, JustMockDefinition> threadScopedByName = new LinkedHashMap<String, JustMockDefinition>();
+        for (JustMockDefinition definition : threadScoped) {
+            threadScopedByName.put(definition.getExplicitBeanName(), definition);
+        }
+        Set<JustMockDefinition> spyConflictInputs = new LinkedHashSet<JustMockDefinition>(mockDefinitions);
+        spyConflictInputs.addAll(threadScoped);
+        rejectSpyMockTypeConflicts(spyDefinitions, spyConflictInputs);
 
-        java.util.Map<JustMockDefinition, String> spyNames =
-                new java.util.LinkedHashMap<JustMockDefinition, String>();
-        java.util.Map<String, JustMockDefinition> spiesByBeanName =
-                new java.util.LinkedHashMap<String, JustMockDefinition>();
+        Map<JustMockDefinition, String> spyNames = new LinkedHashMap<JustMockDefinition, String>();
+        Map<String, JustMockDefinition> spiesByBeanName = new LinkedHashMap<String, JustMockDefinition>();
         for (JustMockDefinition spy : spyDefinitions) {
             String beanName = resolveBeanName(beanFactory, registry, spy);
             JustMockDefinition previous = spiesByBeanName.put(beanName, spy);
@@ -101,19 +108,44 @@ class JustMockPostProcessor implements BeanFactoryPostProcessor {
             spyNames.put(spy, beanName);
         }
 
-        allMockDefinitions.addAll(collectAutoMockedFeignClients(
-                beanFactory, registry, allMockDefinitions, spyDefinitions));
+        Map<Class<?>, String> feignDiscovered = discoverFeignTypes(beanFactory, registry);
+        Set<Class<?>> feignBlocked = mockedTypes(threadScoped);
+        feignBlocked.addAll(mockedTypes(spyDefinitions));
 
-        Set<String> registeredBeanNames = new LinkedHashSet<>();
-        java.util.Map<JustMockDefinition, String> bindings = new java.util.LinkedHashMap<>();
-        for (JustMockDefinition definition : allMockDefinitions) {
-            String beanName = registerThreadScopedMock(beanFactory, registry, definition, spiesByBeanName);
-            if (beanName != null) {
-                registeredBeanNames.add(beanName);
-                bindings.put(definition, beanName);
-                markMockSource(registry, beanName, definition);
+        Map<JustMockDefinition, String> bindings = new LinkedHashMap<JustMockDefinition, String>();
+        List<JustMockDefinition> replacements = new ArrayList<JustMockDefinition>();
+        for (JustMockDefinition fieldMock : mockDefinitions) {
+            String pendingFeign = pendingFeignBind(fieldMock, feignDiscovered, feignBlocked);
+            if (pendingFeign != null) {
+                bindings.put(fieldMock, pendingFeign);
+                log.info("[JustMock] Binding {} to existing thread-scoped mock '{}'",
+                        fieldMock.describe(), pendingFeign);
+                continue;
+            }
+            String resolved = resolveBeanName(beanFactory, registry, fieldMock);
+            JustMockDefinition spy = spiesByBeanName.get(resolved);
+            if (spy != null) {
+                throw JustMockBeanOrigins.sameBeanSpyMockConflict(resolved, spy, fieldMock);
+            }
+            String bindName = bindTarget(fieldMock, resolved, threadScopedByName, feignDiscovered, feignBlocked);
+            if (bindName != null) {
+                bindings.put(fieldMock, bindName);
+                log.info("[JustMock] Binding {} to existing thread-scoped mock '{}'",
+                        fieldMock.describe(), bindName);
+            } else {
+                replacements.add(fieldMock);
+                feignBlocked.add(fieldMock.getType());
             }
         }
+
+        Set<String> registeredBeanNames = new LinkedHashSet<String>();
+        registerMockDefinitions(beanFactory, registry, threadScoped, spiesByBeanName,
+                bindings, registeredBeanNames);
+        registerMockDefinitions(beanFactory, registry,
+                feignDefinitions(feignDiscovered, feignBlocked), spiesByBeanName,
+                bindings, registeredBeanNames);
+        registerMockDefinitions(beanFactory, registry, replacements, spiesByBeanName,
+                bindings, registeredBeanNames);
         for (java.util.Map.Entry<JustMockDefinition, String> spy : spyNames.entrySet()) {
             String beanName = registerThreadScopedSpy(beanFactory, registry, spy.getKey(), spy.getValue());
             registeredBeanNames.add(beanName);
@@ -177,31 +209,93 @@ class JustMockPostProcessor implements BeanFactoryPostProcessor {
         return definitions;
     }
 
-    private Set<JustMockDefinition> collectAutoMockedFeignClients(
-            ConfigurableListableBeanFactory beanFactory,
-            BeanDefinitionRegistry registry,
-            Set<JustMockDefinition> alreadyMocked,
-            Set<JustMockDefinition> spies) {
+    private void registerMockDefinitions(ConfigurableListableBeanFactory beanFactory,
+                                         BeanDefinitionRegistry registry,
+                                         Iterable<JustMockDefinition> definitions,
+                                         Map<String, JustMockDefinition> spiesByBeanName,
+                                         Map<JustMockDefinition, String> bindings,
+                                         Set<String> registeredBeanNames) {
+        for (JustMockDefinition definition : definitions) {
+            String beanName = registerThreadScopedMock(beanFactory, registry, definition, spiesByBeanName);
+            if (beanName != null) {
+                registeredBeanNames.add(beanName);
+                bindings.put(definition, beanName);
+                markMockSource(registry, beanName, definition);
+            }
+        }
+    }
+
+    /**
+     * Feign 客户端还没注册成 Bean 时，auto-mock 会按简单类名创建它。
+     * 这种 {@code @JustMock} 直接绑定，避免先走“找不到 Bean、准备新建”的告警。
+     */
+    private String pendingFeignBind(JustMockDefinition fieldMock,
+                                    Map<Class<?>, String> feignDiscovered,
+                                    Set<Class<?>> feignBlocked) {
+        if (feignDiscovered == null || feignDiscovered.isEmpty()
+                || feignBlocked.contains(fieldMock.getType())
+                || !feignDiscovered.containsKey(fieldMock.getType())
+                || fieldMock.hasQualifierAnnotations()
+                || !fieldMock.getExplicitBeanName().isEmpty()) {
+            return null;
+        }
+        String existing = feignDiscovered.get(fieldMock.getType());
+        if (existing != null && !existing.isEmpty()) {
+            return null;
+        }
+        return JustMockDefinition.decapitalize(fieldMock.getType().getSimpleName());
+    }
+
+    /**
+     * 字段 {@code @JustMock} 解析到的 Bean 若已由 {@code @ThreadScopedMock} 或 Feign auto-mock 覆盖，
+     * 返回那个 Bean 名；否则返回 null，调用方按原逻辑替换定义。
+     */
+    private String bindTarget(JustMockDefinition fieldMock,
+                              String resolved,
+                              Map<String, JustMockDefinition> threadScopedByName,
+                              Map<Class<?>, String> feignDiscovered,
+                              Set<Class<?>> feignBlocked) {
+        if (resolved != null && threadScopedByName.containsKey(resolved)) {
+            return resolved;
+        }
+        if (feignDiscovered == null || feignDiscovered.isEmpty()
+                || feignBlocked.contains(fieldMock.getType())
+                || !feignDiscovered.containsKey(fieldMock.getType())) {
+            return null;
+        }
+        String existing = feignDiscovered.get(fieldMock.getType());
+        String feignName = existing == null || existing.isEmpty()
+                ? JustMockDefinition.decapitalize(fieldMock.getType().getSimpleName())
+                : existing;
+        return feignName.equals(resolved) ? feignName : null;
+    }
+
+    private Map<Class<?>, String> discoverFeignTypes(ConfigurableListableBeanFactory beanFactory,
+                                                     BeanDefinitionRegistry registry) {
         if (!registry.containsBeanDefinition(JustTestProjectFeignAutoMock.BEAN_NAME)
                 && !beanFactory.containsSingleton(JustTestProjectFeignAutoMock.BEAN_NAME)) {
-            return Collections.emptySet();
+            return Collections.emptyMap();
         }
         JustTestProjectFeignAutoMock settings = beanFactory.getBean(
                 JustTestProjectFeignAutoMock.BEAN_NAME, JustTestProjectFeignAutoMock.class);
-        Set<Class<?>> mockedTypes = mockedTypes(alreadyMocked);
-        mockedTypes.addAll(mockedTypes(spies));
-        Set<JustMockDefinition> definitions = new LinkedHashSet<>();
-        for (Map.Entry<Class<?>, String> entry : settings.discover(beanFactory).entrySet()) {
+        return settings.discover(beanFactory);
+    }
+
+    private Set<JustMockDefinition> feignDefinitions(Map<Class<?>, String> discovered,
+                                                     Set<Class<?>> blocked) {
+        Set<JustMockDefinition> definitions = new LinkedHashSet<JustMockDefinition>();
+        if (discovered == null || discovered.isEmpty()) {
+            return definitions;
+        }
+        for (Map.Entry<Class<?>, String> entry : discovered.entrySet()) {
             Class<?> type = entry.getKey();
-            if (mockedTypes.contains(type)) {
+            if (blocked.contains(type)) {
                 log.debug("[JustMock] Skipping auto @FeignClient {} because an explicit mock or @JustSpy already exists",
                         type.getName());
                 continue;
             }
-            JustMockDefinition definition = JustMockDefinition.forAutoMock(
-                    type, entry.getValue(), JustTestProjectFeignAutoMock.SOURCE);
-            definitions.add(definition);
-            mockedTypes.add(type);
+            definitions.add(JustMockDefinition.forAutoMock(
+                    type, entry.getValue(), JustTestProjectFeignAutoMock.SOURCE));
             log.info("[JustMock] Auto-mocking @FeignClient {}", type.getName());
         }
         return definitions;

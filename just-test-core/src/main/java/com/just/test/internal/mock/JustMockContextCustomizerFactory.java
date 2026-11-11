@@ -53,7 +53,7 @@ public class JustMockContextCustomizerFactory implements ContextCustomizerFactor
             }
             return null;
         }
-        return new JustMockContextCustomizer(mocks, spies);
+        return JustMockContextCustomizer.forTestClass(mocks, spies, testClass, configAttributes);
     }
 
     private static String annotationNames(Set<JustMockDefinition> mocks, Set<JustMockDefinition> spies) {
