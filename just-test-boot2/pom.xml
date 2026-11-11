@@ -84,6 +84,19 @@
                                 <exclude>**/*$*</exclude>
                                 <exclude>**/ParallelFirstJustTest.java</exclude>
                                 <exclude>**/ParallelSecondJustTest.java</exclude>
+                                <exclude>**/ConcurrentCasesJustTest.java</exclude>
+                            </excludes>
+                        </configuration>
+                    </execution>
+                    <execution>
+                        <id>concurrent-case-contract</id>
+                        <goals><goal>test</goal></goals>
+                        <configuration>
+                            <includes>
+                                <include>**/ConcurrentCasesJustTest.java</include>
+                            </includes>
+                            <excludes>
+                                <exclude>**/*$*</exclude>
                             </excludes>
                         </configuration>
                     </execution>

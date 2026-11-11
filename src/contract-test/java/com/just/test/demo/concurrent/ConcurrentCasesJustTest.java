@@ -30,8 +30,11 @@ class ConcurrentCasesJustTest implements JustTestLifecycle {
     private static final AtomicInteger MAX_ACTIVE_CASES = new AtomicInteger();
     private static final Set<String> EXECUTION_THREADS = ConcurrentHashMap.newKeySet();
     /**
-     * Schema clone 会在 DataSource 上串行化建库。等待窗口与并行类契约测试对齐：
-     * 2 方（与 fixed parallelism=2 一致）、30 秒，避免短超时 flake。
+     * 2 方屏障会占住一个 ForkJoin worker，直到另一个 case 也进入测试方法。
+     * 契约测试的 fixed parallelism=2 是所有类共享的；另一个 worker 若停在别的类里，
+     * 本类的第二个 case 不会被调度，屏障会空等。因此本类由 Surefire 单独执行，
+     * 仍使用同一份 junit-platform.properties。Schema clone 只在建库时串行，
+     * 等待窗口保持 30 秒。
      */
     private static final int OVERLAP_PARTY_COUNT = 2;
     private static final long OVERLAP_TIMEOUT_SECONDS = 30L;
