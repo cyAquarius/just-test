@@ -97,7 +97,7 @@ junit.jupiter.execution.parallel.mode.classes.default=concurrent
 
 ## Maven Central
 
-坐标为 `io.github.cyaquarius`。Java 包名仍是 `com.just.test`。Maven Central **只发布** `just-test-boot2` 与 `just-test-boot3`（`just-test-core` 打进这两个 JAR，不单独上架）。当前已发布到 Maven Central 的版本为 `1.2.5`。本仓库待发布版本为 `1.2.6`（不打 tag，也不发布）。本地 `mvn install` 仍用于基于本仓库开发。
+坐标为 `io.github.cyaquarius`。Java 包名仍是 `com.just.test`。Maven Central **只发布** `just-test-boot2` 与 `just-test-boot3`（`just-test-core` 打进这两个 JAR，不单独上架）。当前已发布到 Maven Central 的版本为 `1.2.6`。本地 `mvn install` 仍用于基于本仓库开发。
 
 Java 8 / Boot 2：
 
@@ -114,7 +114,7 @@ Java 17 / Boot 3：把 `artifactId` 换成 `just-test-boot3`。不要同时引�
 
 若公司私服已代理 Central，只需声明依赖。若环境无法访问 Central，可代理 Central，或将 boot2/boot3 制品上传到私服 release 仓库，并保持坐标为 `io.github.cyaquarius`。
 
-待发布的 `1.2.6` 把已经是线程级 mock 的 `@JustMock`（`@ThreadScopedMock` 的 `@Bean`，或 `autoMockFeignClients` 创建的 Feign mock）视为绑定：字段照常注入并解开 scoped proxy，不再重复注册 Bean 定义，也不会因此新建 Spring Test Context。指向真实 Bean 的 `@JustMock` 和 `@JustSpy` 仍会改变上下文缓存 key。#85。`1.2.5` 让线程作用域 `@JustSpy` / `@JustMock` 在具体类会被 Spring 自动代理（`@Repository`、`@Transactional`）时仍可直接 stub：advisor 留在真实 Bean 上。#81。`1.2.4` 新增 `@JustSpy`：只 stub 已有 Bean 的部分方法，未 stub 的方法仍走真实 Bean（包括 `prepare.yaml` / H2）。`1.2.3` 会在每个 case 边界检测未结束的 Spring 事务同步/线程状态；即使该 case 的 `expect_exception.yaml` 已匹配，泄漏源 case 仍会失败。业务代码必须保证所有路径都 commit/rollback（或把校验移到 `getTransaction` 之前）。JustTest 仅在确认泄漏时隔离线程状态，避免污染下一个 case；该隔离不是业务 rollback 的替代品。#6/#12 处理 MyBatis/JDBC holder，#67 进一步处理 Spring 事务同步与 active-transaction 线程状态。
+`1.2.6` 把已经是线程级 mock 的 `@JustMock`（`@ThreadScopedMock` 的 `@Bean`，或 `autoMockFeignClients` 创建的 Feign mock）视为绑定：字段照常注入并解开 scoped proxy，不再重复注册 Bean 定义，也不会因此新建 Spring Test Context。指向真实 Bean 的 `@JustMock` 和 `@JustSpy` 仍会改变上下文缓存 key。#85。`1.2.5` 让线程作用域 `@JustSpy` / `@JustMock` 在具体类会被 Spring 自动代理（`@Repository`、`@Transactional`）时仍可直接 stub：advisor 留在真实 Bean 上。#81。`1.2.4` 新增 `@JustSpy`：只 stub 已有 Bean 的部分方法，未 stub 的方法仍走真实 Bean（包括 `prepare.yaml` / H2）。`1.2.3` 会在每个 case 边界检测未结束的 Spring 事务同步/线程状态；即使该 case 的 `expect_exception.yaml` 已匹配，泄漏源 case 仍会失败。业务代码必须保证所有路径都 commit/rollback（或把校验移到 `getTransaction` 之前）。JustTest 仅在确认泄漏时隔离线程状态，避免污染下一个 case；该隔离不是业务 rollback 的替代品。#6/#12 处理 MyBatis/JDBC holder，#67 进一步处理 Spring 事务同步与 active-transaction 线程状态。
 
 `1.2.2` 在 `@JustMock` / `@ThreadScopedMock` 与某个 `*AutoConfiguration` 的同类型 Bean 共存时 fail-fast，给出类级诊断，而不再让每个 YAML case 重复刷 `NoUniqueBeanDefinitionException`。框架仍然不会自动 exclude 自动配置。`1.2.1` 撤回框架默认关闭 OkHttp，并提供 opt-in 的 `@JustTestProject(autoMockFeignClients)`，仅自动 mock `@FeignClient` 接口。
 
