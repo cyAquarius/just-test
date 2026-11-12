@@ -5,8 +5,6 @@
 - 不要编造公司业务包、表结构或用例。
 - 在本仓库改框架时，演示只放 `src/contract-test` 的 `com.just.test.demo`。
 
-待发布 `1.2.9`：`io.github.cyaquarius:just-test-boot2:1.2.9` / `io.github.cyaquarius:just-test-boot3:1.2.9` 支持通过 MapperFactoryBean 定义元数据识别 thread intercept；Maven Central 已发布版本仍是 `1.2.8`。消费待发布修复需先本地 `mvn install`。
-
 ## 生成顺序
 
 ```mermaid
@@ -24,12 +22,12 @@ flowchart LR
 
 | 消费工程 | Maven Central |
 | --- | --- |
-| Java 8 / Spring Boot 2 | `io.github.cyaquarius:just-test-boot2:1.2.8` |
-| Java 17 / Spring Boot 3 | `io.github.cyaquarius:just-test-boot3:1.2.8` |
+| Java 8 / Spring Boot 2 | `io.github.cyaquarius:just-test-boot2:1.2.9` |
+| Java 17 / Spring Boot 3 | `io.github.cyaquarius:just-test-boot3:1.2.9` |
 
 - 不要同时引入两个顶层 artifact。
 - 不要单独声明 `just-test-core`：它已 shade 进 boot JAR，Central 不上架。
-- 生成时使用已发布的 `1.2.8` 坐标。本地 `mvn install` 使用待发布的 `1.2.9` 坐标。
+- 生成时使用已发布的 `1.2.9` 坐标。
 
 ## 启动类
 
@@ -114,7 +112,8 @@ public class JustTestApplication {
 
 **已发布语义（生成时按此写，不要按更旧的替换行为写）**
 
-- `1.2.8`：同一 Bean 的接口 / 实现 `@JustMock` 按 Bean 名去重，规则见上。#93。生成时使用已发布的 `1.2.8` 坐标；这次按 Bean 名去重已经在 Maven Central 上。
+- `1.2.9`：安装线程拦截时读取 MapperFactoryBean 产品类型元数据，不提前初始化无关 FactoryBean。[Issue #97](https://github.com/cyAquarius/just-test/issues/97)。
+- `1.2.8`：同一 Bean 的接口 / 实现 `@JustMock` 按 Bean 名去重，规则见上。#93。生成时使用已发布的 `1.2.9` 坐标；这次按 Bean 名去重已经在 Maven Central 上。
 - `1.2.7`：指向真实 Bean 的 `@JustMock` 是线程拦截，规则见上。#88。
 - `1.2.6`：针对已有线程级 mock 的 `@JustMock` 是绑定。#85。
 - `1.2.5`：线程作用域 `@JustSpy` / `@JustMock` 保持为可 stub 的 Mockito mock，Spring 自动代理的 advisor 留在真实 Bean 上。#81。
@@ -256,7 +255,7 @@ class CreateJustTest extends OrderJustTestSupport {
 
 ## 写出前核对
 
-- [ ] 只依赖 `just-test-boot2` 或 `just-test-boot3` 之一，已发布版本 `1.2.8`，`scope` 为 `test`，没有 `just-test-core`。
+- [ ] 只依赖 `just-test-boot2` 或 `just-test-boot3` 之一，已发布版本 `1.2.9`，`scope` 为 `test`，没有 `just-test-core`。
 - [ ] 同一个真实 Bean 的接口 `@JustMock` 与实现类 `@JustMock` 可以并存。`1.2.8` 按 Bean 名只拦截一次。不要为了这种混用去改声明；不能安全合并时期望启动期 fail-fast。
 - [ ] 有 `src/test/resources/sql/schema.sql`，且启动类不加载生产 DataSource / 事务管理器。
 - [ ] `@JustTestProject` 在独立测试包，`@JustTest` 类在该包或子包。
