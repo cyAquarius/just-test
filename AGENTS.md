@@ -10,5 +10,5 @@
 - 修改 Boot 2 线必须保持 Java 8 兼容；修改 Boot 3 线不得破坏 Boot 2 线，反之亦然。共享 `just-test-core` 的改动需同时考虑两条产品线。
 - Java 构建和测试直接使用 Maven。
 - 重叠屏障契约不要移回默认 Surefire execution：`ConcurrentCasesJustTest` 留在 boot2/boot3 的 `concurrent-case-contract`，`ParallelFirstJustTest` / `ParallelSecondJustTest` 留在 `parallel-class-contract`（同一份 `src/contract-test/resources/junit-platform.properties`，`fixed.parallelism=2`）。`default-test` 仍并发跑其余类；不要为此串行化 case、放宽重叠断言或只加大超时。
-- 消费方 / AI 编写 YAML 用例：见 `docs/ai-justtest-authoring.md`。
+- 消费方 / AI 编写 YAML 用例：见 `docs/ai-justtest-authoring.md`。采用方可把 `docs/skills/just-test/SKILL.md` 复制到自己项目的 `.cursor/skills/just-test/SKILL.md`（或对应的 agent skill 目录）。
 - `@JustTestProject` 不默认关闭 OkHttp；`autoMockFeignClients` 默认 `false`，开启后只 mock `@FeignClient` 接口。Redis / OSS / SDK 等仍需显式 `@JustMock` / `@ThreadScopedMock`。显式 `@JustMock` / `@JustSpy` / `@ThreadScopedMock` 优先于自动 Feign mock。`@JustSpy` 只包裹已有 Bean，未 stub 的方法走真实逻辑。

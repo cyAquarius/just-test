@@ -83,7 +83,7 @@ flowchart TB
 
 ## 编写测试
 
-AI 编写配方：[docs/ai-justtest-authoring.md](docs/ai-justtest-authoring.md)。
+AI 编写配方：[docs/ai-justtest-authoring.md](docs/ai-justtest-authoring.md)。采用方可把 [docs/skills/just-test/SKILL.md](docs/skills/just-test/SKILL.md) 复制到自己项目的 `.cursor/skills/just-test/SKILL.md`（或对应的 agent skill 目录）。
 
 ```mermaid
 flowchart LR
