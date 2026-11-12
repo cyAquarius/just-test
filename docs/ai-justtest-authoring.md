@@ -1,6 +1,6 @@
 # AI 编写 JustTest 用例
 
-给任意模型或代理的生成与核对配方。形态是 **YAML 用例 + 薄 Java glue**，不是手写 assert 堆。产品细节以 [README.zh-CN.md](../README.zh-CN.md) / [README.md](../README.md) 为准。
+给任意模型或代理的生成与核对配方。形态是 **YAML 用例 + 薄 Java glue**，不是手写 assert 堆。产品细节以 [README.zh-CN.md](../README.zh-CN.md) / [README.md](../README.md) 为准。采用方可把 [docs/skills/just-test/SKILL.md](skills/just-test/SKILL.md) 复制到自己项目的 `.cursor/skills/just-test/SKILL.md`（或对应的 agent skill 目录）。
 
 - 不要编造公司业务包、表结构或用例。
 - 在本仓库改框架时，演示只放 `src/contract-test` 的 `com.just.test.demo`。

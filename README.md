@@ -83,7 +83,7 @@ flowchart TB
 
 ## Write a test
 
-AI-authored cases: [docs/ai-justtest-authoring.md](docs/ai-justtest-authoring.md).
+AI-authored cases: [docs/ai-justtest-authoring.md](docs/ai-justtest-authoring.md). Adopters can copy [docs/skills/just-test/SKILL.md](docs/skills/just-test/SKILL.md) to their own project's `.cursor/skills/just-test/SKILL.md` (or the equivalent agent skill directory).
 
 ```mermaid
 flowchart LR
