@@ -424,6 +424,62 @@ class JustMockPostProcessorTest {
     }
 
     @Test
+    void interceptsMapperDefinitionMetadataWithoutInitializingFactoryBeans() {
+        for (int variant = 0; variant < 5; variant++) {
+            DefaultListableBeanFactory factory = beanFactory();
+            GenericBeanDefinition mapper = new GenericBeanDefinition();
+            mapper.setBeanClass(MapperFactoryBean.class);
+            if (variant == 0) {
+                mapper.setAttribute("factoryBeanObjectType", SampleMapper.class);
+            } else if (variant == 1) {
+                // MyBatis 2.x used a class-name String; Spring 6 rejects that attribute
+                // during its own type query, so this compatibility case is Boot 2 only.
+                if (org.springframework.core.SpringVersion.getVersion().startsWith("6.")) continue;
+                mapper.setAttribute("factoryBeanObjectType", SampleMapper.class.getName());
+            } else if (variant == 2) {
+                mapper.getConstructorArgumentValues().addGenericArgumentValue(SampleMapper.class.getName());
+            } else if (variant == 3) {
+                mapper.getConstructorArgumentValues().addIndexedArgumentValue(0, SampleMapper.class);
+            } else {
+                mapper.getPropertyValues().add("mapperInterface", SampleMapper.class.getName());
+            }
+            factory.registerBeanDefinition("sampleMapper", mapper);
+            GenericBeanDefinition template = new GenericBeanDefinition();
+            template.setBeanClass(MapperFactoryBean.class);
+            template.setAbstract(true);
+            template.setAttribute("factoryBeanObjectType", SampleMapper.class);
+            factory.registerBeanDefinition("abstractMapperTemplate", template);
+            process(factory, field(TestFields.class, "sampleMapper"), JustMockInterceptPlan.project(
+                    JustMockPostProcessorTest.class, Collections.singleton(SampleMapper.class),
+                    Collections.<Class<?>>emptySet()));
+            assertTrue(factory.containsBeanDefinition(
+                    JustMockPostProcessor.INTERCEPT_TARGET_PREFIX + "sampleMapper"));
+            assertFalse(factory.containsSingleton("sampleMapper"));
+            assertFalse(factory.containsSingleton(
+                    JustMockPostProcessor.INTERCEPT_TARGET_PREFIX + "sampleMapper"));
+        }
+    }
+
+    @Test
+    void metadataMapperDoesNotHideAnAlreadyVisibleCandidate() {
+        DefaultListableBeanFactory factory = beanFactory();
+        factory.registerBeanDefinition("visibleMapper", BeanDefinitionBuilder
+                .genericBeanDefinition(SampleMapper.class, () -> mock(SampleMapper.class))
+                .getBeanDefinition());
+        factory.registerBeanDefinition("metadataMapper", BeanDefinitionBuilder
+                .genericBeanDefinition(MapperFactoryBean.class)
+                .addPropertyValue("mapperInterface", SampleMapper.class).getBeanDefinition());
+        IllegalStateException failure = assertThrows(IllegalStateException.class,
+                () -> new JustMockPostProcessor(Collections.<JustMockDefinition>emptySet(),
+                        Collections.<JustMockDefinition>emptySet(), JustMockInterceptPlan.project(
+                        JustMockPostProcessorTest.class, Collections.singleton(SampleMapper.class),
+                        Collections.<Class<?>>emptySet())).postProcessBeanFactory(factory));
+        assertTrue(failure.getMessage().contains("visibleMapper"));
+        assertTrue(failure.getMessage().contains("metadataMapper"));
+        assertFalse(factory.containsBeanDefinition("scopedTarget.metadataMapper"));
+    }
+
+    @Test
     void replacesMapperFactoryBeanByNameWhenObjectTypeIsNotVisible() {
         DefaultListableBeanFactory beanFactory = beanFactory();
         AbstractBeanDefinition definition = BeanDefinitionBuilder

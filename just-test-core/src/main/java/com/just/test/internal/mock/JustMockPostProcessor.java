@@ -7,6 +7,10 @@ import org.mockito.MockSettings;
 import org.mockito.Mockito;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.PropertyValue;
+import org.springframework.beans.factory.config.ConstructorArgumentValues;
+import org.springframework.beans.factory.config.TypedStringValue;
+import org.springframework.core.ResolvableType;
 import org.springframework.aop.framework.AopInfrastructureBean;
 import org.springframework.aop.scope.ScopedProxyUtils;
 import org.springframework.beans.factory.annotation.AnnotatedBeanDefinition;
@@ -854,7 +858,75 @@ class JustMockPostProcessor implements BeanFactoryPostProcessor {
                 logicalCandidates.add(candidate);
             }
         }
+        if (!allowEagerInit) {
+            // Read product metadata without constructing FactoryBeans (notably Feign clients).
+            // Always union candidates: a visible bean must not hide a second mapper (#65).
+            for (String name : beanFactory.getBeanDefinitionNames()) {
+                if (!isInternalBeanName(name)) {
+                    Class<?> productType = factoryProductType(beanFactory,
+                            beanFactory.getMergedBeanDefinition(name));
+                    if (productType != null && type.isAssignableFrom(productType)) {
+                        logicalCandidates.add(name);
+                    }
+                }
+            }
+        }
         return logicalCandidates;
+    }
+
+    private static Class<?> factoryProductType(ConfigurableListableBeanFactory factory,
+                                             BeanDefinition definition) {
+        if (definition.isAbstract()) {
+            return null;
+        }
+        Class<?> objectType = metadataClass(factory, definition.getAttribute("factoryBeanObjectType"));
+        if (objectType != null) {
+            return objectType;
+        }
+        Class<?> beanClass = metadataClass(factory, definition.getBeanClassName());
+        // Avoid a core dependency on mybatis-spring; also accept MapperFactoryBean subclasses.
+        while (beanClass != null) {
+            if ("org.mybatis.spring.mapper.MapperFactoryBean".equals(beanClass.getName())) {
+                PropertyValue property =
+                        definition.getPropertyValues().getPropertyValue("mapperInterface");
+                if (property != null) {
+                    return metadataClass(factory, property.getValue());
+                }
+                ConstructorArgumentValues arguments =
+                        definition.getConstructorArgumentValues();
+                ConstructorArgumentValues.ValueHolder indexed =
+                        arguments.getIndexedArgumentValue(0, null);
+                if (indexed != null) {
+                    return metadataClass(factory, indexed.getValue());
+                }
+                if (arguments.getGenericArgumentValues().size() == 1) {
+                    return metadataClass(factory, arguments.getGenericArgumentValues().get(0).getValue());
+                }
+                return null;
+            }
+            beanClass = beanClass.getSuperclass();
+        }
+        return null;
+    }
+
+    private static Class<?> metadataClass(ConfigurableListableBeanFactory factory, Object value) {
+        if (value instanceof Class<?>) {
+            return (Class<?>) value;
+        }
+        if (value instanceof ResolvableType) {
+            return ((ResolvableType) value).resolve();
+        }
+        if (value instanceof TypedStringValue) {
+            value = ((TypedStringValue) value).getValue();
+        }
+        if (value instanceof String) {
+            try {
+                return Class.forName((String) value, false, factory.getBeanClassLoader());
+            } catch (ClassNotFoundException | LinkageError ex) {
+                return null;
+            }
+        }
+        return null;
     }
 
     private String resolveCreateIfAbsent(ConfigurableListableBeanFactory beanFactory,
