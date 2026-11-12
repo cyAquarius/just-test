@@ -14,7 +14,7 @@ GitHub 的 `[skip ci]` / `[ci skip]` 会跳过本仓库的验证与发布工作�
 
 ## 版本与发布
 
-父 POM 当前版本为待发布的 `1.2.8`（不打 tag，也不发布）。Maven Central 已发布版本仍是 `1.2.7`。本地 `mvn install` 使用 `1.2.8`。正式版只上传 `just-test-boot2` 与 `just-test-boot3`（core 打进 JAR），不走 GitHub Packages。
+父 POM 当前版本为 `1.2.8`，与 Maven Central 已发布版本一致。本地 `mvn install` 使用该坐标。正式版只上传 `just-test-boot2` 与 `just-test-boot3`（core 打进 JAR），不走 GitHub Packages。
 
 发布时：
 
