@@ -22,6 +22,7 @@ Maven Central group is `io.github.cyaquarius`. The current released version is `
 | Java / Spring Boot | 8 / 2.7.18 | 17 / 3.5.16 |
 | Java package | `com.just.test` | `com.just.test` |
 | Released version | `1.2.8` | `1.2.8` |
+| Upcoming / local install | `1.2.9` | `1.2.9` |
 
 Java 8 / Boot 2:
 
@@ -39,7 +40,7 @@ Java 8 / Boot 2:
 - Central publishes only `just-test-boot2` and `just-test-boot3`.
 - A repository that already proxies Central only needs the dependency above.
 - Without Central access, proxy Central, or upload the boot2 / boot3 artifacts to a private release repository and keep group `io.github.cyaquarius`.
-- `mvn install` from this repository is for local development and installs `1.2.8`. Release history: [changelog](#changelog). Library baseline: [compatibility](#compatibility).
+- `mvn install` from this repository is for local development and installs upcoming `1.2.9`. Release history: [changelog](#changelog). Library baseline: [compatibility](#compatibility).
 
 <a id="capabilities"></a>
 
@@ -685,6 +686,8 @@ A parallel failure is not automatically a JustTest isolation failure; first insp
 ## Changelog
 
 The current Maven Central release is `1.2.8`. The rules above match that release.
+
+- **1.2.9 (upcoming)** — recognize MapperFactoryBean product metadata when installing thread intercepts without initializing unrelated FactoryBeans. [Issue #97](https://github.com/cyAquarius/just-test/issues/97).
 
 - **1.2.8** — one thread intercept per resolved bean name. [Issue #93](https://github.com/cyAquarius/just-test/issues/93).
   - An interface `@JustMock` and an implementation `@JustMock` that resolve to the same unique bean register once. Both fields bind to that thread-scoped mock.

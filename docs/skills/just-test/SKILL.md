@@ -10,6 +10,8 @@ description: 在 Spring Boot 消费工程中编写或核对 JustTest 用例时�
 - 不要编造公司业务包、表结构或用例；只根据当前工程里已有的需求、接口和代码写。
 - 不要改 just-test 框架源码，也不要依赖 `com.just.test.internal`。
 
+待发布 `1.2.9`：`io.github.cyaquarius:just-test-boot2:1.2.9` / `io.github.cyaquarius:just-test-boot3:1.2.9` 支持通过 MapperFactoryBean 定义元数据识别 thread intercept；Maven Central 已发布版本仍是 `1.2.8`。消费待发布修复需先本地 `mvn install`。
+
 ## 做什么、不做什么
 
 JustTest 测的是同一条 Spring 服务切片里的调用链：从需求或接口写出准备、输入、期望，跑入口方法，检查返回值、异常和库表。改了下层内部方法、上层契约仍按原样跑时，这里比单测更容易抓住回归。

@@ -5,6 +5,8 @@
 - 不要编造公司业务包、表结构或用例。
 - 在本仓库改框架时，演示只放 `src/contract-test` 的 `com.just.test.demo`。
 
+待发布 `1.2.9`：`io.github.cyaquarius:just-test-boot2:1.2.9` / `io.github.cyaquarius:just-test-boot3:1.2.9` 支持通过 MapperFactoryBean 定义元数据识别 thread intercept；Maven Central 已发布版本仍是 `1.2.8`。消费待发布修复需先本地 `mvn install`。
+
 ## 生成顺序
 
 ```mermaid
@@ -27,7 +29,7 @@ flowchart LR
 
 - 不要同时引入两个顶层 artifact。
 - 不要单独声明 `just-test-core`：它已 shade 进 boot JAR，Central 不上架。
-- 生成时使用已发布的 `1.2.8` 坐标。本地 `mvn install` 使用同一坐标。
+- 生成时使用已发布的 `1.2.8` 坐标。本地 `mvn install` 使用待发布的 `1.2.9` 坐标。
 
 ## 启动类
 

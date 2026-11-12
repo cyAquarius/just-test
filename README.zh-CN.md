@@ -22,6 +22,7 @@ Maven Central 的 group 为 `io.github.cyaquarius`。当前已发布版本为 `1
 | Java / Spring Boot | 8 / 2.7.18 | 17 / 3.5.16 |
 | Java 包名 | `com.just.test` | `com.just.test` |
 | 已发布版本 | `1.2.8` | `1.2.8` |
+| 待发布 / 本地安装 | `1.2.9` | `1.2.9` |
 
 Java 8 / Boot 2：
 
@@ -39,7 +40,7 @@ Java 8 / Boot 2：
 - Central **只发布** `just-test-boot2` 与 `just-test-boot3`。
 - 公司私服已代理 Central 时，只需上面的依赖声明。
 - 环境访问不了 Central 时，可代理 Central，或把 boot2 / boot3 制品上传到私服 release 仓库，并保持 group 为 `io.github.cyaquarius`。
-- 基于本仓库开发仍用本地 `mvn install`，装到的是 `1.2.8`。版本记录见[变更记录](#changelog)。依赖基线见[兼容性](#compatibility)。
+- 基于本仓库开发仍用本地 `mvn install`，装到的是待发布的 `1.2.9`。版本记录见[变更记录](#changelog)。依赖基线见[兼容性](#compatibility)。
 
 <a id="capabilities"></a>
 
@@ -685,6 +686,8 @@ junit.jupiter.execution.parallel.mode.classes.default=concurrent
 ## 变更记录
 
 当前 Maven Central 发布版本是 `1.2.8`。上面的规则对应该版本。
+
+- **1.2.9（待发布）** — 安装线程拦截时读取 MapperFactoryBean 产品类型元数据，不提前初始化无关 FactoryBean。[Issue #97](https://github.com/cyAquarius/just-test/issues/97)。
 
 - **1.2.8** — 按解析到的 Bean 名只注册一次线程拦截。[Issue #93](https://github.com/cyAquarius/just-test/issues/93)。
   - 接口 `@JustMock` 与实现类 `@JustMock` 解析到同一个唯一 Bean 时只注册一次。两个字段绑定同一个线程级 mock。
