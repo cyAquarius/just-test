@@ -1,6 +1,8 @@
 package com.just.test.internal.lifecycle;
 
 import com.just.test.annotation.CaseSource;
+import com.just.test.annotation.JustMock;
+import com.just.test.annotation.JustSpy;
 import com.just.test.lifecycle.JustTestLifecycle;
 import org.junit.jupiter.api.TestInstance;
 import org.junit.jupiter.api.extension.ExtensionConfigurationException;
@@ -14,7 +16,9 @@ import org.springframework.core.annotation.AnnotatedElementUtils;
 import org.springframework.test.context.jdbc.Sql;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.lang.reflect.Field;
 import java.lang.reflect.Method;
+import java.lang.reflect.Modifier;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Locale;
@@ -23,7 +27,8 @@ import java.util.stream.Collectors;
 
 /**
  * {@code @JustTest} 的共享类级校验：{@link JustTestLifecycle}、JUnit 可执行方法、
- * {@code @TestInstance(PER_CLASS)} 与类内并发，以及 Spring {@code @Transactional}/{@code @Sql}。
+ * {@code @TestInstance(PER_CLASS)} 与类内并发、Spring {@code @Transactional}/{@code @Sql}，
+ * 以及 static {@code @JustMock} / {@code @JustSpy} 字段。
  *
  * <p>不对消费方提供兼容承诺。Boot 模块的公开 {@code JustTestClassValidationExtension}
  * 在 BeforeAll 调用本校验，并另行检查 Boot bootstrapper 注解。</p>
@@ -71,6 +76,7 @@ public final class JustTestClassValidator {
         }
         validateCaseSourceMethods(testClass);
         validatePerClassConcurrentExecution(testClass, context);
+        validateStaticMockFields(testClass);
     }
 
     public static ExtensionConfigurationException configurationError(Class<?> testClass, String detail) {
@@ -115,6 +121,45 @@ public final class JustTestClassValidator {
                         method.getName()));
             }
         }
+    }
+
+    /**
+     * static {@code @JustMock} / {@code @JustSpy} 被所有 case 线程共享。
+     * 并发写入会互相覆盖 stub，因此与其它配置错误一样在 BeforeAll 失败。
+     */
+    private static void validateStaticMockFields(Class<?> testClass) {
+        for (Class<?> type = testClass; type != null && type != Object.class; type = type.getSuperclass()) {
+            for (Field field : type.getDeclaredFields()) {
+                if (!Modifier.isStatic(field.getModifiers())) {
+                    continue;
+                }
+                String annotation = staticMockAnnotation(field);
+                if (annotation == null) {
+                    continue;
+                }
+                throw configurationError(testClass, String.format(
+                        "static %s field %s.%s breaks thread isolation. "
+                                + "Concurrent cases would write the same static field and clobber stubs",
+                        annotation,
+                        field.getDeclaringClass().getName(),
+                        field.getName()));
+            }
+        }
+    }
+
+    private static String staticMockAnnotation(Field field) {
+        boolean mock = field.getAnnotation(JustMock.class) != null;
+        boolean spy = field.getAnnotation(JustSpy.class) != null;
+        if (mock && spy) {
+            return "@JustMock and @JustSpy";
+        }
+        if (mock) {
+            return "@JustMock";
+        }
+        if (spy) {
+            return "@JustSpy";
+        }
+        return null;
     }
 
     private static void validatePerClassConcurrentExecution(Class<?> testClass, ExtensionContext context) {
