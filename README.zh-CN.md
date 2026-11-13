@@ -22,6 +22,7 @@ Maven Central 的 group 为 `io.github.cyaquarius`。当前已发布版本为 `1
 | Java / Spring Boot | 8 / 2.7.18 | 17 / 3.5.16 |
 | Java 包名 | `com.just.test` | `com.just.test` |
 | 已发布版本 | `1.2.9` | `1.2.9` |
+| 待发布 / 本地安装 | `1.2.10` | `1.2.10` |
 
 Java 8 / Boot 2：
 
@@ -39,7 +40,7 @@ Java 8 / Boot 2：
 - Central **只发布** `just-test-boot2` 与 `just-test-boot3`。
 - 公司私服已代理 Central 时，只需上面的依赖声明。
 - 环境访问不了 Central 时，可代理 Central，或把 boot2 / boot3 制品上传到私服 release 仓库，并保持 group 为 `io.github.cyaquarius`。
-- 基于本仓库开发仍用本地 `mvn install`，装到的是 `1.2.9`。版本记录见[变更记录](#changelog)。依赖基线见[兼容性](#compatibility)。
+- 基于本仓库开发仍用本地 `mvn install`，装到的是待发布的 `1.2.10`。版本记录见[变更记录](#changelog)。依赖基线见[兼容性](#compatibility)。
 
 <a id="capabilities"></a>
 
@@ -232,7 +233,7 @@ src/test/java/com/example/justtest/order/
     └── ok/
 ```
 
-每个 case 目录按需要放 `request.yaml`、`prepare.yaml`、`response.yaml`、`expect.yaml`、`expect_exception.yaml`。
+每个 case 目录按需要放 `request.yaml`、`prepare.yaml`、`response.yaml`、`expect.yaml`、`expect_exception.yaml`。同一阶段也可以用 `.yml`。同一阶段两种后缀同时存在时，JustTest 会 fail-fast，并在错误里写出两个路径。
 
 把这些 YAML 映射进测试 classpath：
 
@@ -685,6 +686,8 @@ junit.jupiter.execution.parallel.mode.classes.default=concurrent
 ## 变更记录
 
 当前 Maven Central 发布版本是 `1.2.9`。上面的规则对应该版本。
+
+- **1.2.10（待发布）** — 加载发现阶段已经接受的 `.yml` 用例文件。只含 `.yml` 夹具的目录会执行预置和断言。同一阶段同时存在 `.yaml` 与 `.yml` 时 fail-fast。[Issue #100](https://github.com/cyAquarius/just-test/issues/100)。
 
 - **1.2.9** — 安装线程拦截时读取 MapperFactoryBean 产品类型元数据，不提前初始化无关 FactoryBean。[Issue #97](https://github.com/cyAquarius/just-test/issues/97)。
 

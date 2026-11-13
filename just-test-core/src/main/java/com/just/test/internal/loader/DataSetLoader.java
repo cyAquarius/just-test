@@ -25,7 +25,8 @@ import java.util.regex.Pattern;
  * YAML 数据集加载器（ACTS 2.0 风格）。
  *
  * <p>从 classpath 上的 case 目录加载 YAML（{@code casePath/prepare.yaml} 等），
- * 解析 prepare 块并将数据 INSERT 到 H2。</p>
+ * 解析 prepare 块并将数据 INSERT 到 H2。阶段文件先找 {@code .yaml}，再找 {@code .yml}；
+ * 同一阶段两种后缀都存在时立即失败。</p>
  */
 public class DataSetLoader {
 
@@ -57,7 +58,7 @@ public class DataSetLoader {
     }
 
     /**
-     * 从 casePath 加载 prepare.yaml 并灌入数据库。
+     * 从 casePath 加载 prepare.yaml 或 prepare.yml 并灌入数据库。
      *
      * @param jdbcTemplate H2 JdbcTemplate
      * @param casePath     classpath 相对路径（如 "com/example/.../deductBalance"）
@@ -135,35 +136,77 @@ public class DataSetLoader {
     }
 
     /**
-     * 从 casePath 加载指定 YAML 文件。
+     * 从 casePath 加载指定阶段文件。
+     *
+     * <p>传入逻辑名（如 {@code prepare.yaml}）。先找同名 {@code .yaml}，再找 {@code .yml}。
+     * 都不存在返回 null。两种后缀同时存在时失败，不静默选择其中一个。</p>
      *
      * @param casePath classpath 相对路径（如 "com/example/.../deductBalance"）
-     * @param fileName 文件名（如 prepare.yaml、expect.yaml）
+     * @param fileName 阶段文件名（如 prepare.yaml、expect.yaml）
      * @return YAML 数据 Map，文件不存在返回 null
      */
     @SuppressWarnings("unchecked")
     public static Map<String, Object> parseYamlByPath(String casePath, String fileName) {
-        Object raw = parseYamlRaw(casePath, fileName);
+        String resourcePath = resolveStageResource(casePath, fileName);
+        Object raw = readResolvedYaml(casePath, fileName, resourcePath);
         if (raw == null) {
             return null;
         }
         if (!(raw instanceof Map)) {
             throw new IllegalArgumentException(
-                    "[JustTest] YAML must be a mapping: " + casePath + "/" + fileName);
+                    "[JustTest] YAML must be a mapping: " + resourcePath);
         }
         return (Map<String, Object>) raw;
     }
 
     /**
-     * 解析 YAML 文件，返回原始对象（可能是 Map 或 List）。
-     * 用于 response.yaml 等可能为顶层 List 的场景。
+     * 解析阶段文件，返回原始对象（可能是 Map 或 List）。
+     * 用于 response.yaml 等可能为顶层 List 的场景。后缀规则与 {@link #parseYamlByPath} 相同。
      *
      * @param casePath classpath 相对路径
-     * @param fileName 文件名
+     * @param fileName 阶段文件名
      * @return YAML 原始对象，文件不存在返回 null
      */
     public static Object parseYamlRaw(String casePath, String fileName) {
-        String resourcePath = casePath + "/" + fileName;
+        return readResolvedYaml(casePath, fileName, resolveStageResource(casePath, fileName));
+    }
+
+    /**
+     * 定位 case 阶段文件。
+     *
+     * @param casePath classpath 相对路径
+     * @param fileName 阶段文件名；以 {@code .yaml} 或 {@code .yml} 结尾时两种后缀都探测
+     * @return 实际存在的 classpath 路径；都不存在返回 null
+     */
+    public static String resolveStageResource(String casePath, String fileName) {
+        String stem = stageStem(fileName);
+        if (stem == null) {
+            String exact = casePath + "/" + fileName;
+            return resourceExists(exact) ? exact : null;
+        }
+        String yamlPath = casePath + "/" + stem + ".yaml";
+        String ymlPath = casePath + "/" + stem + ".yml";
+        boolean yamlExists = resourceExists(yamlPath);
+        boolean ymlExists = resourceExists(ymlPath);
+        if (yamlExists && ymlExists) {
+            throw new IllegalStateException(
+                    "[JustTest] Both .yaml and .yml exist for the same case stage: "
+                            + yamlPath + " and " + ymlPath);
+        }
+        if (yamlExists) {
+            return yamlPath;
+        }
+        if (ymlExists) {
+            return ymlPath;
+        }
+        return null;
+    }
+
+    private static Object readResolvedYaml(String casePath, String fileName, String resourcePath) {
+        if (resourcePath == null) {
+            log.debug("[JustTest] YAML file not found: {}", casePath + "/" + fileName);
+            return null;
+        }
         try (InputStream is = Thread.currentThread().getContextClassLoader().getResourceAsStream(resourcePath)) {
             if (is == null) {
                 log.debug("[JustTest] YAML file not found: {}", resourcePath);
@@ -177,6 +220,21 @@ public class DataSetLoader {
         } catch (Exception e) {
             throw new RuntimeException("[JustTest] Failed to parse YAML: " + resourcePath, e);
         }
+    }
+
+    private static String stageStem(String fileName) {
+        if (fileName.endsWith(".yaml")) {
+            return fileName.substring(0, fileName.length() - ".yaml".length());
+        }
+        if (fileName.endsWith(".yml")) {
+            return fileName.substring(0, fileName.length() - ".yml".length());
+        }
+        return null;
+    }
+
+    private static boolean resourceExists(String resourcePath) {
+        ClassLoader loader = Thread.currentThread().getContextClassLoader();
+        return loader.getResource(resourcePath) != null;
     }
 
     /**

@@ -5,6 +5,8 @@
 - 不要编造公司业务包、表结构或用例。
 - 在本仓库改框架时，演示只放 `src/contract-test` 的 `com.just.test.demo`。
 
+待发布 `1.2.10`：`io.github.cyaquarius:just-test-boot2:1.2.10` / `io.github.cyaquarius:just-test-boot3:1.2.10` 会加载 case 目录中的 `.yml` 阶段文件；同一阶段 `.yaml` 与 `.yml` 同时存在时 fail-fast。Maven Central 已发布版本仍是 `1.2.9`。消费待发布修复需先本地 `mvn install`。
+
 ## 生成顺序
 
 ```mermaid
@@ -27,7 +29,7 @@ flowchart LR
 
 - 不要同时引入两个顶层 artifact。
 - 不要单独声明 `just-test-core`：它已 shade 进 boot JAR，Central 不上架。
-- 生成时使用已发布的 `1.2.9` 坐标。
+- 生成时使用已发布的 `1.2.9` 坐标。本地 `mvn install` 使用待发布的 `1.2.10` 坐标。
 
 ## 启动类
 
@@ -143,6 +145,7 @@ src/test/java/com/example/justtest/order/
 ```
 
 - classpath 对应 `com/example/justtest/order/create/{ok,dup,bad-input}/*.yaml|yml`。
+- 阶段文件可以用 `.yaml` 或 `.yml`。同一阶段两种后缀同时存在时 fail-fast，不会静默选其中一个。
 - `CreateJustTest` 的包是 `com.example.justtest.order.create`，不是 `.../create/CreateJustTest/`。
 - 一个业务类目录（如 `order/`）下放抽象 `Support`（共享 mock / 生命周期）。Support **不要**标 `@JustTest`，**不要**放 case YAML；不计入「一包一个具体类」。抽象类上标 `@JustTest` 会 fail-fast 并列出 FQCN。
 - 每个业务方法一个子包、一个**自身标注** `@JustTest` 的具体类、一个 `@CaseSource`。同一类上多个 `@CaseSource` 会共享本包全部 sibling case，不推荐。
