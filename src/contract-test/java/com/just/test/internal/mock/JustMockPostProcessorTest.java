@@ -16,6 +16,7 @@ import org.mockito.AdditionalAnswers;
 import org.mockito.Mockito;
 import org.springframework.aop.scope.ScopedProxyUtils;
 import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.beans.factory.FactoryBean;
 import org.springframework.beans.factory.config.BeanDefinition;
 import org.springframework.beans.factory.config.BeanDefinitionHolder;
 import org.springframework.beans.factory.support.AbstractBeanDefinition;
@@ -23,9 +24,11 @@ import org.springframework.beans.factory.support.AutowireCandidateQualifier;
 import org.springframework.beans.factory.support.BeanDefinitionBuilder;
 import org.springframework.beans.factory.support.DefaultListableBeanFactory;
 import org.springframework.beans.factory.support.GenericBeanDefinition;
+import org.springframework.context.annotation.AnnotatedBeanDefinitionReader;
 import org.springframework.context.annotation.AnnotationConfigApplicationContext;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.context.annotation.ConfigurationClassPostProcessor;
 import org.springframework.context.annotation.ContextAnnotationAutowireCandidateResolver;
 
 import static org.mockito.Mockito.mock;
@@ -43,6 +46,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.Callable;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -572,6 +576,22 @@ class JustMockPostProcessorTest {
         } finally {
             context.close();
         }
+    }
+
+    @Test
+    void threadScopedFactoryBeanTypeIsReadWithoutCreatingIt() {
+        CountingFactoryBean.created.set(0);
+        DefaultListableBeanFactory beanFactory = new DefaultListableBeanFactory();
+        new AnnotatedBeanDefinitionReader(beanFactory).register(CountingFactoryBeanConfig.class);
+        new ConfigurationClassPostProcessor().postProcessBeanDefinitionRegistry(beanFactory);
+
+        new JustMockPostProcessor(Collections.<JustMockDefinition>emptySet()).postProcessBeanFactory(beanFactory);
+
+        assertEquals(0, CountingFactoryBean.created.get());
+        assertEquals("@ThreadScopedMock", beanFactory.getBeanDefinition("client")
+                .getAttribute(JustMockBeanOrigins.SOURCE_ATTRIBUTE));
+        assertEquals(SampleClient.class, beanFactory.getType("scopedTarget.client", false));
+        assertEquals(0, CountingFactoryBean.created.get());
     }
 
     @Test
@@ -1108,6 +1128,38 @@ class JustMockPostProcessorTest {
 
         @JustMock
         private Callable<String> realClient;
+    }
+
+    public static class CountingFactoryBean implements FactoryBean<SampleClient> {
+        static final AtomicInteger created = new AtomicInteger();
+
+        CountingFactoryBean() {
+            created.incrementAndGet();
+        }
+
+        @Override
+        public SampleClient getObject() {
+            return new SampleClient();
+        }
+
+        @Override
+        public Class<?> getObjectType() {
+            return SampleClient.class;
+        }
+
+        @Override
+        public boolean isSingleton() {
+            return true;
+        }
+    }
+
+    @Configuration
+    static class CountingFactoryBeanConfig {
+        @Bean
+        @ThreadScopedMock
+        CountingFactoryBean client() {
+            return new CountingFactoryBean();
+        }
     }
 
     @Configuration

@@ -6,6 +6,7 @@ import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.config.DependencyDescriptor;
 import org.springframework.core.annotation.AnnotatedElementUtils;
 
+import java.beans.Introspector;
 import java.lang.annotation.Annotation;
 import java.lang.reflect.Field;
 import java.util.Collections;
@@ -47,13 +48,29 @@ final class JustMockDefinition {
     }
 
     static JustMockDefinition forField(Field field, JustMock justMock) {
+        rejectUnsupportedFieldType(field);
         return new JustMockDefinition(field.getType(), field.getName(), justMock.name(),
                 qualifiers(field), field.getDeclaringClass().getName(), field, false, false);
     }
 
     static JustMockDefinition forSpyField(Field field, JustSpy justSpy) {
+        rejectUnsupportedFieldType(field);
         return new JustMockDefinition(field.getType(), field.getName(), justSpy.name(),
                 qualifiers(field), field.getDeclaringClass().getName(), field, false, true);
+    }
+
+    /**
+     * primitive 和数组不能作为 Mockito mock 的类型。在字段入口失败，避免拖到注入期才报错。
+     */
+    private static void rejectUnsupportedFieldType(Field field) {
+        Class<?> type = field.getType();
+        if (!type.isPrimitive() && !type.isArray()) {
+            return;
+        }
+        String kind = type.isPrimitive() ? "a primitive" : "an array";
+        throw new IllegalStateException("[JustMock] " + field.getDeclaringClass().getName()
+                + "." + field.getName() + " is " + kind + " (" + type.getName()
+                + "). @JustMock and @JustSpy require a class or interface.");
     }
 
     private static Set<Annotation> qualifiers(Field field) {
@@ -80,11 +97,16 @@ final class JustMockDefinition {
                 Collections.emptySet(), source, null, createIfAbsent, false);
     }
 
+    /**
+     * JavaBeans 规则：前两个字符都是大写时保持原样，因此 {@code URLClient} 仍是 {@code URLClient}，
+     * 而不是 {@code uRLClient}。与 Spring {@code AnnotationBeanNameGenerator} 使用的
+     * {@link Introspector#decapitalize(String)} 一致。
+     */
     static String decapitalize(String simpleName) {
         if (simpleName == null || simpleName.isEmpty()) {
             return simpleName;
         }
-        return Character.toLowerCase(simpleName.charAt(0)) + simpleName.substring(1);
+        return Introspector.decapitalize(simpleName);
     }
 
     Class<?> getType() { return type; }

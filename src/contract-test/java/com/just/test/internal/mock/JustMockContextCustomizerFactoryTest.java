@@ -48,6 +48,20 @@ class JustMockContextCustomizerFactoryTest {
     }
 
     @Test
+    void rejectsPrimitiveAndArrayMockFields() {
+        IllegalStateException primitive = assertThrows(IllegalStateException.class,
+                () -> factory.createContextCustomizer(PrimitiveJustTest.class, Collections.emptyList()));
+        assertTrue(primitive.getMessage().contains("count"));
+        assertTrue(primitive.getMessage().contains("int"));
+        assertTrue(primitive.getMessage().contains("primitive"));
+
+        IllegalStateException array = assertThrows(IllegalStateException.class,
+                () -> factory.createContextCustomizer(ArraySpyTest.class, Collections.emptyList()));
+        assertTrue(array.getMessage().contains("payload"));
+        assertTrue(array.getMessage().contains("array"));
+    }
+
+    @Test
     void configuresJustTestWithoutJustMockFields() {
         ContextCustomizer customizer = factory.createContextCustomizer(
                 EmptyJustTest.class, Collections.emptyList());
@@ -77,5 +91,17 @@ class JustMockContextCustomizerFactoryTest {
 
     @JustTest
     static class EmptyJustTest {
+    }
+
+    @JustTest
+    static class PrimitiveJustTest {
+        @JustMock
+        private int count;
+    }
+
+    @JustTest
+    static class ArraySpyTest {
+        @JustSpy
+        private byte[] payload;
     }
 }

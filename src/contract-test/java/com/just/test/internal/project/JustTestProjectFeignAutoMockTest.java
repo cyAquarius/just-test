@@ -53,6 +53,33 @@ class JustTestProjectFeignAutoMockTest {
     }
 
     @Test
+    void keepsTheFirstRegisteredFeignBeanOfTheSameType() {
+        DefaultListableBeanFactory beanFactory = new DefaultListableBeanFactory();
+        beanFactory.registerBeanDefinition("first-feign", feignFactory(DemoFeignClient.class));
+        beanFactory.registerBeanDefinition("second-feign", feignFactory(DemoFeignClient.class));
+        JustTestProjectFeignAutoMock settings = new JustTestProjectFeignAutoMock(
+                new String[] {"com.just.test.demo.project.fixtures.feign"}, new Class<?>[0]);
+
+        Map<Class<?>, String> discovered = settings.discover(beanFactory);
+
+        assertEquals("first-feign", discovered.get(DemoFeignClient.class));
+    }
+
+    @Test
+    void secondFeignAutoMockRegistrationKeepsTheFirstSettings() {
+        DefaultListableBeanFactory registry = new DefaultListableBeanFactory();
+        JustTestProjectFeignAutoMock.register(registry, new String[] {"com.first.feign"}, new Class<?>[0]);
+        JustTestProjectFeignAutoMock.register(registry, new String[] {"com.second.feign"}, new Class<?>[] {
+                ExcludedFeignClient.class});
+
+        JustTestProjectFeignAutoMock settings = registry.getBean(
+                JustTestProjectFeignAutoMock.BEAN_NAME, JustTestProjectFeignAutoMock.class);
+        assertEquals("com.first.feign", settings.getBasePackages()[0]);
+        assertEquals(1, settings.getBasePackages().length);
+        assertTrue(settings.getExcludeClassNames().isEmpty());
+    }
+
+    @Test
     void isNoOpWhenFeignAnnotationIsHidden() {
         ClassLoader hiding = new ClassLoader(ClassUtils.getDefaultClassLoader()) {
             @Override
@@ -80,5 +107,12 @@ class JustTestProjectFeignAutoMockTest {
         assertTrue(JustTestProjectFeignAutoMock.isFeignClient(DemoFeignClient.class, feignClient));
         assertFalse(JustTestProjectFeignAutoMock.isFeignClient(DemoLocalClient.class, feignClient));
         assertFalse(JustTestProjectFeignAutoMock.isFeignClient(String.class, feignClient));
+    }
+
+    private static GenericBeanDefinition feignFactory(Class<?> type) {
+        GenericBeanDefinition factoryBean = new GenericBeanDefinition();
+        factoryBean.setBeanClassName(JustTestProjectFeignAutoMock.FEIGN_CLIENT_FACTORY_BEAN);
+        factoryBean.getPropertyValues().add("type", type);
+        return factoryBean;
     }
 }
