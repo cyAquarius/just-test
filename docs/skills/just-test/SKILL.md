@@ -10,7 +10,7 @@ description: 在 Spring Boot 消费工程中编写或核对 JustTest 用例时�
 - 不要编造公司业务包、表结构或用例；只根据当前工程里已有的需求、接口和代码写。
 - 不要改 just-test 框架源码，也不要依赖 `com.just.test.internal`。
 
-待发布 `1.2.10`：`io.github.cyaquarius:just-test-boot2:1.2.10` / `io.github.cyaquarius:just-test-boot3:1.2.10` 会加载 case 目录中的 `.yml` 阶段文件；同一阶段 `.yaml` 与 `.yml` 同时存在时 fail-fast。Maven Central 已发布版本仍是 `1.2.9`。消费待发布修复需先本地 `mvn install`。
+待发布 `1.2.10`：`io.github.cyaquarius:just-test-boot2:1.2.10` / `io.github.cyaquarius:just-test-boot3:1.2.10` 会加载 case 目录中的 `.yml` 阶段文件；同一阶段 `.yaml` 与 `.yml` 同时存在时 fail-fast。重复 key、空的或缺少 `type` 的 `expect_exception.yaml`、以及 `[C]` 命中多行都会 fail-fast。`[J]` 按 BigDecimal 比较数值。Maven Central 已发布版本仍是 `1.2.9`。消费待发布修复需先本地 `mvn install`。
 
 ## 做什么、不做什么
 
@@ -194,7 +194,10 @@ class CreateJustTest extends OrderJustTestSupport {
 | `[J]` | JSON 结构比较 |
 | `[F]` | 仅 `prepare.yaml`：原始库函数，如 `NOW()` |
 
-- `[C]` 一旦用在 List 上，每个预期元素都必须是对象，且至少有一个 `[C]` 字段。库表断言优先写明确的 `[C]`。
+- `[C]` 一旦用在 List 上，每个预期元素都必须是对象，且至少有一个 `[C]` 字段。库表断言优先写明确的 `[C]`。`[C]` 命中多行时失败，收紧到唯一一行。
+- `[J]` 比较 JSON 结构。数值按 BigDecimal 比较，`1` 与 `1.0` 相等。解析失败会报错，不会退回字符串比较。
+- 对象里单独的 `[N]:` 只跳过这个键，不会按键序跳过后面的字段。
+- YAML 重复 key 在解析时失败。`expect_exception.yaml` 存在但为空或没有 `type` 是配置错误，不会吞掉任意异常。
 - Flag 区分大小写。未知、拼错或用错阶段（如 `[cn]`、`[CC]`）会立即失败，错误里有字段名、case 路径和该阶段合法 Flag。
 - 不要在 `@JustTest` 类或 `@CaseSource` 方法上使用 Spring `@Transactional` / `@Sql`。用 `prepare.yaml` / `expect.yaml`。
 - 业务代码仍必须在所有路径 commit / rollback。case 边界若检测到未结束的 Spring 事务，即使匹配 `expect_exception.yaml` 也会失败；框架隔离不是业务 rollback 的替代品。

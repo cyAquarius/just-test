@@ -28,10 +28,13 @@ import java.util.Map;
  *
  * <p>三种校验场景：</p>
  * <ol>
- *   <li>有 expect_exception.yaml + 有异常 → 比对 type 和 message</li>
- *   <li>有 expect_exception.yaml + 无异常 → 失败（期望异常但未抛出）</li>
+ *   <li>有内容完整的 expect_exception.yaml + 有异常 → 比对 type 和 message</li>
+ *   <li>有内容完整的 expect_exception.yaml + 无异常 → 失败（期望异常但未抛出）</li>
  *   <li>无 expect_exception.yaml → 跳过（不校验异常）</li>
  * </ol>
+ *
+ * <p>文件存在但为空，或没有 {@code type}，是配置错误，立即失败。
+ * 存在性判断与内容判断走同一条加载路径，空文件不能把任意异常（包括 NPE）当成预期异常。</p>
  */
 public class ExceptionVerifier {
 
@@ -46,13 +49,10 @@ public class ExceptionVerifier {
         List<String> failures = new ArrayList<>();
 
         Map<String, Object> expectData = loadExpectException(casePath);
-        if (expectData == null || expectData.isEmpty()) {
+        if (expectData == null) {
             // 无 expect_exception.yaml → 跳过
             return failures;
         }
-        BuiltInMatchers.requireKnownFlags(
-                expectData, BuiltInMatchers.FlagStage.EXCEPTION,
-                DataSetLoader.stageLocation(casePath, "expect_exception.yaml"));
 
         // 有声明但无异常
         if (actual == null) {
@@ -80,11 +80,12 @@ public class ExceptionVerifier {
     }
 
     /**
-     * 判断指定 casePath 下是否存在 expect_exception.yaml 或 expect_exception.yml。
-     * 两种后缀同时存在时失败。
+     * 判断指定 casePath 下是否有可执行的 expect_exception 声明。
+     * 两种后缀同时存在时失败。文件存在但为空或没有 {@code type} 时失败，
+     * 与 {@link #verify} 使用同一条加载路径。
      */
     public static boolean hasExpectException(String casePath) {
-        return DataSetLoader.resolveStageResource(casePath, "expect_exception.yaml") != null;
+        return loadExpectException(casePath) != null;
     }
 
     private static void verifyMessage(Throwable actual, Map<String, Object> expectData, List<String> failures) {
@@ -151,6 +152,31 @@ public class ExceptionVerifier {
     }
 
     private static Map<String, Object> loadExpectException(String casePath) {
-        return DataSetLoader.parseYamlByPath(casePath, "expect_exception.yaml");
+        String resourcePath = DataSetLoader.resolveStageResource(casePath, "expect_exception.yaml");
+        if (resourcePath == null) {
+            return null;
+        }
+        Map<String, Object> expectData = DataSetLoader.parseYamlByPath(casePath, "expect_exception.yaml");
+        if (expectData == null || expectData.isEmpty()) {
+            throw incompleteExpectException(resourcePath);
+        }
+        BuiltInMatchers.requireKnownFlags(
+                expectData, BuiltInMatchers.FlagStage.EXCEPTION, resourcePath);
+        if (!hasExceptionType(expectData)) {
+            throw incompleteExpectException(resourcePath);
+        }
+        return expectData;
+    }
+
+    private static boolean hasExceptionType(Map<String, Object> expectData) {
+        Object type = expectData.get("type");
+        return type != null && !type.toString().trim().isEmpty();
+    }
+
+    private static IllegalArgumentException incompleteExpectException(String resourcePath) {
+        return new IllegalArgumentException(
+                "[JustTest] expect_exception file is present but empty or missing type: "
+                        + resourcePath
+                        + ". Declare type; a present file does not swallow arbitrary exceptions.");
     }
 }

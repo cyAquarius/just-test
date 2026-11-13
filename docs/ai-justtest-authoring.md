@@ -5,7 +5,7 @@
 - 不要编造公司业务包、表结构或用例。
 - 在本仓库改框架时，演示只放 `src/contract-test` 的 `com.just.test.demo`。
 
-待发布 `1.2.10`：`io.github.cyaquarius:just-test-boot2:1.2.10` / `io.github.cyaquarius:just-test-boot3:1.2.10` 会加载 case 目录中的 `.yml` 阶段文件；同一阶段 `.yaml` 与 `.yml` 同时存在时 fail-fast。Maven Central 已发布版本仍是 `1.2.9`。消费待发布修复需先本地 `mvn install`。
+待发布 `1.2.10`：`io.github.cyaquarius:just-test-boot2:1.2.10` / `io.github.cyaquarius:just-test-boot3:1.2.10` 会加载 case 目录中的 `.yml` 阶段文件；同一阶段 `.yaml` 与 `.yml` 同时存在时 fail-fast。重复 key、空的或缺少 `type` 的 `expect_exception.yaml`、以及 `[C]` 命中多行都会 fail-fast。`[J]` 按 BigDecimal 比较数值。Maven Central 已发布版本仍是 `1.2.9`。消费待发布修复需先本地 `mvn install`。
 
 ## 生成顺序
 
@@ -244,7 +244,10 @@ class CreateJustTest extends OrderJustTestSupport {
 | `[F]` | 仅 `prepare.yaml`：原始库函数，如 `NOW()` |
 
 - `[C]` 一旦用在 List 上，每个预期元素都必须是对象，且至少有一个 `[C]` 字段。
-- 库表断言优先写明确的 `[C]`。
+- 库表断言优先写明确的 `[C]`。`[C]` 命中多行时失败，收紧到唯一一行。
+- `[J]` 比较 JSON 结构。数值按 BigDecimal 比较，`1` 与 `1.0` 相等。解析失败会报错，不会退回字符串比较。
+- 对象里单独的 `[N]:` 只跳过这个键，不会按键序跳过后面的字段。
+- YAML 重复 key 在解析时失败。`expect_exception.yaml` 存在但为空或没有 `type` 是配置错误，不会吞掉任意异常。
 - Flag 区分大小写。未知、拼错或用错阶段（如 `[cn]`、`[CC]`）会立即失败，错误里有字段名、case 路径和该阶段合法 Flag。
 
 ## 反模式

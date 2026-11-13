@@ -233,7 +233,7 @@ src/test/java/com/example/justtest/order/
     └── ok/
 ```
 
-每个 case 目录按需要放 `request.yaml`、`prepare.yaml`、`response.yaml`、`expect.yaml`、`expect_exception.yaml`。同一阶段也可以用 `.yml`。同一阶段两种后缀同时存在时，JustTest 会 fail-fast，并在错误里写出两个路径。
+每个 case 目录按需要放 `request.yaml`、`prepare.yaml`、`response.yaml`、`expect.yaml`、`expect_exception.yaml`。同一阶段也可以用 `.yml`。同一阶段两种后缀同时存在时，JustTest 会 fail-fast，并在错误里写出两个路径。用例 YAML 里的重复 key 在解析时失败。
 
 把这些 YAML 映射进测试 classpath：
 
@@ -513,7 +513,7 @@ flowchart TD
 - `prepare.yaml`：case 执行前插入的行。
 - `response.yaml`：预期返回值。只与 `CaseContext.setResult` 写入的对象比较，不读取测试方法的 Java 返回值。
 - `expect.yaml`：预期数据库行。
-- `expect_exception.yaml`：预期异常类型及可选消息。
+- `expect_exception.yaml`：预期异常类型及可选消息。文件存在但为空，或没有 `type`，是配置错误，不会把任意异常当成预期异常。
 
 字段后缀 Flag 按阶段生效：
 
@@ -537,7 +537,7 @@ flowchart TD
 
 Flag 区分大小写。未知 Flag（如 `[cn]`、`[CC]`）或用在不适用阶段的 Flag 会立即失败。错误信息包含字段名、case 路径，以及该阶段允许的 Flag。
 
-数据库断言建议显式提供 `[C]` 字段，避免行定位含义不明确。
+数据库断言建议显式提供 `[C]` 字段，避免行定位含义不明确。`[C]` 命中多行时失败，需要收紧条件直到只命中一行。`[J]` 比较 JSON 结构；数值按 BigDecimal 比较，所以 `1` 与 `1.0` 相等，无法解析的 JSON 会报错。
 
 <a id="lifecycle"></a>
 
@@ -689,6 +689,7 @@ junit.jupiter.execution.parallel.mode.classes.default=concurrent
 
 当前 Maven Central 发布版本是 `1.2.9`。上面的规则对应该版本。
 
+- **1.2.10（待发布）** — YAML 加载和断言的静默通过改为 fail-fast。重复 key 会被拒绝。存在但为空或缺少 `type` 的 `expect_exception.yaml` 是配置错误，不会吞掉异常。`expect.yaml` 的 `[C]` 命中多行时失败，直到收紧到唯一一行。`[J]` 把数值按 BigDecimal 比较（`1` 等于 `1.0`），JSON 解析失败会报错，不再退回字符串比较。对象内部单独的 `[N]:` 只跳过该键。[Issue #113](https://github.com/cyAquarius/just-test/issues/113)。
 - **1.2.10（待发布）** — 未知或大小写错误的 YAML flag（如 `[cn]`、`[CC]`）立即失败，不再降级为精确匹配。错误信息包含字段名、case 路径和该阶段合法 flag。[Issue #108](https://github.com/cyAquarius/just-test/issues/108)。
 - **1.2.10（待发布）** — 加载发现阶段已经接受的 `.yml` 用例文件。只含 `.yml` 夹具的目录会执行预置和断言。同一阶段同时存在 `.yaml` 与 `.yml` 时 fail-fast。[Issue #100](https://github.com/cyAquarius/just-test/issues/100)。
 

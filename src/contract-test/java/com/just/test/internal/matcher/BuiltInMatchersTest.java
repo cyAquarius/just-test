@@ -36,6 +36,40 @@ class BuiltInMatchersTest {
     }
 
     @Test
+    void jsonMatcherComparesNumbersAsBigDecimal() {
+        assertEquals("", BuiltInMatchers.assertMatcherFlag("J", "1", "1.0", "row.n"));
+        assertEquals("", BuiltInMatchers.assertMatcherFlag(
+                "J", "{\"n\":1,\"items\":[1.0,2]}", "{\"items\":[1,2.00],\"n\":1.0}", "row.ext"));
+
+        String mismatch = BuiltInMatchers.assertMatcherFlag("J", "1", "2", "row.n");
+        assertTrue(mismatch.contains("row.n"), mismatch);
+        assertFalse(BuiltInMatchers.jsonMatcher("\"1\"").matches("1"));
+    }
+
+    @Test
+    void jsonMatcherReportsParseFailureInsteadOfStringFallback() {
+        IllegalArgumentException sameText = assertThrows(IllegalArgumentException.class,
+                () -> BuiltInMatchers.assertMatcherFlag("J", "not-json", "not-json", "row.ext"));
+        assertTrue(sameText.getMessage().contains("[J]"), sameText.getMessage());
+        assertTrue(sameText.getMessage().contains("not-json"), sameText.getMessage());
+        assertTrue(sameText.getMessage().contains("failed to parse"), sameText.getMessage());
+
+        IllegalArgumentException braces = assertThrows(IllegalArgumentException.class,
+                () -> BuiltInMatchers.jsonMatcher("{").matches("{"));
+        assertTrue(braces.getMessage().contains("failed to parse"), braces.getMessage());
+    }
+
+    @Test
+    void dateToleranceOverflowNamesFieldAndCase() {
+        assertInvalidDateTolerance("D99999999999");
+    }
+
+    @Test
+    void unicodeDateDigitsKeepIntegerParseSemantics() {
+        assertEquals(123, BuiltInMatchers.extractDateTolerance("D\uFF11\uFF12\uFF13"));
+    }
+
+    @Test
     void acceptsOnlyFlagsLegalForEachStage() {
         assertStage(BuiltInMatchers.FlagStage.PREPARE, "N, F",
                 new String[]{"N", "F"},
@@ -71,6 +105,25 @@ class BuiltInMatchersTest {
         assertTrue(bare.getMessage().contains("field '[CC]'"), bare.getMessage());
         assertTrue(bare.getMessage().contains("'(unknown)'"), bare.getMessage());
         assertTrue(bare.getMessage().contains("case-sensitive"), bare.getMessage());
+    }
+
+    private static void assertInvalidDateTolerance(String flag) {
+        Map<String, Object> node = new LinkedHashMap<>();
+        node.put("gmt[" + flag + "]", "ignored");
+        IllegalArgumentException error = assertThrows(IllegalArgumentException.class, () ->
+                BuiltInMatchers.requireKnownFlags(node, BuiltInMatchers.FlagStage.EXPECT,
+                        "com/example/date-case/expect.yaml"));
+        String message = error.getMessage();
+        assertTrue(message.contains("field 'gmt'"), message);
+        assertTrue(message.contains("[" + flag + "]"), message);
+        assertTrue(message.contains("com/example/date-case/expect.yaml"), message);
+        assertTrue(message.contains("Java int"), message);
+
+        IllegalArgumentException direct = assertThrows(IllegalArgumentException.class, () ->
+                BuiltInMatchers.assertMatcherFlag(flag, "ignored", new Timestamp(System.currentTimeMillis()),
+                        "row.gmt"));
+        assertTrue(direct.getMessage().contains("row.gmt"), direct.getMessage());
+        assertTrue(direct.getMessage().contains("[" + flag + "]"), direct.getMessage());
     }
 
     private static void assertStage(BuiltInMatchers.FlagStage stage, String legalFlags,

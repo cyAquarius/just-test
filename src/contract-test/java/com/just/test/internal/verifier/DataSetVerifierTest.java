@@ -115,6 +115,32 @@ class DataSetVerifierTest {
     }
 
     @Test
+    void failsWhenConditionMatchesMoreThanOneRow() {
+        SingleConnectionDataSource dataSource = new SingleConnectionDataSource(
+                "jdbc:h2:mem:verifier_multi_c;MODE=MySQL;DB_CLOSE_DELAY=-1", "sa", "", true);
+        try {
+            JdbcTemplate jdbcTemplate = new JdbcTemplate(dataSource);
+            jdbcTemplate.execute("CREATE TABLE sample(id INT, status VARCHAR(20))");
+            jdbcTemplate.update("INSERT INTO sample(id, status) VALUES (?, ?)", 1, "ready");
+            jdbcTemplate.update("INSERT INTO sample(id, status) VALUES (?, ?)", 1, "ready");
+
+            Map<String, Object> expectedRow = new LinkedHashMap<>();
+            expectedRow.put("id[C]", 1);
+            expectedRow.put("status", "ready");
+            Map<String, Object> expected = new LinkedHashMap<>();
+            expected.put("sample", Arrays.asList(expectedRow));
+
+            List<String> failures = DataSetVerifier.verifyFromMap(jdbcTemplate, expected);
+
+            assertTrue(failures.stream().anyMatch(failure ->
+                    failure.contains("[C] matched 2 rows") && failure.contains("tighten [C]")),
+                    failures.toString());
+        } finally {
+            dataSource.destroy();
+        }
+    }
+
+    @Test
     void rejectsUnsafeWhereColumnNames() {
         Map<String, Object> expectedRow = new LinkedHashMap<>();
         expectedRow.put("id;drop[C]", 1);

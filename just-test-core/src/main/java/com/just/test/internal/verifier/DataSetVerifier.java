@@ -24,6 +24,9 @@ import java.util.Map;
  *   <li>{@code [J]} — JSON 结构比较</li>
  *   <li>无 flag — 精确断言（Y）</li>
  * </ul>
+ *
+ * <p>{@code [C]} 必须唯一命中一行。命中多行时失败，并提示收紧 {@code [C]}，
+ * 不会只校验第一行，也不会补 {@code ORDER BY}。</p>
  */
 public class DataSetVerifier {
 
@@ -125,6 +128,14 @@ public class DataSetVerifier {
             return;
         }
 
+        boolean conditioned = fields.stream()
+                .anyMatch(f -> BuiltInMatchers.FLAG_C.equals(f.flag));
+        if (actualRows.size() > 1 && conditioned) {
+            failures.add(String.format(
+                    "[%s] row[%d]: [C] matched %d rows; tighten [C] so it matches exactly one row",
+                    tableName, rowIndex, actualRows.size()));
+            return;
+        }
         if (actualRows.size() > 1) {
             log.warn("[{}] row[{}]: WHERE matched {} rows, only verifying the first one. " +
                     "Consider adding [C] flag to narrow down.", tableName, rowIndex, actualRows.size());
