@@ -171,14 +171,11 @@ final class SqlTextRewriter {
         }
         result.append(sql, comma, formatStart);
         if (isSingleQuotedLiteral(sql, formatStart, formatEnd)) {
-            result.append('\'');
-            result.append(rewriteDateFormatPattern(sql.substring(formatStart + 1, formatEnd - 1)));
-            result.append('\'');
+            appendRewrittenDateFormatPattern(result,
+                    unescapeQuotedLiteral(sql, formatStart, formatEnd, '\''));
         } else if (isQuotedLiteral(sql, formatStart, formatEnd, '"')) {
-            result.append('\'');
-            appendSqlStringLiteral(result, rewriteDateFormatPattern(
-                    unescapeQuotedLiteral(sql, formatStart, formatEnd, '"')));
-            result.append('\'');
+            appendRewrittenDateFormatPattern(result,
+                    unescapeQuotedLiteral(sql, formatStart, formatEnd, '"'));
         } else {
             result.append(sql, formatStart, formatEnd);
         }
@@ -351,50 +348,113 @@ final class SqlTextRewriter {
         return index;
     }
 
+    private static void appendRewrittenDateFormatPattern(StringBuilder result, String pattern) {
+        result.append('\'');
+        appendSqlStringLiteral(result, rewriteDateFormatPattern(pattern));
+        result.append('\'');
+    }
+
+    /**
+     * H2 {@code FORMATDATETIME} 使用 {@code DateTimeFormatter}：未加引号的 ASCII 字母是模式符。
+     * 非说明符片段只在含字母或单引号时加引号，内部单引号双写。
+     */
     private static String rewriteDateFormatPattern(String pattern) {
         StringBuilder result = new StringBuilder(pattern.length());
+        StringBuilder literal = new StringBuilder();
         int index = 0;
         while (index < pattern.length()) {
             char current = pattern.charAt(index);
-            if (current == '%' && index + 1 < pattern.length()) {
+            if (current == '%') {
+                if (index + 1 >= pattern.length()) {
+                    throw unsupportedDateFormatSpecifier(pattern, "%");
+                }
                 char specifier = pattern.charAt(index + 1);
-                switch (specifier) {
-                    case 'Y':
-                        result.append("yyyy");
-                        break;
-                    case 'y':
-                        result.append("yy");
-                        break;
-                    case 'm':
-                        result.append("MM");
-                        break;
-                    case 'd':
-                        result.append("dd");
-                        break;
-                    case 'H':
-                        result.append("HH");
-                        break;
-                    case 'h':
-                        result.append("hh");
-                        break;
-                    case 'i':
-                        result.append("mm");
-                        break;
-                    case 's':
-                    case 'S':
-                        result.append("ss");
-                        break;
-                    default:
-                        result.append(current).append(specifier);
-                        break;
+                if (specifier == '%') {
+                    literal.append('%');
+                } else {
+                    String mapped = dateFormatPatternToken(specifier);
+                    if (mapped == null) {
+                        throw unsupportedDateFormatSpecifier(pattern, "%" + specifier);
+                    }
+                    appendDateFormatLiteral(result, literal);
+                    result.append(mapped);
                 }
                 index += 2;
             } else {
-                result.append(current);
+                literal.append(current);
                 index++;
             }
         }
+        appendDateFormatLiteral(result, literal);
         return result.toString();
+    }
+
+    private static String dateFormatPatternToken(char specifier) {
+        switch (specifier) {
+            case 'Y':
+                return "yyyy";
+            case 'y':
+                return "yy";
+            case 'm':
+                return "MM";
+            case 'M':
+                return "MMMM";
+            case 'd':
+                return "dd";
+            case 'H':
+                return "HH";
+            case 'h':
+                return "hh";
+            case 'i':
+                return "mm";
+            case 's':
+            case 'S':
+                return "ss";
+            case 'T':
+                return "HH:mm:ss";
+            default:
+                return null;
+        }
+    }
+
+    private static void appendDateFormatLiteral(StringBuilder result, StringBuilder literal) {
+        if (literal.length() == 0) {
+            return;
+        }
+        if (dateFormatLiteralNeedsQuoting(literal)) {
+            result.append('\'');
+            for (int index = 0; index < literal.length(); index++) {
+                char current = literal.charAt(index);
+                if (current == '\'') {
+                    result.append("''");
+                } else {
+                    result.append(current);
+                }
+            }
+            result.append('\'');
+        } else {
+            result.append(literal);
+        }
+        literal.setLength(0);
+    }
+
+    private static boolean dateFormatLiteralNeedsQuoting(CharSequence literal) {
+        for (int index = 0; index < literal.length(); index++) {
+            char current = literal.charAt(index);
+            if (current == '\'' || isAsciiLetter(current)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static boolean isAsciiLetter(char current) {
+        return (current >= 'A' && current <= 'Z') || (current >= 'a' && current <= 'z');
+    }
+
+    private static IllegalArgumentException unsupportedDateFormatSpecifier(String pattern, String specifier) {
+        return new IllegalArgumentException("[JustTest] Unsupported DATE_FORMAT specifier " + specifier
+                + " in format '" + pattern + "'");
     }
 
     private static boolean containsIgnoreCase(String text, String token) {

@@ -10,7 +10,7 @@ description: 在 Spring Boot 消费工程中编写或核对 JustTest 用例时�
 - 不要编造公司业务包、表结构或用例；只根据当前工程里已有的需求、接口和代码写。
 - 不要改 just-test 框架源码，也不要依赖 `com.just.test.internal`。
 
-待发布 `1.2.10`：`io.github.cyaquarius:just-test-boot2:1.2.10` / `io.github.cyaquarius:just-test-boot3:1.2.10` 会加载 case 目录中的 `.yml` 阶段文件；同一阶段 `.yaml` 与 `.yml` 同时存在时 fail-fast。重复 key、空的或缺少 `type` 的 `expect_exception.yaml`、以及 `[C]` 命中多行都会 fail-fast。`[J]` 按 BigDecimal 比较数值。Maven Central 已发布版本仍是 `1.2.9`。消费待发布修复需先本地 `mvn install`。
+待发布 `1.2.10`：`io.github.cyaquarius:just-test-boot2:1.2.10` / `io.github.cyaquarius:just-test-boot3:1.2.10` 会加载 case 目录中的 `.yml` 阶段文件；同一阶段 `.yaml` 与 `.yml` 同时存在时 fail-fast。重复 key、空的或缺少 `type` 的 `expect_exception.yaml`、以及 `[C]` 命中多行都会 fail-fast。`[J]` 按 BigDecimal 比较数值。`DATE_FORMAT` 的英文 literal 会加引号；`%M`、`%T`、`%%` 会改写；未知说明符 fail-fast，错误信息包含原始格式串。Maven Central 已发布版本仍是 `1.2.9`。消费待发布修复需先本地 `mvn install`。
 
 ## 做什么、不做什么
 

@@ -689,6 +689,7 @@ junit.jupiter.execution.parallel.mode.classes.default=concurrent
 
 当前 Maven Central 发布版本是 `1.2.9`。上面的规则对应该版本。
 
+- **1.2.10（待发布）** — `DATE_FORMAT` 的字面文本会为 H2 `FORMATDATETIME` 加上引号，因此 `Date: %Y`、`Day %d` 这类英文不会再被当成模式符。`%M` 映射为月份名，`%T` 映射为 `HH:mm:ss`，`%%` 映射为一个 `%`。未知说明符会 fail-fast，错误信息包含原始格式串。`%Y-%m-%d %H:%i:%s` 这类纯数字格式和中文 literal 的结果保持不变。[Issue #101](https://github.com/cyAquarius/just-test/issues/101)。
 - **1.2.10（待发布）** — YAML 加载和断言的静默通过改为 fail-fast。重复 key 会被拒绝。存在但为空或缺少 `type` 的 `expect_exception.yaml` 是配置错误，不会吞掉异常。`expect.yaml` 的 `[C]` 命中多行时失败，直到收紧到唯一一行。`[J]` 把数值按 BigDecimal 比较（`1` 等于 `1.0`），JSON 解析失败会报错，不再退回字符串比较。对象内部单独的 `[N]:` 只跳过该键。[Issue #113](https://github.com/cyAquarius/just-test/issues/113)。
 - **1.2.10（待发布）** — 未知或大小写错误的 YAML flag（如 `[cn]`、`[CC]`）立即失败，不再降级为精确匹配。错误信息包含字段名、case 路径和该阶段合法 flag。[Issue #108](https://github.com/cyAquarius/just-test/issues/108)。
 - **1.2.10（待发布）** — 加载发现阶段已经接受的 `.yml` 用例文件。只含 `.yml` 夹具的目录会执行预置和断言。同一阶段同时存在 `.yaml` 与 `.yml` 时 fail-fast。[Issue #100](https://github.com/cyAquarius/just-test/issues/100)。
