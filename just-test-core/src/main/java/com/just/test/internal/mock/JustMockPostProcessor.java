@@ -366,8 +366,10 @@ class JustMockPostProcessor implements BeanFactoryPostProcessor {
         Class<?> mockType = resolveMockType(beanFactory, registry, targetBeanName, definition);
         BeanDefinition originalDefinition = null;
         BeanDefinition originalScopedTarget = null;
+        String[] aliases = null;
         if (registry.containsBeanDefinition(targetBeanName)) {
             originalDefinition = registry.getBeanDefinition(targetBeanName);
+            aliases = beanFactory.getAliases(targetBeanName).clone();
             registry.removeBeanDefinition(targetBeanName);
             String scopedTargetName = ScopedProxyUtils.getTargetBeanName(targetBeanName);
             if (registry.containsBeanDefinition(scopedTargetName)) {
@@ -387,10 +389,60 @@ class JustMockPostProcessor implements BeanFactoryPostProcessor {
                     originalDefinition, originalScopedTarget);
         }
         registry.registerBeanDefinition(targetBeanName, proxy.getBeanDefinition());
+        restoreBeanAliases(beanFactory, registry, targetBeanName, aliases);
 
         log.info("[JustMock] Registered thread-scoped mock for {} as '{}'",
                 mockType.getSimpleName(), targetBeanName);
         return targetBeanName;
+    }
+
+    /**
+     * 替换或隐藏后只按规范名重新注册。{@code removeBeanDefinition} 可能同时丢掉别名，
+     * 所以先快照，新定义落定后再 {@code registerAlias}。名字若已是 Bean 定义、
+     * 单例，或指向其他 Bean 的别名，则跳过并警告，不覆盖已有注册。
+     */
+    private void restoreBeanAliases(ConfigurableListableBeanFactory beanFactory,
+                                    BeanDefinitionRegistry registry,
+                                    String beanName,
+                                    String[] aliases) {
+        if (aliases == null || aliases.length == 0) {
+            return;
+        }
+        for (String alias : aliases) {
+            if (alias == null || alias.length() == 0 || alias.equals(beanName)) {
+                continue;
+            }
+            if (aliasConflicts(beanFactory, registry, beanName, alias)) {
+                log.warn("[JustMock] Skipping alias '{}' for bean '{}': it conflicts with an existing "
+                        + "bean name or alias. The existing registration is left unchanged.",
+                        alias, beanName);
+                // 同名 Bean 定义已经存在时，仍指向本 Bean 的旧别名会盖住它。摘掉这条别名，不改那份定义。
+                if (registry.containsBeanDefinition(alias) && aliasesBean(registry, beanName, alias)) {
+                    registry.removeAlias(alias);
+                }
+                continue;
+            }
+            registry.registerAlias(beanName, alias);
+        }
+    }
+
+    private static boolean aliasesBean(BeanDefinitionRegistry registry, String beanName, String alias) {
+        for (String existing : registry.getAliases(beanName)) {
+            if (alias.equals(existing)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static boolean aliasConflicts(ConfigurableListableBeanFactory beanFactory,
+                                          BeanDefinitionRegistry registry,
+                                          String beanName,
+                                          String alias) {
+        if (registry.containsBeanDefinition(alias) || beanFactory.containsSingleton(alias)) {
+            return true;
+        }
+        return registry.isAlias(alias) && !aliasesBean(registry, beanName, alias);
     }
 
     private Class<?> resolveMockType(ConfigurableListableBeanFactory beanFactory,
@@ -779,10 +831,12 @@ class JustMockPostProcessor implements BeanFactoryPostProcessor {
                     original, originalScopedTarget);
         }
 
+        String[] aliases = beanFactory.getAliases(publicName).clone();
         registry.removeBeanDefinition(publicName);
         hideRealTarget(original);
         registry.registerBeanDefinition(hiddenName, original);
         registry.registerBeanDefinition(publicName, proxy.getBeanDefinition());
+        restoreBeanAliases(beanFactory, registry, publicName, aliases);
     }
 
     private <T> AbstractBeanDefinition createInterceptBeanDefinition(final Class<T> mockType,

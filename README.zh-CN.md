@@ -689,6 +689,7 @@ junit.jupiter.execution.parallel.mode.classes.default=concurrent
 
 当前 Maven Central 发布版本是 `1.2.9`。上面的规则对应该版本。
 
+- **1.2.10（待发布）** — `@JustMock` 替换 Bean，以及拦截隐藏真实 Bean 时，会保留该 Bean 的别名。`@Qualifier("alias")` 与 `@Resource(name = "alias")` 仍然注入线程作用域 mock。恢复别名时若与已有 Bean 名或其他别名冲突，则跳过该别名并记录警告，其余安装继续完成。[Issue #103](https://github.com/cyAquarius/just-test/issues/103)。
 - **1.2.10（待发布）** — MySQL DDL 清洗不再改写字符串、注释和反引号标识符里的文本。注释里的转义引号（`\'` 或 `''`）会随 `COMMENT` 一起去掉，不再残留片段导致 H2 建表失败。`COLLATE` 仍会去掉列级 `COLLATE name` 和表级 `COLLATE=name`，不会再删掉 `collate_flag` 这类标识符。[Issue #102](https://github.com/cyAquarius/just-test/issues/102)。
 - **1.2.10（待发布）** — 历史双引号字符串的兼容范围加上 `CONCAT`。`CONCAT("a","b")` 会改成 `CONCAT('a','b')`。新 SQL 仍应使用单引号。[Issue #107](https://github.com/cyAquarius/just-test/issues/107)。
 - **1.2.10（待发布）** — `DATE_FORMAT` 的字面文本会为 H2 `FORMATDATETIME` 加上引号，因此 `Date: %Y`、`Day %d` 这类英文不会再被当成模式符。`%M` 映射为月份名，`%T` 映射为 `HH:mm:ss`，`%%` 映射为一个 `%`。未知说明符会 fail-fast，错误信息包含原始格式串。`%Y-%m-%d %H:%i:%s` 这类纯数字格式和中文 literal 的结果保持不变。[Issue #101](https://github.com/cyAquarius/just-test/issues/101)。
