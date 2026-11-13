@@ -47,6 +47,9 @@ public class ResultVerifier {
         if (expectRaw == null) {
             return new ArrayList<>();
         }
+        BuiltInMatchers.requireKnownFlags(
+                expectRaw, BuiltInMatchers.FlagStage.RESPONSE,
+                DataSetLoader.stageLocation(casePath, "response.yaml"));
 
         // 顶层 List — 逐元素比对
         if (expectRaw instanceof List) {

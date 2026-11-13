@@ -1,0 +1,2 @@
+type: java.lang.IllegalArgumentException
+message[cn]: bad request 42

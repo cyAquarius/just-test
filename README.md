@@ -535,6 +535,8 @@ Field suffix flags are stage-specific:
 | `[J]` | JSON structural comparison. |
 | `[F]` | Raw database function in `prepare.yaml`, such as `NOW()`. |
 
+Flags are case-sensitive. An unknown flag such as `[cn]` or `[CC]`, or a flag used outside its stage, fails immediately. The error names the field, the case path, and the flags legal for that stage.
+
 For database expectations, prefer explicit `[C]` fields so the intended row is unambiguous.
 
 <a id="lifecycle"></a>
@@ -687,6 +689,7 @@ A parallel failure is not automatically a JustTest isolation failure; first insp
 
 The current Maven Central release is `1.2.9`. The rules above match that release.
 
+- **1.2.10 (upcoming)** — unknown or wrong-case YAML flags such as `[cn]` and `[CC]` fail fast instead of falling through to exact matching. The error names the field, the case path, and the flags legal for that stage. [Issue #108](https://github.com/cyAquarius/just-test/issues/108).
 - **1.2.10 (upcoming)** — load `.yml` case stage files that discovery already accepts. A directory that only has `.yml` fixtures applies prepare data and assertions. The same stage with both `.yaml` and `.yml` fails fast. [Issue #100](https://github.com/cyAquarius/just-test/issues/100).
 
 - **1.2.9** — recognize MapperFactoryBean product metadata when installing thread intercepts without initializing unrelated FactoryBeans. [Issue #97](https://github.com/cyAquarius/just-test/issues/97).
