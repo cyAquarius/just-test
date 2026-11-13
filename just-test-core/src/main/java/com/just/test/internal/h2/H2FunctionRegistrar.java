@@ -44,11 +44,30 @@ public final class H2FunctionRegistrar {
                 jdbcTemplate.execute("CREATE ALIAS " + mapping[0]
                         + " FOR \"" + FUNC_CLASS + "." + mapping[1] + "\"");
                 count++;
-            } catch (Exception e) {
-                log.warn("[JustTest] Failed to register H2 function {}: {}", mapping[0], e.getMessage());
+            } catch (Exception failure) {
+                log.error("[JustTest] Failed to register H2 function {}", mapping[0], failure);
+                throw new IllegalStateException(
+                        "[JustTest] Failed to register H2 function " + mapping[0] + ": "
+                                + registrationFailureReason(failure),
+                        failure);
             }
         }
 
         log.info("[JustTest] Registered {} MySQL-compat functions in H2", count);
+    }
+
+    private static String registrationFailureReason(Exception failure) {
+        String message = failure.getMessage();
+        Throwable cause = failure.getCause();
+        if (cause == null || cause.getMessage() == null || cause.getMessage().isEmpty()) {
+            return message == null ? failure.getClass().getSimpleName() : message;
+        }
+        if (message != null && message.contains(cause.getMessage())) {
+            return message;
+        }
+        if (message == null || message.isEmpty()) {
+            return cause.getMessage();
+        }
+        return message + "; " + cause.getMessage();
     }
 }

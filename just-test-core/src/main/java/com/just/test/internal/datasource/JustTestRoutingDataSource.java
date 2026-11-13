@@ -18,8 +18,10 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
@@ -36,6 +38,11 @@ public class JustTestRoutingDataSource extends AbstractDataSource implements Dis
 
     private static final AtomicLong INSTANCE_SEQUENCE = new AtomicLong();
     private static final String SCHEMA_CLONE_PROPERTY = "justtest.schema.clone";
+    /**
+     * {@code beginCase} 仍持有读锁直到 {@code releaseCurrentCase}（#44）。
+     * 漏释放或跨线程不归还时，销毁不能再无限挂起整个套件。
+     */
+    static final long DESTROY_LOCK_TIMEOUT_SECONDS = 60L;
 
     private final String urlTemplate;
     private final String instanceKey = "justtest_" + INSTANCE_SEQUENCE.incrementAndGet();
@@ -44,14 +51,20 @@ public class JustTestRoutingDataSource extends AbstractDataSource implements Dis
     private final AtomicBoolean destroyed = new AtomicBoolean();
     private final ReentrantReadWriteLock lifecycleLock = new ReentrantReadWriteLock();
     private final ThreadLocal<Boolean> caseLease = new ThreadLocal<>();
+    /** 当前仍持有 case 读锁的线程 → executionId。只用于 destroy 超时诊断。 */
+    private final ConcurrentHashMap<Thread, String> caseLeaseOwners = new ConcurrentHashMap<Thread, String>();
     private final Object templateLock = new Object();
+    /**
+     * 仅供契约测试通过反射触发或观测 schema 克隆。
+     * 字段会随类文件发布，但不是消费方可依赖的 API。
+     */
     private final AtomicBoolean forceCloneFailureForTests = new AtomicBoolean();
     private final AtomicLong cloneCount = new AtomicLong();
     private final AtomicLong fallbackCount = new AtomicLong();
+    private final AtomicLong scriptCaptureCount = new AtomicLong();
     private SingleConnectionDataSource templateDataSource;
     private List<String> templateSchema;
     private List<String> cachedCloneScript;
-    private final AtomicLong scriptCaptureCount = new AtomicLong();
 
     /**
      * @param urlTemplate H2 URL 模板，{key} 占位符在运行时替换为 case 标识。
@@ -119,7 +132,10 @@ public class JustTestRoutingDataSource extends AbstractDataSource implements Dis
         try {
             assertNotDestroyed();
             caseLease.set(Boolean.TRUE);
+            caseLeaseOwners.put(Thread.currentThread(), CaseExecutionContext.requireCaseId());
         } catch (RuntimeException e) {
+            caseLease.remove();
+            caseLeaseOwners.remove(Thread.currentThread());
             lifecycleLock.readLock().unlock();
             throw e;
         }
@@ -189,6 +205,7 @@ public class JustTestRoutingDataSource extends AbstractDataSource implements Dis
         } finally {
             if (ownsLease) {
                 caseLease.remove();
+                caseLeaseOwners.remove(Thread.currentThread());
             }
             lifecycleLock.readLock().unlock();
         }
@@ -196,7 +213,29 @@ public class JustTestRoutingDataSource extends AbstractDataSource implements Dis
 
     @Override
     public void destroy() {
-        lifecycleLock.writeLock().lock();
+        destroyWithin(DESTROY_LOCK_TIMEOUT_SECONDS, TimeUnit.SECONDS);
+    }
+
+    /**
+     * 在限定时间内取得生命周期写锁后销毁。超时则失败，并带上仍持有 case 读锁的线程和 executionId。
+     * 不改变读/写锁模型，也不改变 {@code templateLock} 的串行方式。
+     */
+    void destroyWithin(long timeout, TimeUnit unit) {
+        boolean acquired;
+        try {
+            acquired = lifecycleLock.writeLock().tryLock(timeout, unit);
+        } catch (InterruptedException interrupted) {
+            Thread.currentThread().interrupt();
+            throw new IllegalStateException(
+                    "[JustTest] Interrupted while waiting to destroy the database.", interrupted);
+        }
+        if (!acquired) {
+            throw new IllegalStateException(
+                    "[JustTest] Timed out after " + timeout + " " + unit
+                            + " waiting to destroy the database. "
+                            + "A case lease or other lifecycle read lock is still held. "
+                            + diagnoseLifecycleLock());
+        }
         try {
             if (!destroyed.compareAndSet(false, true)) {
                 return;
@@ -210,6 +249,33 @@ public class JustTestRoutingDataSource extends AbstractDataSource implements Dis
         } finally {
             lifecycleLock.writeLock().unlock();
         }
+    }
+
+    private String diagnoseLifecycleLock() {
+        StringBuilder diagnosis = new StringBuilder();
+        diagnosis.append("readLockCount=").append(lifecycleLock.getReadLockCount());
+        diagnosis.append(", writeLocked=").append(lifecycleLock.isWriteLocked());
+        diagnosis.append(", queuedThreads=").append(lifecycleLock.getQueueLength());
+        diagnosis.append(", caseLeases=");
+        if (caseLeaseOwners.isEmpty()) {
+            diagnosis.append("none");
+            return diagnosis.toString();
+        }
+        diagnosis.append('[');
+        boolean first = true;
+        for (Map.Entry<Thread, String> owner : caseLeaseOwners.entrySet()) {
+            if (!first) {
+                diagnosis.append("; ");
+            }
+            first = false;
+            Thread thread = owner.getKey();
+            diagnosis.append("thread=").append(thread.getName());
+            diagnosis.append(", threadId=").append(thread.getId());
+            diagnosis.append(", state=").append(thread.getState());
+            diagnosis.append(", executionId=").append(owner.getValue());
+        }
+        diagnosis.append(']');
+        return diagnosis.toString();
     }
 
     private void assertNotDestroyed() {
@@ -322,15 +388,57 @@ public class JustTestRoutingDataSource extends AbstractDataSource implements Dis
         }
     }
 
+    /**
+     * 只在模板不再被克隆使用时调用。调用方持有 {@code templateLock}；
+     * {@code destroy()} 还会先取得写锁，因此不会和正在进行的 SCRIPT 重放重叠。
+     * {@code DB_CLOSE_DELAY=-1} 仍然只服务克隆期间的模板保活（#16），释放时用 SHUTDOWN 交还内存库。
+     */
     private void destroyTemplate() {
         if (templateDataSource != null) {
             SingleConnectionDataSource dataSource = templateDataSource;
             templateDataSource = null;
-            clearTemplateObjects(dataSource);
+            shutdownTemplateDatabase(dataSource);
             dataSource.destroy();
         }
         templateSchema = null;
         cachedCloneScript = null;
+    }
+
+    private void shutdownTemplateDatabase(SingleConnectionDataSource dataSource) {
+        if (executeShutdown(dataSource)) {
+            return;
+        }
+        // Boot 2 在上下文关闭时可能已经关掉模板连接。DB_CLOSE_DELAY=-1 仍留着内存库，
+        // 所以用 IFEXISTS 再连一次只为执行 SHUTDOWN，连不上就不会新建数据库。
+        String url = dataSource.getUrl();
+        if (url != null && shutdownExistingDatabase(url)) {
+            return;
+        }
+        log.warn("[JustTest] Failed to shut down schema template database; "
+                + "falling back to DROP ALL OBJECTS");
+        clearTemplateObjects(dataSource);
+    }
+
+    private boolean shutdownExistingDatabase(String url) {
+        SingleConnectionDataSource probe = createDataSource(
+                instanceKey + "_template_shutdown",
+                url + (url.endsWith(";") ? "" : ";") + "IFEXISTS=TRUE");
+        try {
+            return executeShutdown(probe);
+        } finally {
+            probe.destroy();
+        }
+    }
+
+    private boolean executeShutdown(SingleConnectionDataSource dataSource) {
+        try {
+            new JdbcTemplate(dataSource).execute("SHUTDOWN");
+            return true;
+        } catch (RuntimeException shutdownFailure) {
+            log.debug("[JustTest] Schema template SHUTDOWN did not complete on this connection",
+                    shutdownFailure);
+            return false;
+        }
     }
 
     private String templateUrl() {
@@ -344,22 +452,6 @@ public class JustTestRoutingDataSource extends AbstractDataSource implements Dis
 
     private boolean isSchemaCloneEnabled() {
         return !"false".equalsIgnoreCase(System.getProperty(SCHEMA_CLONE_PROPERTY, "true"));
-    }
-
-    void failNextSchemaCloneForTests() {
-        forceCloneFailureForTests.set(true);
-    }
-
-    long schemaCloneCountForTests() {
-        return cloneCount.get();
-    }
-
-    long schemaFallbackCountForTests() {
-        return fallbackCount.get();
-    }
-
-    long schemaScriptCaptureCountForTests() {
-        return scriptCaptureCount.get();
     }
 
     private boolean isUsable(SingleConnectionDataSource dataSource) {
@@ -382,8 +474,9 @@ public class JustTestRoutingDataSource extends AbstractDataSource implements Dis
     }
 
     /**
-     * 清理线程名中不适合作为数据库名的字符。
-     * H2 内存数据库名只允许字母、数字、下划线。
+     * 清理 executionId 中不适合作为数据库名的字符。
+     * 这里的标识是 {@link com.just.test.context.CaseContext} 的 UUID executionId，不是线程名。
+     * H2 内存数据库名只允许字母、数字和下划线。
      */
     private static String sanitizeCaseId(String name) {
         return name.replaceAll("[^a-zA-Z0-9]", "_");
