@@ -75,11 +75,11 @@ public class ExceptionVerifier {
     }
 
     /**
-     * 判断指定 casePath 下是否存在 expect_exception.yaml。
+     * 判断指定 casePath 下是否存在 expect_exception.yaml 或 expect_exception.yml。
+     * 两种后缀同时存在时失败。
      */
     public static boolean hasExpectException(String casePath) {
-        String resourcePath = casePath + "/expect_exception.yaml";
-        return Thread.currentThread().getContextClassLoader().getResource(resourcePath) != null;
+        return DataSetLoader.resolveStageResource(casePath, "expect_exception.yaml") != null;
     }
 
     private static void verifyMessage(Throwable actual, Map<String, Object> expectData, List<String> failures) {

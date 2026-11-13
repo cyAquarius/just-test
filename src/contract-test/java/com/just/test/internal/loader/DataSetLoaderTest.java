@@ -56,6 +56,32 @@ class DataSetLoaderTest {
     }
 
     @Test
+    void parseYamlByPathLoadsYmlWhenYamlIsAbsent() {
+        Map<String, Object> yaml = DataSetLoader.parseYamlByPath(
+                "com/just/test/internal/loader/suffixresolve/yml-only", "prepare.yaml");
+        assertNotNull(yaml);
+        @SuppressWarnings("unchecked")
+        Map<String, Object> row = ((List<Map<String, Object>>) yaml.get("loader_suffix")).get(0);
+        assertEquals("from-yml", row.get("name"));
+    }
+
+    @Test
+    void parseYamlByPathFailsWhenYamlAndYmlBothExist() {
+        IllegalStateException error = assertThrows(IllegalStateException.class, () ->
+                DataSetLoader.parseYamlByPath(
+                        "com/just/test/internal/loader/suffixresolve/both", "prepare.yaml"));
+        assertTrue(error.getMessage().contains("same case stage"), error.getMessage());
+        assertTrue(error.getMessage().contains("prepare.yaml"), error.getMessage());
+        assertTrue(error.getMessage().contains("prepare.yml"), error.getMessage());
+    }
+
+    @Test
+    void parseYamlByPathReturnsNullWhenStageFileIsMissing() {
+        assertNull(DataSetLoader.parseYamlByPath(
+                "com/just/test/internal/loader/suffixresolve/missing", "prepare.yaml"));
+    }
+
+    @Test
     void rejectsUnsafeColumnNames() {
         Map<String, Object> row = new LinkedHashMap<>();
         row.put("id;drop", 1);
