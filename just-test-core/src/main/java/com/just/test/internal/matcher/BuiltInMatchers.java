@@ -4,6 +4,11 @@ import com.alibaba.fastjson2.JSON;
 
 import java.math.BigDecimal;
 import java.math.BigInteger;
+import java.time.Instant;
+import java.time.LocalDateTime;
+import java.time.OffsetDateTime;
+import java.time.ZoneId;
+import java.time.ZonedDateTime;
 import java.util.List;
 import java.util.Map;
 import java.util.regex.Pattern;
@@ -371,10 +376,22 @@ public final class BuiltInMatchers {
                 actualMillis = ((java.sql.Timestamp) actualValue).getTime();
             } else if (actualValue instanceof java.util.Date) {
                 actualMillis = ((java.util.Date) actualValue).getTime();
+            } else if (actualValue instanceof LocalDateTime) {
+                actualMillis = ((LocalDateTime) actualValue)
+                        .atZone(ZoneId.systemDefault())
+                        .toInstant()
+                        .toEpochMilli();
+            } else if (actualValue instanceof Instant) {
+                actualMillis = ((Instant) actualValue).toEpochMilli();
+            } else if (actualValue instanceof OffsetDateTime) {
+                actualMillis = ((OffsetDateTime) actualValue).toInstant().toEpochMilli();
+            } else if (actualValue instanceof ZonedDateTime) {
+                actualMillis = ((ZonedDateTime) actualValue).toInstant().toEpochMilli();
             } else {
-                // 尝试解析字符串
+                // Timestamp.valueOf 只接受 yyyy-mm-dd hh:mm:ss。ISO-8601 的 'T' 先换成空格。
                 try {
-                    actualMillis = java.sql.Timestamp.valueOf(actualValue.toString()).getTime();
+                    String text = actualValue.toString().replace('T', ' ');
+                    actualMillis = java.sql.Timestamp.valueOf(text).getTime();
                 } catch (IllegalArgumentException e) {
                     return false;
                 }

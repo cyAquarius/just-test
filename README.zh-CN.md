@@ -701,6 +701,7 @@ junit.jupiter.execution.parallel.mode.classes.default=concurrent
 
 当前 Maven Central 发布版本是 `1.2.9`。上面的规则对应该版本。
 
+- **1.2.10（待发布）** — `[D]` / `[D60]` 接受 `LocalDateTime`、`Instant`、`OffsetDateTime` 和 `ZonedDateTime`，仍用同一容差窗口比较。`LocalDateTime` 按系统默认时区换算。时间字符串可以带 ISO `T`。`java.util.Date` 与 `java.sql.Timestamp` 行为不变。[Issue #109](https://github.com/cyAquarius/just-test/issues/109)。
 - **1.2.10（待发布）** — `@ThreadScopedMock` 的 `@Bean` 方法只声明类型和 Bean 名。框架忽略方法体，仍然自己创建线程作用域 mock。定制 stub 写在 `beforeExecute` 或 `@BeforeCase`。[Issue #106](https://github.com/cyAquarius/just-test/issues/106)。
 - **1.2.10（待发布）** — static 的 `@JustMock` 和 `@JustSpy` 字段在 `BeforeAll` fail-fast。错误信息会指出字段名，并说明 static mock/spy 字段会破坏线程隔离：并发 case 会写同一个字段，stub 互相覆盖。实例字段行为不变。[Issue #105](https://github.com/cyAquarius/just-test/issues/105)。
 - **1.2.10（待发布）** — Boot 2 在 `@JustMock` 替换、`@JustSpy` 或真实 Bean 拦截要 mock 具体类，且该类或其父类（不含 `java.lang.Object`）声明了 public 或 protected 的 final 实例方法、当前 MockMaker 又不是 inline 时，启动期 fail-fast。错误信息会提示配置 `mockito-extensions/org.mockito.plugins.MockMaker`，或引入 `mockito-inline`。JustTest 仍然不会选定 MockMaker。private、包内可见和 static 的 final 不会触发；Boot 3 行为不变。[Issue #104](https://github.com/cyAquarius/just-test/issues/104)。
