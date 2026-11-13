@@ -76,6 +76,10 @@ class H2CompatibilityTest {
                     SqlTextRewriter.rewriteDoubleQuotedLiterals(
                             "SELECT REPLACE('a,b', \",\", \"-\")"),
                     String.class));
+            assertEquals("ab", jdbcTemplate.queryForObject(
+                    SqlTextRewriter.rewriteDoubleQuotedLiterals(
+                            "SELECT CONCAT(\"a\",\"b\")"),
+                    String.class));
         } finally {
             CaseExecutionContext.clear();
             dataSource.destroy();

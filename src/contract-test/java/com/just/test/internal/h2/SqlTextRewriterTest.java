@@ -166,6 +166,15 @@ class SqlTextRewriterTest {
     }
 
     @Test
+    void rewritesDoubleQuotedLiteralsInsideConcat() {
+        String sql = "SELECT CONCAT(\"a\",\"b\"), concat(\"x\",\"y\"), \"quoted_column\" FROM sample";
+
+        assertEquals(
+                "SELECT CONCAT('a','b'), concat('x','y'), \"quoted_column\" FROM sample",
+                SqlTextRewriter.rewriteDoubleQuotedLiterals(sql));
+    }
+
+    @Test
     void rewritesDoubleQuotedLiteralsOnlyInsideSupportedFunctions() {
         String sql = "SELECT \"quoted_column\", REPLACE(name, \",\", \"O'Reilly\"), \"outside\" FROM sample";
 

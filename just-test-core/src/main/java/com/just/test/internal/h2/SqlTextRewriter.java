@@ -11,7 +11,8 @@ import java.util.Set;
 final class SqlTextRewriter {
 
     private static final Set<String> STRING_FUNCTIONS = new HashSet<>(Arrays.asList(
-            "REPLACE", "CONCAT_WS", "INSERT", "LOCATE", "INSTR", "POSITION", "SUBSTRING_INDEX"));
+            "REPLACE", "CONCAT", "CONCAT_WS", "INSERT", "LOCATE", "INSTR", "POSITION",
+            "SUBSTRING_INDEX"));
 
     private SqlTextRewriter() {
     }
