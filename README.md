@@ -468,6 +468,18 @@ flowchart TD
 ### `@ThreadScopedMock` and auto-configuration
 
 - `@ThreadScopedMock` applies the same scoped-mock model to an annotated `@Bean` method.
+- The method only declares the type and bean name. JustTest ignores the method body and always creates the thread-scoped mock itself.
+- Custom `MockSettings`, `defaultAnswer`, `name`, `extraInterfaces`, or a hand-written fake in that body are discarded.
+- Stub the mock in `beforeExecute` or `@BeforeCase`.
+
+```java
+@Bean
+@ThreadScopedMock
+public TaskCenterClient taskCenterClient() {
+    return null; // method body is not executed; stub in beforeExecute or @BeforeCase
+}
+```
+
 - If a `@JustMock` or `@ThreadScopedMock` bean still coexists with a same-type bean from an `*AutoConfiguration`, JustTest fails fast once at context startup.
 - The diagnostic names the conflicting type, candidate names, mock versus auto-configuration origin, and the next step: `excludeAutoConfiguration` or remove the extra mock.
 - JustTest does not auto-exclude auto-configurations, does not silently prefer the mock, and does not change `@Resource` matching.
@@ -689,6 +701,7 @@ A parallel failure is not automatically a JustTest isolation failure; first insp
 
 The current Maven Central release is `1.2.9`. The rules above match that release.
 
+- **1.2.10 (upcoming)** — a `@ThreadScopedMock` `@Bean` method only declares the type and bean name. JustTest ignores the method body and still creates the thread-scoped mock itself. Stub in `beforeExecute` or `@BeforeCase`. [Issue #106](https://github.com/cyAquarius/just-test/issues/106).
 - **1.2.10 (upcoming)** — static `@JustMock` and `@JustSpy` fields fail fast in `BeforeAll`. The error names the field and says that static mock and spy fields break thread isolation, because concurrent cases would write the same field and clobber stubs. Instance fields are unchanged. [Issue #105](https://github.com/cyAquarius/just-test/issues/105).
 - **1.2.10 (upcoming)** — Boot 2 fails fast when `@JustMock` replacement, `@JustSpy`, or a real-bean intercept mocks a concrete class that declares a public or protected final instance method, including methods on superclasses other than `java.lang.Object`, and the current MockMaker is not inline. The error tells the adopter to add `mockito-extensions/org.mockito.plugins.MockMaker` or the `mockito-inline` dependency. JustTest still does not select a MockMaker. Private, package-private, and static finals do not trigger it, and Boot 3 is unchanged. [Issue #104](https://github.com/cyAquarius/just-test/issues/104).
 - **1.2.10 (upcoming)** — `@JustMock` replacement and real-bean intercept keep the bean's aliases. `@Qualifier("alias")` and `@Resource(name = "alias")` still inject the thread-scoped mock. An alias that would clash with an existing bean name or another alias is skipped and logged; the rest of the install continues. [Issue #103](https://github.com/cyAquarius/just-test/issues/103).

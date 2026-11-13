@@ -11,7 +11,6 @@ import org.springframework.context.annotation.Configuration;
 import org.springframework.test.context.ContextConfiguration;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
 @JustTest
@@ -51,7 +50,7 @@ class ThreadScopedMockBeanJustTest implements JustTestLifecycle {
         @Bean
         @ThreadScopedMock
         ExternalClient externalClient() {
-            return mock(ExternalClient.class);
+            return null; // 方法体不会执行。stub 写在 beforeExecute 或 @BeforeCase
         }
 
         @Bean
