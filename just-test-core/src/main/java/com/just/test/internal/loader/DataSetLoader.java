@@ -5,9 +5,13 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.jdbc.core.ConnectionCallback;
 import org.springframework.jdbc.core.JdbcTemplate;
-import org.yaml.snakeyaml.Yaml;
+import org.yaml.snakeyaml.DumperOptions;
 import org.yaml.snakeyaml.LoaderOptions;
+import org.yaml.snakeyaml.Yaml;
 import org.yaml.snakeyaml.constructor.SafeConstructor;
+import org.yaml.snakeyaml.nodes.Tag;
+import org.yaml.snakeyaml.representer.Representer;
+import org.yaml.snakeyaml.resolver.Resolver;
 
 import java.io.InputStream;
 import java.io.InputStreamReader;
@@ -227,12 +231,15 @@ public class DataSetLoader {
                 log.debug("[JustTest] YAML file not found: {}", resourcePath);
                 return null;
             }
-            // SnakeYAML 1.33 / 2.4 的 Yaml(BaseConstructor) 会用一份默认 LoaderOptions
-            // 把 constructor 的 allowDuplicateKeys 重新设回 true。先记下 false，构造后再写回去。
+            // 显式传入同一份 LoaderOptions。Yaml(BaseConstructor) 会另造一份默认配置，
+            // 把 allowDuplicateKeys 设回 true。构造后再写一次 false，兼容 SnakeYAML 1.33 与 2.4。
+            // StringTimestampResolver 不注册 timestamp，裸时间戳保持字符串。
             LoaderOptions options = new LoaderOptions();
             options.setAllowDuplicateKeys(false);
             SafeConstructor constructor = new SafeConstructor(options);
-            Yaml yaml = new Yaml(constructor);
+            DumperOptions dumperOptions = new DumperOptions();
+            Yaml yaml = new Yaml(constructor, new Representer(dumperOptions), dumperOptions, options,
+                    new StringTimestampResolver());
             constructor.setAllowDuplicateKeys(false);
             Object raw = yaml.load(new InputStreamReader(is, StandardCharsets.UTF_8));
             return normalizeYamlKeys(raw);
@@ -359,5 +366,23 @@ public class DataSetLoader {
             }
         }
         log.debug("[JustTest] Inserted {} rows into {}", insertedCount, tableName);
+    }
+
+    /**
+     * 不注册 {@link Tag#TIMESTAMP}。其余隐式规则使用三参数 {@code addImplicitResolver}，
+     * Boot 2 消费方的 SnakeYAML 1.30 与 Boot 3 的 2.4 都有这个重载。
+     * {@code 2026-11-13 10:00:00} 因此保持字符串。需要日期匹配时用 [D] / [R]。
+     */
+    private static final class StringTimestampResolver extends Resolver {
+        @Override
+        protected void addImplicitResolvers() {
+            addImplicitResolver(Tag.BOOL, BOOL, "yYnNtTfFoO");
+            addImplicitResolver(Tag.INT, INT, "-+0123456789");
+            addImplicitResolver(Tag.FLOAT, FLOAT, "-+0123456789.");
+            addImplicitResolver(Tag.MERGE, MERGE, "<");
+            addImplicitResolver(Tag.NULL, NULL, "~nN\0");
+            addImplicitResolver(Tag.NULL, EMPTY, null);
+            addImplicitResolver(Tag.YAML, YAML, "!&*");
+        }
     }
 }
