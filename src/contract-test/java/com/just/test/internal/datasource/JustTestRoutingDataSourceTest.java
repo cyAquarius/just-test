@@ -12,16 +12,22 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.sql.Connection;
+import java.sql.SQLException;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.CyclicBarrier;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.atomic.AtomicReference;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -156,8 +162,8 @@ class JustTestRoutingDataSourceTest {
 
             assertEquals(0, jdbcTemplate.queryForObject(
                     "SELECT COUNT(*) FROM clone_cache_record", Integer.class));
-            assertEquals(2, dataSource.schemaCloneCountForTests());
-            assertEquals(1, dataSource.schemaScriptCaptureCountForTests());
+            assertEquals(2L, testCounter(dataSource, "cloneCount"));
+            assertEquals(1L, testCounter(dataSource, "scriptCaptureCount"));
         } finally {
             Files.deleteIfExists(schemaFile);
             CaseExecutionContext.clear();
@@ -166,11 +172,11 @@ class JustTestRoutingDataSourceTest {
     }
 
     @Test
-    void fallsBackToCachedDdlWhenSchemaCloneFails() {
+    void fallsBackToCachedDdlWhenSchemaCloneFails() throws Exception {
         JustTestRoutingDataSource dataSource = new JustTestRoutingDataSource(URL);
         try {
             bindCase("clone-fallback");
-            dataSource.failNextSchemaCloneForTests();
+            failNextSchemaClone(dataSource);
 
             JdbcTemplate jdbcTemplate = new JdbcTemplate(dataSource);
             SchemaInitializer.initialize(jdbcTemplate, "classpath:sql/schema-part-one.sql");
@@ -179,8 +185,8 @@ class JustTestRoutingDataSourceTest {
                     "SELECT COUNT(*) FROM INFORMATION_SCHEMA.TABLES "
                             + "WHERE UPPER(TABLE_NAME) = 'FIRST_TABLE'",
                     Integer.class));
-            assertEquals(0, dataSource.schemaCloneCountForTests());
-            assertEquals(1, dataSource.schemaFallbackCountForTests());
+            assertEquals(0L, testCounter(dataSource, "cloneCount"));
+            assertEquals(1L, testCounter(dataSource, "fallbackCount"));
         } finally {
             CaseExecutionContext.clear();
             dataSource.destroy();
@@ -188,7 +194,7 @@ class JustTestRoutingDataSourceTest {
     }
 
     @Test
-    void canDisableSchemaCloneWithSystemProperty() {
+    void canDisableSchemaCloneWithSystemProperty() throws Exception {
         JustTestRoutingDataSource dataSource = new JustTestRoutingDataSource(URL);
         String original = System.getProperty("justtest.schema.clone");
         try {
@@ -202,8 +208,8 @@ class JustTestRoutingDataSourceTest {
                     "SELECT COUNT(*) FROM INFORMATION_SCHEMA.TABLES "
                             + "WHERE UPPER(TABLE_NAME) = 'FIRST_TABLE'",
                     Integer.class));
-            assertEquals(0, dataSource.schemaCloneCountForTests());
-            assertEquals(0, dataSource.schemaFallbackCountForTests());
+            assertEquals(0L, testCounter(dataSource, "cloneCount"));
+            assertEquals(0L, testCounter(dataSource, "fallbackCount"));
         } finally {
             if (original == null) {
                 System.clearProperty("justtest.schema.clone");
@@ -352,6 +358,156 @@ class JustTestRoutingDataSourceTest {
         }
     }
 
+    @Test
+    void destroyTimesOutWhenCaseLeaseStaysHeld() throws Exception {
+        assertEquals(60L, JustTestRoutingDataSource.DESTROY_LOCK_TIMEOUT_SECONDS);
+        JustTestRoutingDataSource dataSource = new JustTestRoutingDataSource(URL);
+        CountDownLatch holding = new CountDownLatch(1);
+        CountDownLatch timeoutObserved = new CountDownLatch(1);
+        AtomicReference<String> executionId = new AtomicReference<String>();
+        ExecutorService executor = Executors.newSingleThreadExecutor(runnable -> {
+            Thread thread = new Thread(runnable, "justtest-destroy-timeout");
+            thread.setDaemon(true);
+            return thread;
+        });
+        Future<Integer> holder = null;
+        try {
+            holder = executor.submit(() -> {
+                bindCase("destroy-timeout");
+                executionId.set(CaseExecutionContext.requireCaseId());
+                dataSource.beginCase();
+                new JdbcTemplate(dataSource).execute("CREATE TABLE lock_hold(id INT)");
+                holding.countDown();
+                try {
+                    assertTrue(timeoutObserved.await(10, TimeUnit.SECONDS));
+                    return new JdbcTemplate(dataSource).queryForObject(
+                            "SELECT COUNT(*) FROM lock_hold", Integer.class);
+                } finally {
+                    dataSource.releaseCurrentCase();
+                    CaseExecutionContext.clear();
+                }
+            });
+
+            assertTrue(holding.await(5, TimeUnit.SECONDS));
+            IllegalStateException failure = assertThrows(IllegalStateException.class,
+                    () -> dataSource.destroyWithin(200, TimeUnit.MILLISECONDS));
+            String message = failure.getMessage();
+            assertTrue(message.contains("Timed out after 200 MILLISECONDS"));
+            assertTrue(message.contains("thread=justtest-destroy-timeout"));
+            assertTrue(message.contains("executionId=" + executionId.get()));
+            assertTrue(message.contains("readLockCount=1"));
+            assertTrue(message.contains("writeLocked=false"));
+
+            timeoutObserved.countDown();
+            assertEquals(0, holder.get(5, TimeUnit.SECONDS));
+        } finally {
+            timeoutObserved.countDown();
+            executor.shutdownNow();
+            if (holder != null) {
+                try {
+                    holder.get(5, TimeUnit.SECONDS);
+                } catch (Exception ignored) {
+                    // 持锁线程若已失败，仍继续销毁，避免套件停在写锁上。
+                }
+            }
+            CaseExecutionContext.clear();
+            dataSource.destroy();
+        }
+    }
+
+    @Test
+    void shutsDownTemplateDatabaseAfterCloneWithoutDroppingOtherDatabases() throws Exception {
+        JustTestRoutingDataSource dataSource = new JustTestRoutingDataSource(URL);
+        SingleConnectionDataSource survivor = memoryDataSource(
+                "jdbc:h2:mem:justtest_shutdown_survivor;MODE=MySQL;DB_CLOSE_DELAY=-1");
+        try {
+            new JdbcTemplate(survivor).execute("CREATE TABLE survivor_table(id INT PRIMARY KEY)");
+
+            bindCase("template-shutdown-first");
+            JdbcTemplate jdbcTemplate = new JdbcTemplate(dataSource);
+            SchemaInitializer.initialize(jdbcTemplate, "classpath:sql/schema-part-one.sql");
+            jdbcTemplate.update("INSERT INTO first_table(id) VALUES (1)");
+            dataSource.releaseCurrentCase();
+            CaseExecutionContext.clear();
+
+            bindCase("template-shutdown-second");
+            SchemaInitializer.initialize(jdbcTemplate, "classpath:sql/schema-part-one.sql");
+            assertEquals(0, jdbcTemplate.queryForObject(
+                    "SELECT COUNT(*) FROM first_table", Integer.class));
+            assertEquals(2L, testCounter(dataSource, "cloneCount"));
+            assertEquals(1L, testCounter(dataSource, "scriptCaptureCount"));
+            assertEquals(0L, testCounter(dataSource, "fallbackCount"));
+
+            String templateUrl = templateUrl(dataSource);
+            assertEquals(1, countTable(templateUrl, "FIRST_TABLE"));
+            dataSource.releaseCurrentCase();
+            CaseExecutionContext.clear();
+
+            dataSource.destroy();
+
+            assertMemoryDatabaseAbsent(templateUrl);
+            assertEquals(1, countTable(survivor.getUrl(), "SURVIVOR_TABLE"));
+        } finally {
+            CaseExecutionContext.clear();
+            survivor.destroy();
+            dataSource.destroy();
+        }
+    }
+
+    @Test
+    void shutsDownTemplateWhenHeldConnectionIsAlreadyClosed() throws Exception {
+        JustTestRoutingDataSource dataSource = new JustTestRoutingDataSource(URL);
+        try {
+            bindCase("template-closed-connection");
+            JdbcTemplate jdbcTemplate = new JdbcTemplate(dataSource);
+            SchemaInitializer.initialize(jdbcTemplate, "classpath:sql/schema-part-one.sql");
+            String templateUrl = templateUrl(dataSource);
+            SingleConnectionDataSource template = templateDataSource(dataSource);
+            template.destroy();
+
+            assertEquals(1, countTable(templateUrl, "FIRST_TABLE"));
+            dataSource.releaseCurrentCase();
+            CaseExecutionContext.clear();
+            dataSource.destroy();
+
+            assertMemoryDatabaseAbsent(templateUrl);
+        } finally {
+            CaseExecutionContext.clear();
+            dataSource.destroy();
+        }
+    }
+
+    @Test
+    void reclonesAfterTemplateIsReplaced() throws Exception {
+        JustTestRoutingDataSource dataSource = new JustTestRoutingDataSource(URL);
+        try {
+            bindCase("template-replace-first");
+            JdbcTemplate jdbcTemplate = new JdbcTemplate(dataSource);
+            SchemaInitializer.initialize(jdbcTemplate, "classpath:sql/schema-part-one.sql");
+            jdbcTemplate.update("INSERT INTO first_table(id) VALUES (1)");
+            dataSource.releaseCurrentCase();
+            CaseExecutionContext.clear();
+
+            bindCase("template-replace-second");
+            SchemaInitializer.initialize(jdbcTemplate, "classpath:sql/schema-part-two.sql");
+            assertEquals(1, countTable(jdbcTemplate, "SECOND_TABLE"));
+            assertEquals(0, countTable(jdbcTemplate, "FIRST_TABLE"));
+            dataSource.releaseCurrentCase();
+            CaseExecutionContext.clear();
+
+            bindCase("template-replace-third");
+            SchemaInitializer.initialize(jdbcTemplate, "classpath:sql/schema-part-two.sql");
+            assertEquals(0, jdbcTemplate.queryForObject(
+                    "SELECT COUNT(*) FROM second_table", Integer.class));
+            assertEquals(3L, testCounter(dataSource, "cloneCount"));
+            assertEquals(2L, testCounter(dataSource, "scriptCaptureCount"));
+            assertEquals(0L, testCounter(dataSource, "fallbackCount"));
+        } finally {
+            CaseExecutionContext.clear();
+            dataSource.destroy();
+        }
+    }
+
     @SuppressWarnings("unchecked")
     private static SingleConnectionDataSource getCaseDataSource(
             JustTestRoutingDataSource dataSource, String databaseKey) throws Exception {
@@ -364,5 +520,64 @@ class JustTestRoutingDataSourceTest {
 
     private static void bindCase(String name) {
         CaseExecutionContext.bind(new CaseContext(name, "test/" + name));
+    }
+
+    private static void failNextSchemaClone(JustTestRoutingDataSource dataSource) throws Exception {
+        Field field = JustTestRoutingDataSource.class.getDeclaredField("forceCloneFailureForTests");
+        field.setAccessible(true);
+        ((AtomicBoolean) field.get(dataSource)).set(true);
+    }
+
+    private static long testCounter(JustTestRoutingDataSource dataSource, String fieldName) throws Exception {
+        Field field = JustTestRoutingDataSource.class.getDeclaredField(fieldName);
+        field.setAccessible(true);
+        return ((AtomicLong) field.get(dataSource)).get();
+    }
+
+    private static String templateUrl(JustTestRoutingDataSource dataSource) throws Exception {
+        return templateDataSource(dataSource).getUrl();
+    }
+
+    private static SingleConnectionDataSource templateDataSource(
+            JustTestRoutingDataSource dataSource) throws Exception {
+        Field field = JustTestRoutingDataSource.class.getDeclaredField("templateDataSource");
+        field.setAccessible(true);
+        return (SingleConnectionDataSource) field.get(dataSource);
+    }
+
+    private static SingleConnectionDataSource memoryDataSource(String url) {
+        SingleConnectionDataSource dataSource = new SingleConnectionDataSource();
+        dataSource.setDriverClassName("org.h2.Driver");
+        dataSource.setUrl(url);
+        dataSource.setUsername("sa");
+        dataSource.setPassword("");
+        dataSource.setSuppressClose(true);
+        return dataSource;
+    }
+
+    private static int countTable(String url, String tableName) {
+        SingleConnectionDataSource probe = memoryDataSource(url);
+        try {
+            return countTable(new JdbcTemplate(probe), tableName);
+        } finally {
+            probe.destroy();
+        }
+    }
+
+    private static int countTable(JdbcTemplate jdbcTemplate, String tableName) {
+        return jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM INFORMATION_SCHEMA.TABLES WHERE UPPER(TABLE_NAME) = ?",
+                Integer.class, tableName);
+    }
+
+    private static void assertMemoryDatabaseAbsent(String url) {
+        SingleConnectionDataSource probe = memoryDataSource(url + ";IFEXISTS=TRUE");
+        try {
+            SQLException failure = assertThrows(SQLException.class, probe::getConnection);
+            assertTrue(failure.getMessage().toLowerCase(Locale.ROOT).contains("not found"),
+                    failure.getMessage());
+        } finally {
+            probe.destroy();
+        }
     }
 }

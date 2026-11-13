@@ -36,6 +36,7 @@ public class JustTestDataSourceConfig {
 
     @Bean
     public static BeanFactoryPostProcessor justTestRefreshScopeConfigurer() {
+        // 未注册 refresh 时静默挂成 ThreadScope，没有 Spring Cloud 的测试仍能解析 @RefreshScope。
         return beanFactory -> {
             if (beanFactory.getRegisteredScope("refresh") == null) {
                 beanFactory.registerScope("refresh", new ThreadScope());
