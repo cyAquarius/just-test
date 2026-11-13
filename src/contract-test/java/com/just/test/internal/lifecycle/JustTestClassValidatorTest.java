@@ -1,8 +1,10 @@
 package com.just.test.internal.lifecycle;
 
+import com.just.test.annotation.BeforeCase;
 import com.just.test.annotation.CaseSource;
 import com.just.test.annotation.JustMock;
 import com.just.test.annotation.JustSpy;
+import com.just.test.context.CaseContext;
 import com.just.test.lifecycle.JustTestLifecycle;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestInstance;
@@ -154,6 +156,33 @@ class JustTestClassValidatorTest {
     }
 
     @Test
+    void rejectsParameterizedBeforeCaseMethod() {
+        ExtensionConfigurationException failure = assertThrows(ExtensionConfigurationException.class,
+                () -> JustTestClassValidator.validate(DirectParameterizedBeforeCase.class));
+
+        assertTrue(failure.getMessage().contains("directSetup"));
+        assertTrue(failure.getMessage().contains("must have no parameters"));
+        assertTrue(failure.getMessage().contains(
+                DirectParameterizedBeforeCase.class.getName() + ".directSetup"));
+    }
+
+    @Test
+    void rejectsInheritedParameterizedBeforeCaseMethod() {
+        ExtensionConfigurationException failure = assertThrows(ExtensionConfigurationException.class,
+                () -> JustTestClassValidator.validate(InheritedParameterizedBeforeCase.class));
+
+        assertTrue(failure.getMessage().contains("inheritedSetup"));
+        assertTrue(failure.getMessage().contains("must have no parameters"));
+        assertTrue(failure.getMessage().contains(
+                ParameterizedBeforeCaseBase.class.getName() + ".inheritedSetup"));
+    }
+
+    @Test
+    void acceptsNoArgBeforeCaseMethods() {
+        assertDoesNotThrow(() -> JustTestClassValidator.validate(NoArgBeforeCase.class));
+    }
+
+    @Test
     void doesNotTreatClassLevelExecutionModeAsCaseConcurrency() {
         ExtensionContext context = mock(ExtensionContext.class);
         when(context.getTestInstanceLifecycle())
@@ -279,6 +308,45 @@ class JustTestClassValidatorTest {
     }
 
     static class InheritedInstanceMock extends InstanceMockBase implements JustTestLifecycle {
+        @CaseSource
+        void justCase() {
+        }
+    }
+
+    static class DirectParameterizedBeforeCase implements JustTestLifecycle {
+        @BeforeCase("case")
+        void directSetup(CaseContext context) {
+        }
+
+        @CaseSource
+        void justCase() {
+        }
+    }
+
+    static class ParameterizedBeforeCaseBase {
+        @BeforeCase("case")
+        private void inheritedSetup(String unexpected) {
+        }
+    }
+
+    static class InheritedParameterizedBeforeCase extends ParameterizedBeforeCaseBase
+            implements JustTestLifecycle {
+        @CaseSource
+        void justCase() {
+        }
+    }
+
+    static class NoArgBeforeCaseBase {
+        @BeforeCase("case")
+        void inheritedSetup() {
+        }
+    }
+
+    static class NoArgBeforeCase extends NoArgBeforeCaseBase implements JustTestLifecycle {
+        @BeforeCase("case")
+        private void childSetup() {
+        }
+
         @CaseSource
         void justCase() {
         }

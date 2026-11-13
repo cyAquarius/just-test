@@ -582,7 +582,7 @@ sequenceDiagram
 2. 绑定 case，创建并初始化全新的 case 数据库，然后加载 `prepare.yaml`；
 3. 重置、预热 scoped mock，注入 `@JustMock` / `@JustSpy` 字段并配置 case 静态 Mock；
 4. 执行用户的 `@BeforeEach`；
-5. 调用匹配的 `@BeforeCase("case-name")` 与 `beforeExecute`，执行测试方法；无论测试方法返回还是抛出，都调用 `afterExecute`，再进行异常、返回值和数据库验证。若 `afterExecute` 自身抛出，则跳过 YAML 验证并直接抛出该异常（若测试方法也抛过异常，会作为 suppressed 附加）。无 `expect_exception.yaml` 且 `verifyException` 未处理的异常会在 `afterExecute` 与 YAML 验证之后重新抛出；
+5. 调用匹配的 `@BeforeCase("case-name")` 与 `beforeExecute`，执行测试方法。测试抛出时仍调用 `afterExecute`；`beforeExecute` 失败时不调用 `afterExecute`。然后再进行异常、返回值和数据库验证。若 `afterExecute` 自身抛出，则跳过 YAML 验证并直接抛出该异常（若测试方法也抛过异常，会作为 suppressed 附加）。无 `expect_exception.yaml` 且 `verifyException` 未处理的异常会在 `afterExecute` 与 YAML 验证之后重新抛出；
 6. 执行用户的 `@AfterEach`；
 7. 关闭静态与 scoped mock，释放 case 数据库；清理失败不会掩盖原始测试失败。
 
@@ -701,6 +701,7 @@ junit.jupiter.execution.parallel.mode.classes.default=concurrent
 
 当前 Maven Central 发布版本是 `1.2.9`。上面的规则对应该版本。
 
+- **1.2.10（待发布）** — `@BeforeCase` 改为父类方法先于子类执行，同一类中的方法按方法名排序。这是相对 1.2.9 的合同收紧：1.2.9 先执行子类方法。带参数的 `@BeforeCase` 在 `BeforeAll` 失败，错误信息会指出方法名，并说明该方法必须无参。`afterExecute` 行为不变：测试抛出时仍会调用，`beforeExecute` 失败时不调用；生命周期文档已改成这一表述。[Issue #112](https://github.com/cyAquarius/just-test/issues/112)。
 - **1.2.10（待发布）** — 任一侧是 `BigDecimal` 时，精确比较忽略标度。YAML 的 `100` 匹配 JDBC 的 `100.00`。YAML 的 `100` 与 JDBC 的 `100.01` 不相等。Integer、Long、Double 彼此之间按字符串精确比较。裸 YAML 时间戳（如 `2026-11-13 10:00:00`）保持该字符串；需要日期匹配时用 `[D]` 或 `[R]`。`toList` 改为与 `toMap` 一样按字段序列化，没有 getter 的 POJO 在两条路径上比较结果一致。[Issue #110](https://github.com/cyAquarius/just-test/issues/110)。
 - **1.2.10（待发布）** — `[D]` / `[D60]` 接受 `LocalDateTime`、`Instant`、`OffsetDateTime` 和 `ZonedDateTime`，仍用同一容差窗口比较。`LocalDateTime` 按系统默认时区换算。时间字符串可以带 ISO `T`。`java.util.Date` 与 `java.sql.Timestamp` 行为不变。[Issue #109](https://github.com/cyAquarius/just-test/issues/109)。
 - **1.2.10（待发布）** — `@ThreadScopedMock` 的 `@Bean` 方法只声明类型和 Bean 名。框架忽略方法体，仍然自己创建线程作用域 mock。定制 stub 写在 `beforeExecute` 或 `@BeforeCase`。[Issue #106](https://github.com/cyAquarius/just-test/issues/106)。

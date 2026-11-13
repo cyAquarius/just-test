@@ -33,6 +33,9 @@ import org.springframework.test.context.junit.jupiter.SpringExtension;
 
 import java.lang.reflect.Method;
 import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Collections;
+import java.util.Comparator;
 import java.util.List;
 
 /**
@@ -369,9 +372,17 @@ public final class JustTestExtension implements BeforeEachCallback, AfterEachCal
 
     private void invokeBeforeCaseMethods(ExtensionContext extensionContext, String caseName) {
         Object testInstance = extensionContext.getRequiredTestInstance();
+        List<Class<?>> hierarchy = new ArrayList<>();
         for (Class<?> type = testInstance.getClass(); type != null && type != Object.class;
              type = type.getSuperclass()) {
-            for (Method method : type.getDeclaredMethods()) {
+            hierarchy.add(type);
+        }
+        // 与 JUnit @BeforeEach 一致：先父类后子类。同类按方法名，避免 getDeclaredMethods 顺序不确定。
+        Collections.reverse(hierarchy);
+        for (Class<?> type : hierarchy) {
+            Method[] methods = type.getDeclaredMethods();
+            Arrays.sort(methods, Comparator.comparing(Method::getName));
+            for (Method method : methods) {
                 BeforeCase annotation = method.getAnnotation(BeforeCase.class);
                 if (annotation != null && annotation.value().equals(caseName)) {
                     invokeBeforeCaseMethod(testInstance, method, caseName);
