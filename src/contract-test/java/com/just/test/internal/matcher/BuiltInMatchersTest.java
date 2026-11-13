@@ -3,7 +3,14 @@ package com.just.test.internal.matcher;
 import org.junit.jupiter.api.Test;
 
 import java.sql.Timestamp;
+import java.time.Instant;
+import java.time.LocalDateTime;
+import java.time.OffsetDateTime;
+import java.time.ZoneOffset;
+import java.time.ZonedDateTime;
+import java.time.format.DateTimeFormatter;
 import java.util.Arrays;
+import java.util.Date;
 import java.util.LinkedHashMap;
 import java.util.Map;
 
@@ -33,6 +40,31 @@ class BuiltInMatchersTest {
     @Test
     void dateMatcherDescribeStatesFreshnessAgainstNow() {
         assertEquals("[D60] (within 60s of now)", BuiltInMatchers.dateMatcher(60).describe());
+    }
+
+    @Test
+    void dateMatcherAcceptsJavaTimeAndIsoTWithinTolerance() {
+        String ignoredExpected = "1999-01-01 00:00:00";
+        DateTimeFormatter isoLocal = DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:ss");
+        DateTimeFormatter jdbcLocal = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
+        ZoneOffset notSystemOffset = OffsetDateTime.now().getOffset().getTotalSeconds() == 0
+                ? ZoneOffset.ofHours(8) : ZoneOffset.UTC;
+
+        assertDateFlagPasses(LocalDateTime.now(), ignoredExpected);
+        assertDateFlagPasses(Instant.now(), ignoredExpected);
+        assertDateFlagPasses(OffsetDateTime.now(notSystemOffset), ignoredExpected);
+        assertDateFlagPasses(ZonedDateTime.now(notSystemOffset), ignoredExpected);
+        assertDateFlagPasses(new Date(), ignoredExpected);
+        assertDateFlagPasses(LocalDateTime.now().format(isoLocal), ignoredExpected);
+        assertDateFlagPasses(LocalDateTime.now().format(jdbcLocal), ignoredExpected);
+
+        assertDateFlagFails(LocalDateTime.now().minusSeconds(120), ignoredExpected);
+        assertDateFlagFails(Instant.now().minusSeconds(120), ignoredExpected);
+        assertDateFlagFails(OffsetDateTime.now(notSystemOffset).minusSeconds(120), ignoredExpected);
+        assertDateFlagFails(ZonedDateTime.now(notSystemOffset).minusSeconds(120), ignoredExpected);
+        assertDateFlagFails(new Date(System.currentTimeMillis() - 120_000L), ignoredExpected);
+        assertDateFlagFails(LocalDateTime.now().minusSeconds(120).format(isoLocal), ignoredExpected);
+        assertDateFlagFails("not-a-date", ignoredExpected);
     }
 
     @Test
@@ -105,6 +137,18 @@ class BuiltInMatchersTest {
         assertTrue(bare.getMessage().contains("field '[CC]'"), bare.getMessage());
         assertTrue(bare.getMessage().contains("'(unknown)'"), bare.getMessage());
         assertTrue(bare.getMessage().contains("case-sensitive"), bare.getMessage());
+    }
+
+    private static void assertDateFlagPasses(Object actual, String ignoredExpected) {
+        assertEquals("", BuiltInMatchers.assertMatcherFlag(
+                "D", ignoredExpected, actual, "row.gmt_create"));
+    }
+
+    private static void assertDateFlagFails(Object actual, String ignoredExpected) {
+        String failed = BuiltInMatchers.assertMatcherFlag(
+                "D", ignoredExpected, actual, "row.gmt_create");
+        assertTrue(failed.contains("within 60s of now"), failed);
+        assertFalse(failed.contains(ignoredExpected), failed);
     }
 
     private static void assertInvalidDateTolerance(String flag) {
