@@ -19,15 +19,23 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 class BeforeCaseContractJustTest extends BeforeCaseContractParent {
 
     @BeforeCase("matching")
-    void childSetupForMatchingCase() {
-        order.add("child-beforeCase");
+    void zetaChildSetup() {
+        order.add("zeta-child");
+    }
+
+    @BeforeCase("matching")
+    void alphaChildSetup() {
+        order.add("alpha-child");
     }
 
     @CaseSource
     void invokesMatchingBeforeCaseBeforeBeforeExecute(CaseContext context) {
         if ("matching".equals(context.getCaseName())) {
-            assertEquals(Arrays.asList("child-beforeCase", "parent-beforeCase", "beforeExecute"),
-                    order);
+            // 声明顺序是 zeta 再 alpha。合同按方法名排序，并且父类先于子类。
+            assertEquals(Arrays.asList(
+                    "alpha-parent", "zeta-parent",
+                    "alpha-child", "zeta-child",
+                    "beforeExecute"), order);
             return;
         }
         assertEquals(Arrays.asList("beforeExecute"), order);
@@ -43,8 +51,13 @@ abstract class BeforeCaseContractParent implements JustTestLifecycle {
     final List<String> order = new ArrayList<>();
 
     @BeforeCase("matching")
-    void parentSetupForMatchingCase() {
-        order.add("parent-beforeCase");
+    void zetaParentSetup() {
+        order.add("zeta-parent");
+    }
+
+    @BeforeCase("matching")
+    void alphaParentSetup() {
+        order.add("alpha-parent");
     }
 
     @Override

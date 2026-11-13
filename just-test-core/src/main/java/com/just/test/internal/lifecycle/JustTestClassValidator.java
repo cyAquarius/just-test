@@ -1,5 +1,6 @@
 package com.just.test.internal.lifecycle;
 
+import com.just.test.annotation.BeforeCase;
 import com.just.test.annotation.CaseSource;
 import com.just.test.annotation.JustMock;
 import com.just.test.annotation.JustSpy;
@@ -27,8 +28,8 @@ import java.util.stream.Collectors;
 
 /**
  * {@code @JustTest} 的共享类级校验：{@link JustTestLifecycle}、JUnit 可执行方法、
- * {@code @TestInstance(PER_CLASS)} 与类内并发、Spring {@code @Transactional}/{@code @Sql}，
- * 以及 static {@code @JustMock} / {@code @JustSpy} 字段。
+ * {@code @TestInstance(PER_CLASS)} 与类内并发、Spring {@code @Transactional}/{@code @Sql}、
+ * 无参 {@code @BeforeCase}，以及 static {@code @JustMock} / {@code @JustSpy} 字段。
  *
  * <p>不对消费方提供兼容承诺。Boot 模块的公开 {@code JustTestClassValidationExtension}
  * 在 BeforeAll 调用本校验，并另行检查 Boot bootstrapper 注解。</p>
@@ -75,6 +76,7 @@ public final class JustTestClassValidator {
                     testClass.getName(), methods));
         }
         validateCaseSourceMethods(testClass);
+        validateBeforeCaseMethods(testClass);
         validatePerClassConcurrentExecution(testClass, context);
         validateStaticMockFields(testClass);
     }
@@ -118,6 +120,24 @@ public final class JustTestClassValidator {
                     || AnnotatedElementUtils.hasAnnotation(method, Sql.class)) {
                 throw configurationError(testClass, String.format(
                         "@CaseSource method %s must not use @Transactional or @Sql because they run before a case is bound",
+                        method.getName()));
+            }
+        }
+    }
+
+    /**
+     * {@code @BeforeCase} 只接受无参方法。带参方法要到 case 执行时才会在反射调用处失败，
+     * 且错误不指向根因，因此与其它配置错误一样在 BeforeAll 失败。
+     */
+    private static void validateBeforeCaseMethods(Class<?> testClass) {
+        for (Class<?> type = testClass; type != null && type != Object.class; type = type.getSuperclass()) {
+            for (Method method : type.getDeclaredMethods()) {
+                if (method.getAnnotation(BeforeCase.class) == null || method.getParameterCount() == 0) {
+                    continue;
+                }
+                throw configurationError(testClass, String.format(
+                        "@BeforeCase method %s.%s must have no parameters",
+                        method.getDeclaringClass().getName(),
                         method.getName()));
             }
         }
