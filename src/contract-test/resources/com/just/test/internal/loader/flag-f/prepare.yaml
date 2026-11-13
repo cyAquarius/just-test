@@ -1,0 +1,2 @@
+loader_sample:
+  - created_at[f]: CURRENT_TIMESTAMP

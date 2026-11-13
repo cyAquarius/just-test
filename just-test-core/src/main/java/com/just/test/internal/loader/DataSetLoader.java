@@ -71,7 +71,7 @@ public class DataSetLoader {
         if (yamlData == null) {
             return;
         }
-        loadFromMap(jdbcTemplate, yamlData, casePath);
+        loadFromMap(jdbcTemplate, yamlData, stageLocation(casePath, "prepare.yaml"));
     }
 
     /**
@@ -119,6 +119,7 @@ public class DataSetLoader {
             log.debug("[JustTest] No prepare data from: {}", source);
             return;
         }
+        BuiltInMatchers.requireKnownFlags(yamlData, BuiltInMatchers.FlagStage.PREPARE, source);
 
         for (Map.Entry<String, Object> entry : yamlData.entrySet()) {
             String tableName = entry.getKey();
@@ -200,6 +201,20 @@ public class DataSetLoader {
             return ymlPath;
         }
         return null;
+    }
+
+    /**
+     * case 阶段文件的 classpath 路径。文件不存在时返回逻辑路径，供错误信息使用。
+     */
+    public static String stageLocation(String casePath, String fileName) {
+        if (casePath == null || casePath.isEmpty()) {
+            return fileName;
+        }
+        String resolved = resolveStageResource(casePath, fileName);
+        if (resolved != null) {
+            return resolved;
+        }
+        return casePath + "/" + fileName;
     }
 
     private static Object readResolvedYaml(String casePath, String fileName, String resourcePath) {

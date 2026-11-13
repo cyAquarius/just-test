@@ -245,6 +245,7 @@ class CreateJustTest extends OrderJustTestSupport {
 
 - `[C]` 一旦用在 List 上，每个预期元素都必须是对象，且至少有一个 `[C]` 字段。
 - 库表断言优先写明确的 `[C]`。
+- Flag 区分大小写。未知、拼错或用错阶段（如 `[cn]`、`[CC]`）会立即失败，错误里有字段名、case 路径和该阶段合法 Flag。
 
 ## 反模式
 

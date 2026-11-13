@@ -195,6 +195,7 @@ class CreateJustTest extends OrderJustTestSupport {
 | `[F]` | 仅 `prepare.yaml`：原始库函数，如 `NOW()` |
 
 - `[C]` 一旦用在 List 上，每个预期元素都必须是对象，且至少有一个 `[C]` 字段。库表断言优先写明确的 `[C]`。
+- Flag 区分大小写。未知、拼错或用错阶段（如 `[cn]`、`[CC]`）会立即失败，错误里有字段名、case 路径和该阶段合法 Flag。
 - 不要在 `@JustTest` 类或 `@CaseSource` 方法上使用 Spring `@Transactional` / `@Sql`。用 `prepare.yaml` / `expect.yaml`。
 - 业务代码仍必须在所有路径 commit / rollback。case 边界若检测到未结束的 Spring 事务，即使匹配 `expect_exception.yaml` 也会失败；框架隔离不是业务 rollback 的替代品。
 

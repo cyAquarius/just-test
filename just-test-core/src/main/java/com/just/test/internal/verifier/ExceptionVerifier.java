@@ -18,9 +18,11 @@ import java.util.Map;
  *
  * <p>message 支持 bracket flag：</p>
  * <ul>
- *   <li>无 flag / {@code [Y]} — 精确匹配</li>
+ *   <li>无 flag — 精确匹配</li>
  *   <li>{@code [R]} — 正则匹配</li>
  *   <li>{@code [A]} — 非空断言（只要 message 不为 null 即通过）</li>
+ *   <li>{@code [D]} / {@code [D60]} — 实际时间距当前时刻 N 秒内</li>
+ *   <li>{@code [J]} — JSON 结构比较</li>
  *   <li>{@code [N]} — 跳过 message 校验</li>
  * </ul>
  *
@@ -48,6 +50,9 @@ public class ExceptionVerifier {
             // 无 expect_exception.yaml → 跳过
             return failures;
         }
+        BuiltInMatchers.requireKnownFlags(
+                expectData, BuiltInMatchers.FlagStage.EXCEPTION,
+                DataSetLoader.stageLocation(casePath, "expect_exception.yaml"));
 
         // 有声明但无异常
         if (actual == null) {

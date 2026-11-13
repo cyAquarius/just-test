@@ -535,6 +535,8 @@ flowchart TD
 | `[J]` | JSON 结构比较。 |
 | `[F]` | `prepare.yaml` 中的原始数据库函数，如 `NOW()`。 |
 
+Flag 区分大小写。未知 Flag（如 `[cn]`、`[CC]`）或用在不适用阶段的 Flag 会立即失败。错误信息包含字段名、case 路径，以及该阶段允许的 Flag。
+
 数据库断言建议显式提供 `[C]` 字段，避免行定位含义不明确。
 
 <a id="lifecycle"></a>
@@ -687,6 +689,7 @@ junit.jupiter.execution.parallel.mode.classes.default=concurrent
 
 当前 Maven Central 发布版本是 `1.2.9`。上面的规则对应该版本。
 
+- **1.2.10（待发布）** — 未知或大小写错误的 YAML flag（如 `[cn]`、`[CC]`）立即失败，不再降级为精确匹配。错误信息包含字段名、case 路径和该阶段合法 flag。[Issue #108](https://github.com/cyAquarius/just-test/issues/108)。
 - **1.2.10（待发布）** — 加载发现阶段已经接受的 `.yml` 用例文件。只含 `.yml` 夹具的目录会执行预置和断言。同一阶段同时存在 `.yaml` 与 `.yml` 时 fail-fast。[Issue #100](https://github.com/cyAquarius/just-test/issues/100)。
 
 - **1.2.9** — 安装线程拦截时读取 MapperFactoryBean 产品类型元数据，不提前初始化无关 FactoryBean。[Issue #97](https://github.com/cyAquarius/just-test/issues/97)。

@@ -38,14 +38,24 @@ public class DataSetVerifier {
      */
     public static List<String> verify(JdbcTemplate jdbcTemplate, String casePath) {
         Map<String, Object> yamlData = DataSetLoader.parseYamlByPath(casePath, "expect.yaml");
-        return verifyFromMap(jdbcTemplate, yamlData);
+        return verifyFromMap(jdbcTemplate, yamlData, DataSetLoader.stageLocation(casePath, "expect.yaml"));
     }
 
     /**
      * 从已解析的 YAML Map 校验数据库状态。
      */
-    @SuppressWarnings("unchecked")
     static List<String> verifyFromMap(JdbcTemplate jdbcTemplate, Map<String, Object> yamlData) {
+        return verifyFromMap(jdbcTemplate, yamlData, null);
+    }
+
+    /**
+     * 从已解析的 YAML Map 校验数据库状态。
+     *
+     * @param caseLocation case 路径，写入未知 flag 的错误信息；没有路径时传 null
+     */
+    @SuppressWarnings("unchecked")
+    static List<String> verifyFromMap(JdbcTemplate jdbcTemplate, Map<String, Object> yamlData, String caseLocation) {
+        BuiltInMatchers.requireKnownFlags(yamlData, BuiltInMatchers.FlagStage.EXPECT, caseLocation);
         List<String> failures = new ArrayList<>();
 
         if (yamlData == null || yamlData.isEmpty()) {

@@ -92,4 +92,35 @@ class DataSetLoaderTest {
                 () -> DataSetLoader.loadFromMap(new JdbcTemplate(), data, "test"));
         assertTrue(error.getMessage().contains("column name"), error.getMessage());
     }
+
+    @Test
+    void rejectsUnknownPrepareFlagsBeforeInsert() {
+        SingleConnectionDataSource dataSource = new SingleConnectionDataSource(
+                "jdbc:h2:mem:loader_unknown_flags;MODE=MySQL;DB_CLOSE_DELAY=-1", "sa", "", true);
+        try {
+            JdbcTemplate jdbcTemplate = new JdbcTemplate(dataSource);
+            jdbcTemplate.execute("CREATE TABLE loader_sample(id INT, created_at TIMESTAMP)");
+
+            assertUnknownPrepare(jdbcTemplate, "com/just/test/internal/loader/flag-cn", "id", "cn");
+            assertUnknownPrepare(jdbcTemplate, "com/just/test/internal/loader/flag-cc", "id", "CC");
+            assertUnknownPrepare(jdbcTemplate, "com/just/test/internal/loader/flag-f", "created_at", "f");
+            Number inserted = jdbcTemplate.queryForObject(
+                    "SELECT COUNT(*) FROM loader_sample", Number.class);
+            assertEquals(0, inserted.intValue());
+        } finally {
+            dataSource.destroy();
+        }
+    }
+
+    private static void assertUnknownPrepare(JdbcTemplate jdbcTemplate, String casePath,
+                                             String field, String flag) {
+        IllegalArgumentException error = assertThrows(IllegalArgumentException.class,
+                () -> DataSetLoader.load(jdbcTemplate, casePath));
+        String message = error.getMessage();
+        assertTrue(message.contains("field '" + field + "'"), message);
+        assertTrue(message.contains("[" + flag + "]"), message);
+        assertTrue(message.contains(casePath + "/prepare.yaml"), message);
+        assertTrue(message.contains("case-sensitive"), message);
+        assertTrue(message.contains("Legal flags: N, F"), message);
+    }
 }

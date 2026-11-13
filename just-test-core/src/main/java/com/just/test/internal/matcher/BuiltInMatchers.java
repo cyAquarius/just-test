@@ -2,6 +2,8 @@ package com.just.test.internal.matcher;
 
 import com.alibaba.fastjson2.JSON;
 
+import java.util.List;
+import java.util.Map;
 import java.util.regex.Pattern;
 
 /**
@@ -20,6 +22,9 @@ import java.util.regex.Pattern;
  *   <tr><td>J</td><td>JSON — JSON 结构比较</td><td>expect</td><td>{@code ext_info[J]: '{"k":"v"}'}</td></tr>
  *   <tr><td>F</td><td>Function — DB 函数（prepare 阶段插入）</td><td>prepare</td><td>{@code gmt_create[F]: "NOW()"}</td></tr>
  * </table>
+ *
+ * <p>Flag 区分大小写。未知 flag、大小写错误（如 {@code [cn]}）或用在不适用阶段的 flag
+ * 在解析时失败。错误信息包含字段名、case 路径和该阶段的合法 flag，不会降级为精确匹配。</p>
  */
 public final class BuiltInMatchers {
 
@@ -39,6 +44,21 @@ public final class BuiltInMatchers {
     public static final String FLAG_J = "J";
     /** Function — DB 函数 */
     public static final String FLAG_F = "F";
+
+    /**
+     * 一个 YAML 阶段允许的 bracket flag。
+     * 不在该集合内的 flag（含大小写错误）在解析时失败，不会降级为精确匹配。
+     */
+    public enum FlagStage {
+        /** {@code prepare.yaml}：{@code N}、{@code F} */
+        PREPARE,
+        /** {@code expect.yaml}：{@code C}、{@code CN}、{@code N}、{@code R}、{@code A}、{@code D}、{@code J} */
+        EXPECT,
+        /** {@code response.yaml}：{@code C}、{@code N}、{@code R}、{@code A}、{@code D}、{@code J} */
+        RESPONSE,
+        /** {@code expect_exception.yaml}：{@code N}、{@code R}、{@code A}、{@code D}、{@code J} */
+        EXCEPTION
+    }
 
     private BuiltInMatchers() {
     }
@@ -93,6 +113,97 @@ public final class BuiltInMatchers {
         return Integer.parseInt(flag.substring(1));
     }
 
+    // ==================== Flag 白名单 ====================
+
+    /**
+     * 校验节点里的全部 bracket flag。无 flag 的 key 跳过。
+     * 未知、大小写不匹配或本阶段不适用的 flag 抛出 {@link IllegalArgumentException}。
+     *
+     * @param node         YAML 节点（Map、List 或标量）
+     * @param stage        该阶段允许的 flag
+     * @param caseLocation case 路径，建议含阶段文件名；没有路径时传 null
+     */
+    public static void requireKnownFlags(Object node, FlagStage stage, String caseLocation) {
+        if (stage == null) {
+            throw new IllegalArgumentException("[JustTest] Flag stage is required");
+        }
+        walkFlags(node, stage, caseLocation);
+    }
+
+    private static void walkFlags(Object node, FlagStage stage, String caseLocation) {
+        if (node instanceof Map) {
+            for (Map.Entry<?, ?> entry : ((Map<?, ?>) node).entrySet()) {
+                if (entry.getKey() instanceof String) {
+                    requireKnownFlag((String) entry.getKey(), stage, caseLocation);
+                }
+                walkFlags(entry.getValue(), stage, caseLocation);
+            }
+            return;
+        }
+        if (node instanceof List) {
+            for (Object item : (List<?>) node) {
+                walkFlags(item, stage, caseLocation);
+            }
+        }
+    }
+
+    private static void requireKnownFlag(String rawKey, FlagStage stage, String caseLocation) {
+        String flag = extractFlag(rawKey);
+        if (flag == null || isAllowed(flag, stage)) {
+            return;
+        }
+        throw new IllegalArgumentException(unknownFlagMessage(rawKey, flag, stage, caseLocation));
+    }
+
+    /**
+     * {@code legalFlags} 的文案必须与这里的判断一致。
+     */
+    private static boolean isAllowed(String flag, FlagStage stage) {
+        switch (stage) {
+            case PREPARE:
+                return FLAG_N.equals(flag) || FLAG_F.equals(flag);
+            case EXPECT:
+                return FLAG_C.equals(flag) || FLAG_CN.equals(flag) || FLAG_N.equals(flag)
+                        || isAssertionMatcher(flag);
+            case RESPONSE:
+                return FLAG_C.equals(flag) || FLAG_N.equals(flag) || isAssertionMatcher(flag);
+            case EXCEPTION:
+                return FLAG_N.equals(flag) || isAssertionMatcher(flag);
+            default:
+                throw new IllegalStateException("[JustTest] Unknown flag stage: " + stage);
+        }
+    }
+
+    private static boolean isAssertionMatcher(String flag) {
+        return FLAG_R.equals(flag) || FLAG_A.equals(flag) || FLAG_J.equals(flag) || isDateFlag(flag);
+    }
+
+    private static String legalFlags(FlagStage stage) {
+        switch (stage) {
+            case PREPARE:
+                return "N, F";
+            case EXPECT:
+                return "C, CN, N, R, A, D, D<digits>, J";
+            case RESPONSE:
+                return "C, N, R, A, D, D<digits>, J";
+            case EXCEPTION:
+                return "N, R, A, D, D<digits>, J";
+            default:
+                throw new IllegalStateException("[JustTest] Unknown flag stage: " + stage);
+        }
+    }
+
+    private static String unknownFlagMessage(String rawKey, String flag, FlagStage stage, String caseLocation) {
+        String fieldName = extractFieldName(rawKey);
+        if (fieldName == null || fieldName.isEmpty()) {
+            fieldName = rawKey;
+        }
+        String location = caseLocation == null || caseLocation.trim().isEmpty() ? "(unknown)" : caseLocation;
+        return "[JustTest] Unknown flag [" + flag + "] on field '" + fieldName
+                + "' in case '" + location
+                + "'. Flags are case-sensitive. Legal flags: " + legalFlags(stage);
+    }
+
     // ==================== 统一 Flag 断言 ====================
 
     /**
@@ -100,7 +211,8 @@ public final class BuiltInMatchers {
      * 与 ExceptionVerifier 的重复分发逻辑。
      *
      * <p>处理的 flag：A（非空）、R（正则）、D/Dxx（相对当前时刻的新鲜度）、J（JSON 结构）。
-     * {@code [D]} 忽略 YAML 期望值。不处理 C/CN/N 和默认精确匹配（Y），由调用方自行处理。</p>
+     * {@code [D]} 忽略 YAML 期望值。不处理 C/CN/N 和默认精确匹配（无 flag），由调用方自行处理。
+     * 未知 flag 须先由 {@link #requireKnownFlags} 拒绝，本方法仍对非 matcher flag 返回 null。</p>
      *
      * @param flag          bracket flag（如 "A"、"R"、"D60"、"J"），null 表示无 flag
      * @param expectedValue YAML 中的期望值
