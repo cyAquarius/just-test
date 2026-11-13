@@ -491,7 +491,7 @@ flowchart TD
 - The H2 database is isolated per JustTest `ApplicationContext` and active case.
 - Cleaned DDL is cached. The schema is cloned from a template database by default. Disable cloning with `justtest.schema.clone=false`.
 - Each case database is released at case end. Schema initialization is retried after failure.
-- For MySQL `schema.sql` dumps, the cleaner strips common `SHOW CREATE TABLE` extras: table `ROW_FORMAT`, `UNSIGNED`, `ON UPDATE CURRENT_TIMESTAMP`, column `CHARACTER SET`, and `DEFAULT b'0'`.
+- For MySQL `schema.sql` dumps, the cleaner strips common `SHOW CREATE TABLE` extras: table `ROW_FORMAT`, `UNSIGNED`, `ON UPDATE CURRENT_TIMESTAMP`, column `CHARACTER SET`, and `DEFAULT b'0'`. Text inside strings, comments, and backtick identifiers is left unchanged.
 - The cleaner does not cover every MySQL dialect.
 - A missing framework `JdbcTemplate` or `JustTestRoutingDataSource`, when `@JustTest` owns H2, is a configuration error and fails fast. It does not skip prepare or verify. See [boundaries](#boundaries).
 
@@ -689,6 +689,7 @@ A parallel failure is not automatically a JustTest isolation failure; first insp
 
 The current Maven Central release is `1.2.9`. The rules above match that release.
 
+- **1.2.10 (upcoming)** — MySQL DDL cleanup leaves strings, comments, and backtick identifiers unchanged. An escaped comment quote (`\'` or `''`) is removed with the `COMMENT` clause instead of leaving a fragment that breaks H2. `COLLATE` still strips column `COLLATE name` and table `COLLATE=name`, and no longer deletes identifiers such as `collate_flag`. [Issue #102](https://github.com/cyAquarius/just-test/issues/102).
 - **1.2.10 (upcoming)** — double-quoted literal compatibility includes `CONCAT`. `CONCAT("a","b")` is rewritten to `CONCAT('a','b')`. New SQL should still use single quotes. [Issue #107](https://github.com/cyAquarius/just-test/issues/107).
 - **1.2.10 (upcoming)** — `DATE_FORMAT` literal text is quoted for H2 `FORMATDATETIME`, so English text such as `Date: %Y` and `Day %d` keeps its letters. `%M` maps to the month name, `%T` maps to `HH:mm:ss`, and `%%` maps to one `%`. An unknown specifier fails fast and the error includes the original format string. Numeric patterns such as `%Y-%m-%d %H:%i:%s` and CJK literals still format as before. [Issue #101](https://github.com/cyAquarius/just-test/issues/101).
 - **1.2.10 (upcoming)** — YAML load and assertion edges fail fast instead of passing silently. Duplicate keys are rejected. An `expect_exception.yaml` that exists but is empty or missing `type` is a configuration error and does not swallow exceptions. An `expect.yaml` `[C]` that matches more than one row fails until `[C]` is tightened. `[J]` compares numbers as BigDecimal (`1` equals `1.0`) and reports JSON parse failures instead of falling back to string comparison. A flag-only `[N]:` inside an object skips that key only. [Issue #113](https://github.com/cyAquarius/just-test/issues/113).
