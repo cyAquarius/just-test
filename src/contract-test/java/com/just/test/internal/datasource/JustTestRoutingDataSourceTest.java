@@ -4,6 +4,7 @@ import com.just.test.context.CaseContext;
 import com.just.test.internal.context.CaseExecutionContext;
 import com.just.test.internal.loader.DataSetLoader;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.parallel.Isolated;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.datasource.SingleConnectionDataSource;
 
@@ -36,6 +37,11 @@ import static org.junit.jupiter.api.Assertions.assertNotSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+/**
+ * 会改写 JVM 全局属性 {@code justtest.schema.clone}。
+ * 契约测试按类并发，本类必须隔离，避免其它类读到被关掉的 schema clone。
+ */
+@Isolated
 class JustTestRoutingDataSourceTest {
 
     private static final String URL = "jdbc:h2:mem:{key};MODE=MySQL";

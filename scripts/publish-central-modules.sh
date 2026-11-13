@@ -10,15 +10,18 @@
 # the previous 15 minute budget (90 x 10s) timed out on v1.2.5 while boot2 was
 # still PUBLISHING, and that artifact reached repo1 about 21 minutes after
 # upload. The publish job timeout must cover two of these waits.
+#
+# SNAPSHOT coordinates are refused before credentials or Central are touched.
+# Negative check (no upload):
+#   bash -c 'source scripts/reject-snapshot-version.sh; reject_snapshot_version 1.2.10-SNAPSHOT just-test-boot2'
 set -euo pipefail
 
 root="$(cd "$(dirname "$0")/.." && pwd)"
 cd "${root}"
+# shellcheck source=reject-snapshot-version.sh
+source "${root}/scripts/reject-snapshot-version.sh"
 
-: "${CENTRAL_USERNAME:?CENTRAL_USERNAME is required}"
-: "${CENTRAL_PASSWORD:?CENTRAL_PASSWORD is required}"
-
-auth_header="Authorization: Bearer $(printf '%s:%s' "${CENTRAL_USERNAME}" "${CENTRAL_PASSWORD}" | base64 | tr -d '\n')"
+auth_header=""
 api="https://central.sonatype.com/api/v1/publisher"
 repo1="https://repo1.maven.org/maven2"
 mvn_cmd=(mvn --batch-mode --no-transfer-progress)
@@ -26,6 +29,15 @@ group_path="io/github/cyaquarius"
 # 360 * 10s = 60 minutes per deployment.
 publish_wait_attempts=360
 publish_wait_interval_seconds=10
+
+ensure_central_credentials() {
+  if [[ -n "${auth_header}" ]]; then
+    return 0
+  fi
+  : "${CENTRAL_USERNAME:?CENTRAL_USERNAME is required}"
+  : "${CENTRAL_PASSWORD:?CENTRAL_PASSWORD is required}"
+  auth_header="Authorization: Bearer $(printf '%s:%s' "${CENTRAL_USERNAME}" "${CENTRAL_PASSWORD}" | base64 | tr -d '\n')"
+}
 
 write_checksums() {
   local file="$1"
@@ -96,7 +108,15 @@ upload_and_wait() {
   echo "Waiting up to $((publish_wait_attempts * publish_wait_interval_seconds))s for PUBLISHED"
 
   for i in $(seq 1 "${publish_wait_attempts}"); do
-    state="$(curl -sS -X POST \
+    # Retry transport blips. The body is still the Portal state string; repo1
+    # remains the skip signal because it lags PUBLISHED.
+    state="$(curl -sS \
+      --retry 3 \
+      --retry-delay 2 \
+      --retry-connrefused \
+      --connect-timeout 15 \
+      --max-time 60 \
+      -X POST \
       -H "${auth_header}" \
       "${api}/status?id=${deployment_id}")"
     echo "status[${i}]: ${state}"
@@ -120,6 +140,8 @@ for module in just-test-boot2 just-test-boot3; do
     echo "Failed to resolve version for ${module}: ${version}" >&2
     exit 1
   fi
+  reject_snapshot_version "${version}" "${module}"
+  ensure_central_credentials
   if central_release_present "${module}" "${version}"; then
     echo "::notice::Skip ${module} ${version}: pom and jar already on Maven Central"
     continue

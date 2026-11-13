@@ -96,15 +96,15 @@ jobs:
             echo "缺少 GitHub Secrets: CENTRAL_USERNAME / CENTRAL_PASSWORD" >&2
             exit 1
           fi
+          # shellcheck source=scripts/reject-snapshot-version.sh
+          source scripts/reject-snapshot-version.sh
           if [ "${GITHUB_EVENT_NAME}" = "push" ] && [[ "${GITHUB_REF_NAME}" == v* ]]; then
             release_version="${GITHUB_REF_NAME#v}"
+            reject_snapshot_version "${release_version}" "tag ${GITHUB_REF_NAME}"
             mvn --batch-mode --no-transfer-progress versions:set -DnewVersion="${release_version}" -DgenerateBackupPoms=false
           else
             release_version="$(mvn --quiet --non-recursive help:evaluate -Dexpression=project.version -DforceStdout)"
-            if [[ "${release_version}" == *-SNAPSHOT ]]; then
-              echo "Maven Central 不接收 SNAPSHOT。请打 tag，例如 v1.0.0。" >&2
-              exit 1
-            fi
+            reject_snapshot_version "${release_version}" "pom"
           fi
           mvn --batch-mode --no-transfer-progress -Pdual-jdk-release,central-publish \
             -DskipTests -Dgpg.passphraseEnvName=MAVEN_GPG_PASSPHRASE deploy

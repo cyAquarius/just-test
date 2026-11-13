@@ -119,6 +119,22 @@
                         <skip>true</skip>
                     </configuration>
                 </plugin>
+                <!-- publish.yml 与 publish-central-modules.sh 用 CLI 调用这两个插件。 -->
+                <plugin>
+                    <groupId>org.apache.maven.plugins</groupId>
+                    <artifactId>maven-help-plugin</artifactId>
+                    <version>3.5.2</version>
+                </plugin>
+                <plugin>
+                    <groupId>org.codehaus.mojo</groupId>
+                    <artifactId>versions-maven-plugin</artifactId>
+                    <version>2.23.0</version>
+                </plugin>
+                <plugin>
+                    <groupId>org.codehaus.mojo</groupId>
+                    <artifactId>exec-maven-plugin</artifactId>
+                    <version>3.5.0</version>
+                </plugin>
             </plugins>
         </pluginManagement>
         <plugins>
@@ -160,6 +176,28 @@
                             <rules>
                                 <dependencyConvergence/>
                             </rules>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+            <!-- #44：boot2 / boot3 适配源必须逐字节一致，漂移则构建失败。不共享源码树。 -->
+            <plugin>
+                <groupId>org.codehaus.mojo</groupId>
+                <artifactId>exec-maven-plugin</artifactId>
+                <executions>
+                    <execution>
+                        <id>assert-boot-adapter-pairs</id>
+                        <phase>validate</phase>
+                        <goals>
+                            <goal>exec</goal>
+                        </goals>
+                        <configuration>
+                            <executable>bash</executable>
+                            <workingDirectory>${project.basedir}</workingDirectory>
+                            <arguments>
+                                <argument>-c</argument>
+                                <argument><![CDATA[dir="$PWD"; while [ "$dir" != "/" ]; do if [ -f "$dir/scripts/assert-boot-adapter-pairs.sh" ]; then exec bash "$dir/scripts/assert-boot-adapter-pairs.sh"; fi; dir=$(dirname "$dir"); done; echo "Could not find scripts/assert-boot-adapter-pairs.sh above $PWD" >&2; exit 1]]></argument>
+                            </arguments>
                         </configuration>
                     </execution>
                 </executions>
@@ -241,8 +279,9 @@
                             <publishingServerId>central</publishingServerId>
                             <autoPublish>true</autoPublish>
                             <waitUntil>published</waitUntil>
-                            <!-- Reactor deploy never uploads; scripts/publish-central-modules.sh
-                                 publishes boot2/boot3 one deployment each via central-upload. -->
+                            <!-- 本插件保持 skip。boot3 把 just-test.central.split.executor 设为 false，
+                                 因此下面的 exec 会跑 scripts/publish-central-modules.sh，
+                                 把 boot2 与 boot3 分成两次部署上传。 -->
                             <skipPublishing>true</skipPublishing>
                         </configuration>
                     </plugin>
