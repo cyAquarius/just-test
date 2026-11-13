@@ -108,7 +108,7 @@ final class JustMockBeanOrigins {
                     message.append(", ");
                 }
                 first = false;
-                message.append(simpleName(autoConfiguration)).append(".class");
+                message.append(classLiteral(autoConfiguration)).append(".class");
             }
             message.append(" })\n");
         }
@@ -229,6 +229,19 @@ final class JustMockBeanOrigins {
             return null;
         }
         return path.replace('/', '.');
+    }
+
+    /**
+     * 诊断里可编译的类字面量。嵌套类保留外部类名，{@code com.acme.Outer$SampleLogAutoConfiguration}
+     * 写成 {@code Outer.SampleLogAutoConfiguration}，而不是被截成无法编译的 {@code SampleLogAutoConfiguration}。
+     */
+    static String classLiteral(String className) {
+        if (className == null || className.isEmpty()) {
+            return className;
+        }
+        int lastDot = className.lastIndexOf('.');
+        String simple = lastDot < 0 ? className : className.substring(lastDot + 1);
+        return simple.replace('$', '.');
     }
 
     static String simpleName(String className) {

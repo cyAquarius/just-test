@@ -63,6 +63,11 @@ final class JustMockKnownSources {
             "org.springframework.boot.test.context.TestConfiguration";
     private static final String JUST_TEST_PROJECT = "com.just.test.annotation.JustTestProject";
 
+    /**
+     * key 含测试 ClassLoader 的身份。Surefire 复用 JVM 时，同名类可能来自另一个 loader，
+     * 不能命中上一轮的条目。值里持有 {@code Class}，弱引用 ClassLoader 仍会被这些 Class 钉住，
+     * 所以这里只把 loader 身份放进 key，不改成弱引用。
+     */
     private static final Map<String, JustMockKnownSources> CACHE =
             new ConcurrentHashMap<String, JustMockKnownSources>();
 
@@ -77,7 +82,7 @@ final class JustMockKnownSources {
     static JustMockKnownSources forTest(Class<?> testClass, List<ContextConfigurationAttributes> attributes) {
         LinkedHashSet<Class<?>> roots = configurationRoots(testClass, attributes);
         String[] profiles = activeProfiles(testClass);
-        String cacheKey = cacheKey(roots, profiles);
+        String cacheKey = cacheKey(testClass.getClassLoader(), roots, profiles);
         JustMockKnownSources cached = CACHE.get(cacheKey);
         if (cached != null) {
             return cached;
@@ -305,7 +310,7 @@ final class JustMockKnownSources {
         }
     }
 
-    private static String cacheKey(Set<Class<?>> roots, String[] profiles) {
+    static String cacheKey(ClassLoader classLoader, Set<Class<?>> roots, String[] profiles) {
         List<String> rootNames = new ArrayList<String>();
         for (Class<?> root : roots) {
             rootNames.add(root.getName());
@@ -316,7 +321,7 @@ final class JustMockKnownSources {
             profileNames.addAll(Arrays.asList(profiles));
         }
         Collections.sort(profileNames);
-        return rootNames.toString() + "#" + profileNames;
+        return rootNames.toString() + "#" + profileNames + "#" + System.identityHashCode(classLoader);
     }
 
     private static Class<?> loadClass(String className, ClassLoader classLoader) {

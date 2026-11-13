@@ -7,6 +7,7 @@ import org.mockito.MockSettings;
 import org.mockito.Mockito;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.FactoryBean;
 import org.springframework.beans.PropertyValue;
 import org.springframework.beans.factory.config.ConstructorArgumentValues;
 import org.springframework.beans.factory.config.TypedStringValue;
@@ -25,6 +26,7 @@ import org.springframework.beans.factory.support.BeanDefinitionRegistry;
 import org.springframework.beans.factory.config.BeanFactoryPostProcessor;
 import org.springframework.core.type.MethodMetadata;
 
+import java.lang.reflect.Method;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.LinkedHashMap;
@@ -243,7 +245,8 @@ class JustMockPostProcessor implements BeanFactoryPostProcessor {
             if (!factoryMethod.isAnnotated(ThreadScopedMock.class.getName())) {
                 continue;
             }
-            Class<?> type = beanFactory.getType(beanName);
+            // 读 Bean 定义元数据。getType(name) 允许初始化 FactoryBean，这里不用它。
+            Class<?> type = threadScopedMockType(beanFactory, beanName, bd);
             if (type == null) {
                 log.warn("[JustMock] @ThreadScopedMock bean '{}' has null type, skipping", beanName);
                 continue;
@@ -1325,8 +1328,75 @@ class JustMockPostProcessor implements BeanFactoryPostProcessor {
     }
 
     private String generateBeanName(Class<?> type) {
-        String simpleName = type.getSimpleName();
-        return Character.toLowerCase(simpleName.charAt(0)) + simpleName.substring(1);
+        return JustMockDefinition.decapitalize(type.getSimpleName());
+    }
+
+    /**
+     * {@code @ThreadScopedMock} 的产品类型。优先 Bean 定义上已经写明的类型；
+     * 工厂方法返回普通类时用声明的返回类型；返回 {@link FactoryBean} 时解析泛型产品类型。
+     * 仍然未知时才 {@code getType(name, false)}，不初始化 FactoryBean。
+     */
+    private Class<?> threadScopedMockType(ConfigurableListableBeanFactory beanFactory,
+                                          String beanName,
+                                          BeanDefinition definition) {
+        Class<?> declared = declaredThreadScopedType(beanFactory, definition);
+        if (declared != null) {
+            return declared;
+        }
+        return safeBeanType(beanFactory, beanName);
+    }
+
+    private Class<?> declaredThreadScopedType(ConfigurableListableBeanFactory beanFactory,
+                                              BeanDefinition definition) {
+        Class<?> product = factoryProductType(beanFactory, definition);
+        if (product != null) {
+            return product;
+        }
+        if (!(definition instanceof AnnotatedBeanDefinition)) {
+            return null;
+        }
+        MethodMetadata metadata = ((AnnotatedBeanDefinition) definition).getFactoryMethodMetadata();
+        if (metadata == null) {
+            return null;
+        }
+        Class<?> returnType = metadataClass(beanFactory, metadata.getReturnTypeName());
+        if (returnType == null || returnType == void.class || returnType.isPrimitive()
+                || returnType == Object.class) {
+            return null;
+        }
+        if (FactoryBean.class.isAssignableFrom(returnType)) {
+            return factoryBeanProduct(beanFactory, metadata);
+        }
+        return returnType;
+    }
+
+    private static Class<?> factoryBeanProduct(ConfigurableListableBeanFactory beanFactory,
+                                               MethodMetadata metadata) {
+        Class<?> declaring = metadataClass(beanFactory, metadata.getDeclaringClassName());
+        if (declaring == null) {
+            return null;
+        }
+        String returnTypeName = metadata.getReturnTypeName();
+        Class<?> product = null;
+        for (Method method : declaring.getDeclaredMethods()) {
+            if (method.isBridge() || method.isSynthetic()
+                    || !method.getName().equals(metadata.getMethodName())
+                    || !returnTypeName.equals(method.getReturnType().getName())) {
+                continue;
+            }
+            Class<?> candidate = ResolvableType.forMethodReturnType(method)
+                    .as(FactoryBean.class)
+                    .getGeneric(0)
+                    .resolve();
+            if (candidate == null || candidate == Object.class) {
+                continue;
+            }
+            if (product != null && product != candidate) {
+                return null;
+            }
+            product = candidate;
+        }
+        return product;
     }
 
     private String generateAvailableBeanName(Class<?> type,

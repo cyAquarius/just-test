@@ -141,4 +141,23 @@ class JustTestProjectDataSourceAliasPostProcessorTest {
         assertTrue(registry.isAlias("masterDataSource"));
         assertTrue(registry.isAlias("masterDataTransactionManager"));
     }
+
+    @Test
+    void secondAliasRegistrationKeepsTheFirstSettings() {
+        DefaultListableBeanFactory registry = new DefaultListableBeanFactory();
+        JustTestProjectDataSourceAliasPostProcessor.register(
+                registry, new String[] {"firstAlias"}, new String[0]);
+        RootBeanDefinition first = (RootBeanDefinition) registry.getBeanDefinition(
+                JustTestProjectDataSourceAliasPostProcessor.BEAN_NAME);
+
+        JustTestProjectDataSourceAliasPostProcessor.register(
+                registry, new String[] {"secondAlias"}, new String[] {"secondTx"});
+
+        assertSame(first, registry.getBeanDefinition(JustTestProjectDataSourceAliasPostProcessor.BEAN_NAME));
+        ConstructorArgumentValues args = first.getConstructorArgumentValues();
+        assertArrayEquals(new String[] {"firstAlias"},
+                (String[]) args.getIndexedArgumentValue(0, String[].class).getValue());
+        assertArrayEquals(new String[0],
+                (String[]) args.getIndexedArgumentValue(1, String[].class).getValue());
+    }
 }

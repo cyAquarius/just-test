@@ -12,6 +12,7 @@ import java.util.concurrent.Future;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -63,6 +64,40 @@ class ThreadScopeTest {
 
         assertTrue(callbackCount.get() == 2);
         assertTrue(failure.getSuppressed().length == 1);
+    }
+
+    @Test
+    void resetSnapshotsCallbacksSoACallbackCanRegisterAnother() {
+        ThreadScope scope = new ThreadScope();
+        AtomicInteger runs = new AtomicInteger();
+        scope.get("sample", Object::new);
+        scope.registerDestructionCallback("sample", () -> {
+            runs.incrementAndGet();
+            scope.registerDestructionCallback("added-during-reset", runs::incrementAndGet);
+        });
+
+        ThreadScope.resetCurrentThread();
+
+        assertEquals(1, runs.get());
+    }
+
+    @Test
+    void conversationIdIsStableForTheThreadAndUniqueAcrossThreads() throws Exception {
+        ThreadScope scope = new ThreadScope();
+        String id = scope.getConversationId();
+
+        assertEquals(id, scope.getConversationId());
+        ThreadScope.resetCurrentThread();
+        assertEquals(id, new ThreadScope().getConversationId());
+        assertTrue(!id.equals(Thread.currentThread().getName()));
+
+        ExecutorService executor = Executors.newSingleThreadExecutor();
+        try {
+            String other = executor.submit(() -> new ThreadScope().getConversationId()).get();
+            assertTrue(!id.equals(other));
+        } finally {
+            executor.shutdownNow();
+        }
     }
 
     @Test

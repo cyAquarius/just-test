@@ -54,6 +54,8 @@ public final class JustTestProjectFeignAutoMock {
 
     public static void register(BeanDefinitionRegistry registry, String[] basePackages, Class<?>[] excludes) {
         if (registry.containsBeanDefinition(BEAN_NAME)) {
+            log.warn("[JustTest] Keeping the first @JustTestProject Feign auto-mock settings; "
+                    + "ignoring a later autoMockFeignClients contribution");
             return;
         }
         final String[] packages = basePackages == null ? new String[0] : basePackages;
@@ -107,8 +109,14 @@ public final class JustTestProjectFeignAutoMock {
             if (type == null || !accept(type)) {
                 continue;
             }
-            if (!discovered.containsKey(type) || !StringUtils.hasText(discovered.get(type))) {
+            String existing = discovered.get(type);
+            if (existing == null || !StringUtils.hasText(existing)) {
                 discovered.put(type, beanName);
+                continue;
+            }
+            if (!existing.equals(beanName)) {
+                log.warn("[JustTest] Multiple @FeignClient beans of type {}. Keeping '{}' and ignoring '{}'",
+                        type.getName(), existing, beanName);
             }
         }
     }

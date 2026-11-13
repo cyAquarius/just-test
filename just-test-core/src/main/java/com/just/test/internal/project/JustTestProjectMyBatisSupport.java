@@ -1,5 +1,7 @@
 package com.just.test.internal.project;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.config.RuntimeBeanReference;
 import org.springframework.beans.factory.support.BeanDefinitionRegistry;
 import org.springframework.beans.factory.support.RootBeanDefinition;
@@ -16,6 +18,8 @@ final class JustTestProjectMyBatisSupport {
     static final String MAPPER_SCANNER_BEAN_NAME = "justTestMapperScannerConfigurer";
     static final String JUST_TEST_DATA_SOURCE = "justTestDataSource";
 
+    private static final Logger log = LoggerFactory.getLogger(JustTestProjectMyBatisSupport.class);
+
     private static final String SQL_SESSION_FACTORY_BEAN =
             "org.mybatis.spring.SqlSessionFactoryBean";
     private static final String SQL_SESSION_TEMPLATE =
@@ -27,21 +31,21 @@ final class JustTestProjectMyBatisSupport {
     }
 
     static void register(BeanDefinitionRegistry registry, String[] mapperPackages) {
-        if (!registry.containsBeanDefinition(SQL_SESSION_FACTORY_BEAN_NAME)) {
+        if (!keepExisting(registry, SQL_SESSION_FACTORY_BEAN_NAME, "SqlSessionFactory")) {
             RootBeanDefinition factory = new RootBeanDefinition();
             factory.setBeanClassName(SQL_SESSION_FACTORY_BEAN);
             factory.getPropertyValues().add("dataSource",
                     new RuntimeBeanReference(JUST_TEST_DATA_SOURCE));
             registry.registerBeanDefinition(SQL_SESSION_FACTORY_BEAN_NAME, factory);
         }
-        if (!registry.containsBeanDefinition(SQL_SESSION_TEMPLATE_BEAN_NAME)) {
+        if (!keepExisting(registry, SQL_SESSION_TEMPLATE_BEAN_NAME, "SqlSessionTemplate")) {
             RootBeanDefinition template = new RootBeanDefinition();
             template.setBeanClassName(SQL_SESSION_TEMPLATE);
             template.getConstructorArgumentValues().addIndexedArgumentValue(
                     0, new RuntimeBeanReference(SQL_SESSION_FACTORY_BEAN_NAME));
             registry.registerBeanDefinition(SQL_SESSION_TEMPLATE_BEAN_NAME, template);
         }
-        if (!registry.containsBeanDefinition(MAPPER_SCANNER_BEAN_NAME)) {
+        if (!keepExisting(registry, MAPPER_SCANNER_BEAN_NAME, "MapperScanner")) {
             RootBeanDefinition scanner = new RootBeanDefinition();
             scanner.setBeanClassName(MAPPER_SCANNER_CONFIGURER);
             scanner.getPropertyValues().add("basePackage",
@@ -49,5 +53,14 @@ final class JustTestProjectMyBatisSupport {
             scanner.getPropertyValues().add("sqlSessionFactoryBeanName", SQL_SESSION_FACTORY_BEAN_NAME);
             registry.registerBeanDefinition(MAPPER_SCANNER_BEAN_NAME, scanner);
         }
+    }
+
+    private static boolean keepExisting(BeanDefinitionRegistry registry, String beanName, String role) {
+        if (!registry.containsBeanDefinition(beanName)) {
+            return false;
+        }
+        log.warn("[JustTest] Keeping existing bean '{}'; the @JustTestProject {} contribution is ignored",
+                beanName, role);
+        return true;
     }
 }

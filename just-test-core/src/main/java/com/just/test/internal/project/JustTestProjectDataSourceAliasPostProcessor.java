@@ -65,6 +65,8 @@ public class JustTestProjectDataSourceAliasPostProcessor implements BeanDefiniti
                          String[] dataSourceAliases,
                          String[] transactionManagerAliases) {
         if (registry.containsBeanDefinition(BEAN_NAME)) {
+            log.warn("[JustTest] Keeping the first @JustTestProject data source alias settings; "
+                    + "ignoring a later alias contribution");
             return;
         }
         RootBeanDefinition definition = new RootBeanDefinition(JustTestProjectDataSourceAliasPostProcessor.class);

@@ -11,6 +11,7 @@ import org.springframework.beans.factory.annotation.AnnotatedBeanDefinition;
 import org.springframework.beans.factory.config.BeanDefinition;
 import org.springframework.test.context.ContextConfiguration;
 import org.springframework.test.context.ContextConfigurationAttributes;
+import org.junit.jupiter.api.Disabled;
 import org.springframework.util.ClassUtils;
 
 import java.lang.reflect.Field;
@@ -219,9 +220,39 @@ final class JustMockInterceptPlan {
             if (startupClass(testClass, Collections.<ContextConfigurationAttributes>emptyList()) != startup) {
                 continue;
             }
+            // 类级 @Disabled（含组合注解、接口上的 @Disabled）的测试不会执行。
+            // 它们的真实 Bean @JustMock 不得进入共享拦截并集，否则会 fail-fast 整个 Context，
+            // 或改掉无关 Bean 的生命周期。@Disabled 没有 @Inherited，父类上的不算到子类。
+            // 方法级 @Disabled 不跳过：类仍会运行，字段声明仍然有效。
+            if (isDisabled(testClass)) {
+                continue;
+            }
             collectJustMockTypes(testClass, types, declaredBy);
         }
         return Collections.unmodifiableSet(types);
+    }
+
+    /**
+     * 与 JUnit 5.9 {@code DisabledCondition} 一样：这个类自己（含元注解上的 {@code @Disabled}），
+     * 以及它直接实现的接口。{@code @Disabled} 没有 {@code @Inherited}，父类上的注解不会禁用子类。
+     *
+     * <p>用 {@code isAnnotated}（get 语义，只在注解带 {@code @Inherited} 时才看父类）。
+     * {@code hasAnnotation} 是 find 语义，会无视 {@code @Inherited} 搜父类，
+     * 从而把未禁用的子类也排除出拦截并集。</p>
+     */
+    private static boolean isDisabled(Class<?> type) {
+        if (type == null || type == Object.class) {
+            return false;
+        }
+        if (AnnotatedElementUtils.isAnnotated(type, Disabled.class)) {
+            return true;
+        }
+        for (Class<?> iface : type.getInterfaces()) {
+            if (isDisabled(iface)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private static void collectJustMockTypes(Class<?> testClass,

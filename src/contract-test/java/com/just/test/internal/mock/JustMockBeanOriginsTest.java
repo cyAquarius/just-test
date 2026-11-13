@@ -4,6 +4,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.support.BeanDefinitionBuilder;
 import org.springframework.beans.factory.support.DefaultListableBeanFactory;
 
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
 
@@ -58,5 +59,23 @@ class JustMockBeanOriginsTest {
         assertEquals(1, candidates.size());
         assertTrue(candidates.get(0).autoConfiguration);
         assertEquals("com.acme.LogAutoConfiguration", candidates.get(0).origin);
+    }
+
+    @Test
+    void nestedAutoConfigurationSnippetKeepsTheOuterClass() {
+        List<JustMockBeanOrigins.Candidate> candidates = Arrays.asList(
+                new JustMockBeanOrigins.Candidate("auditMock", "@JustMock", true, false),
+                new JustMockBeanOrigins.Candidate("dataAudit",
+                        "com.acme.Outer$SampleLogAutoConfiguration", false, true));
+
+        String diagnostic = JustMockBeanOrigins.format(Object.class, candidates);
+
+        assertTrue(diagnostic.contains("Outer.SampleLogAutoConfiguration.class"));
+        assertTrue(!diagnostic.contains("SampleLogAutoConfiguration.class,")
+                && !diagnostic.contains("{ SampleLogAutoConfiguration.class"));
+        assertEquals("Outer.SampleLogAutoConfiguration",
+                JustMockBeanOrigins.classLiteral("com.acme.Outer$SampleLogAutoConfiguration"));
+        assertEquals("LogAutoConfiguration",
+                JustMockBeanOrigins.simpleName("com.acme.LogAutoConfiguration"));
     }
 }
