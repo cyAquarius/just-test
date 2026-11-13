@@ -165,7 +165,7 @@ class CreateJustTest extends OrderJustTestSupport {
 
 ## H2 与 SQL
 
-- 必须提供 `src/test/resources/sql/schema.sql`。对 MySQL dump，清理器只剥离常见附加语法（如 `ROW_FORMAT`、`UNSIGNED`、`ON UPDATE CURRENT_TIMESTAMP` 等），不覆盖全部 MySQL 方言。不要假定任意生产 DDL 都能原样跑在 H2 上。
+- 必须提供 `src/test/resources/sql/schema.sql`。对 MySQL dump，清理器只剥离常见附加语法（如 `ROW_FORMAT`、`UNSIGNED`、`ON UPDATE CURRENT_TIMESTAMP` 等），不覆盖全部 MySQL 方言。字符串、注释和反引号标识符里的文本保持原样。不要假定任意生产 DDL 都能原样跑在 H2 上。
 - MyBatis 测试 SQL 只做窄改写：`IF(...)` → `CASEWHEN(...)`，`DATE_FORMAT(...)` → `FORMATDATETIME(...)`。纯 `JdbcTemplate` SQL 不走这条路径，不会被改写。
 - 新 SQL 使用标准单引号。双引号字符串只是兼容历史 Mapper 的过渡能力。
 - 默认会缓存清理后的 DDL，并从模板库克隆 schema。不要给 case H2 URL 加 `DB_CLOSE_DELAY=-1` 来掩盖连接已关闭。

@@ -491,7 +491,7 @@ flowchart TD
 - H2 按 JustTest `ApplicationContext` 与活动 case 隔离。
 - 清理后的 DDL 会缓存。默认从模板数据库克隆 schema。用 `justtest.schema.clone=false` 关闭克隆。
 - case 结束时释放对应数据库。schema 初始化失败会重试。
-- 对于 MySQL 的 `schema.sql` dump，清理器会剥离常见的 `SHOW CREATE TABLE` 附加语法：表级 `ROW_FORMAT`、`UNSIGNED`、`ON UPDATE CURRENT_TIMESTAMP`、列级 `CHARACTER SET`、`DEFAULT b'0'`。
+- 对于 MySQL 的 `schema.sql` dump，清理器会剥离常见的 `SHOW CREATE TABLE` 附加语法：表级 `ROW_FORMAT`、`UNSIGNED`、`ON UPDATE CURRENT_TIMESTAMP`、列级 `CHARACTER SET`、`DEFAULT b'0'`。字符串、注释和反引号标识符里的文本保持原样。
 - 不覆盖全部 MySQL 方言。
 - `@JustTest` 拥有 H2 时，框架 `JdbcTemplate` 或 `JustTestRoutingDataSource` 缺失是配置错误，会 fail-fast，而不会跳过 prepare / verify。见[边界](#boundaries)。
 
@@ -689,6 +689,7 @@ junit.jupiter.execution.parallel.mode.classes.default=concurrent
 
 当前 Maven Central 发布版本是 `1.2.9`。上面的规则对应该版本。
 
+- **1.2.10（待发布）** — MySQL DDL 清洗不再改写字符串、注释和反引号标识符里的文本。注释里的转义引号（`\'` 或 `''`）会随 `COMMENT` 一起去掉，不再残留片段导致 H2 建表失败。`COLLATE` 仍会去掉列级 `COLLATE name` 和表级 `COLLATE=name`，不会再删掉 `collate_flag` 这类标识符。[Issue #102](https://github.com/cyAquarius/just-test/issues/102)。
 - **1.2.10（待发布）** — 历史双引号字符串的兼容范围加上 `CONCAT`。`CONCAT("a","b")` 会改成 `CONCAT('a','b')`。新 SQL 仍应使用单引号。[Issue #107](https://github.com/cyAquarius/just-test/issues/107)。
 - **1.2.10（待发布）** — `DATE_FORMAT` 的字面文本会为 H2 `FORMATDATETIME` 加上引号，因此 `Date: %Y`、`Day %d` 这类英文不会再被当成模式符。`%M` 映射为月份名，`%T` 映射为 `HH:mm:ss`，`%%` 映射为一个 `%`。未知说明符会 fail-fast，错误信息包含原始格式串。`%Y-%m-%d %H:%i:%s` 这类纯数字格式和中文 literal 的结果保持不变。[Issue #101](https://github.com/cyAquarius/just-test/issues/101)。
 - **1.2.10（待发布）** — YAML 加载和断言的静默通过改为 fail-fast。重复 key 会被拒绝。存在但为空或缺少 `type` 的 `expect_exception.yaml` 是配置错误，不会吞掉异常。`expect.yaml` 的 `[C]` 命中多行时失败，直到收紧到唯一一行。`[J]` 把数值按 BigDecimal 比较（`1` 等于 `1.0`），JSON 解析失败会报错，不再退回字符串比较。对象内部单独的 `[N]:` 只跳过该键。[Issue #113](https://github.com/cyAquarius/just-test/issues/113)。
