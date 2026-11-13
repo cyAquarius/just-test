@@ -233,14 +233,18 @@ final class JustMockInterceptPlan {
     }
 
     /**
-     * 与 JUnit 5.9 {@code DisabledCondition} 一样：类上直接或经元注解出现的 {@code @Disabled}，
-     * 以及接口上的 {@code @Disabled}。不沿父类查找，因为 {@code @Disabled} 不是 {@code @Inherited}。
+     * 与 JUnit 5.9 {@code DisabledCondition} 一样：这个类自己（含元注解上的 {@code @Disabled}），
+     * 以及它直接实现的接口。{@code @Disabled} 没有 {@code @Inherited}，父类上的注解不会禁用子类。
+     *
+     * <p>用 {@code isAnnotated}（get 语义，只在注解带 {@code @Inherited} 时才看父类）。
+     * {@code hasAnnotation} 是 find 语义，会无视 {@code @Inherited} 搜父类，
+     * 从而把未禁用的子类也排除出拦截并集。</p>
      */
     private static boolean isDisabled(Class<?> type) {
         if (type == null || type == Object.class) {
             return false;
         }
-        if (AnnotatedElementUtils.hasAnnotation(type, Disabled.class)) {
+        if (AnnotatedElementUtils.isAnnotated(type, Disabled.class)) {
             return true;
         }
         for (Class<?> iface : type.getInterfaces()) {
