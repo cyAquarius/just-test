@@ -689,6 +689,7 @@ junit.jupiter.execution.parallel.mode.classes.default=concurrent
 
 当前 Maven Central 发布版本是 `1.2.9`。上面的规则对应该版本。
 
+- **1.2.10（待发布）** — Boot 2 在 `@JustMock` 替换、`@JustSpy` 或真实 Bean 拦截要 mock 具体类，且该类或其父类（不含 `java.lang.Object`）声明了 public 或 protected 的 final 实例方法、当前 MockMaker 又不是 inline 时，启动期 fail-fast。错误信息会提示配置 `mockito-extensions/org.mockito.plugins.MockMaker`，或引入 `mockito-inline`。JustTest 仍然不会选定 MockMaker。private、包内可见和 static 的 final 不会触发；Boot 3 行为不变。[Issue #104](https://github.com/cyAquarius/just-test/issues/104)。
 - **1.2.10（待发布）** — `@JustMock` 替换 Bean，以及拦截隐藏真实 Bean 时，会保留该 Bean 的别名。`@Qualifier("alias")` 与 `@Resource(name = "alias")` 仍然注入线程作用域 mock。恢复别名时若与已有 Bean 名或其他别名冲突，则跳过该别名并记录警告，其余安装继续完成。[Issue #103](https://github.com/cyAquarius/just-test/issues/103)。
 - **1.2.10（待发布）** — MySQL DDL 清洗不再改写字符串、注释和反引号标识符里的文本。注释里的转义引号（`\'` 或 `''`）会随 `COMMENT` 一起去掉，不再残留片段导致 H2 建表失败。`COLLATE` 仍会去掉列级 `COLLATE name` 和表级 `COLLATE=name`，不会再删掉 `collate_flag` 这类标识符。[Issue #102](https://github.com/cyAquarius/just-test/issues/102)。
 - **1.2.10（待发布）** — 历史双引号字符串的兼容范围加上 `CONCAT`。`CONCAT("a","b")` 会改成 `CONCAT('a','b')`。新 SQL 仍应使用单引号。[Issue #107](https://github.com/cyAquarius/just-test/issues/107)。
