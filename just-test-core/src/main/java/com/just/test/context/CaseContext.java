@@ -68,13 +68,17 @@ public class CaseContext {
         if (value == null) {
             return null;
         }
-        if (value instanceof Long) {
-            return (Long) value;
+        try {
+            if (value instanceof Long) {
+                return (Long) value;
+            }
+            if (value instanceof Number) {
+                return ((Number) value).longValue();
+            }
+            return Long.valueOf(value.toString());
+        } catch (RuntimeException e) {
+            throw conversionFailure(key, "Long", e);
         }
-        if (value instanceof Number) {
-            return ((Number) value).longValue();
-        }
-        return Long.valueOf(value.toString());
     }
 
     public Integer getInt(String key) {
@@ -82,13 +86,17 @@ public class CaseContext {
         if (value == null) {
             return null;
         }
-        if (value instanceof Integer) {
-            return (Integer) value;
+        try {
+            if (value instanceof Integer) {
+                return (Integer) value;
+            }
+            if (value instanceof Number) {
+                return ((Number) value).intValue();
+            }
+            return Integer.valueOf(value.toString());
+        } catch (RuntimeException e) {
+            throw conversionFailure(key, "Integer", e);
         }
-        if (value instanceof Number) {
-            return ((Number) value).intValue();
-        }
-        return Integer.valueOf(value.toString());
     }
 
     @SuppressWarnings("unchecked")
@@ -97,7 +105,11 @@ public class CaseContext {
         if (value == null) {
             return null;
         }
-        return convertElement(value, type);
+        try {
+            return convertElement(value, type);
+        } catch (RuntimeException e) {
+            throw conversionFailure(key, type.getName(), e);
+        }
     }
 
     /**
@@ -121,13 +133,17 @@ public class CaseContext {
         if (value == null) {
             return Collections.emptyList();
         }
-        if (!(value instanceof List)) {
-            // 单值兼容：自动包装为单元素 List
-            return Collections.singletonList(convertElement(value, elementType));
+        try {
+            if (!(value instanceof List)) {
+                // 单值兼容：自动包装为单元素 List
+                return Collections.singletonList(convertElement(value, elementType));
+            }
+            return ((List<?>) value).stream()
+                    .map(item -> convertElement(item, elementType))
+                    .collect(Collectors.toList());
+        } catch (RuntimeException e) {
+            throw conversionFailure(key, "List<" + elementType.getSimpleName() + ">", e);
         }
-        return ((List<?>) value).stream()
-                .map(item -> convertElement(item, elementType))
-                .collect(Collectors.toList());
     }
 
     /**
@@ -190,6 +206,12 @@ public class CaseContext {
             }
         }
         return type.cast(item);
+    }
+
+    private IllegalArgumentException conversionFailure(String key, String target, RuntimeException cause) {
+        return new IllegalArgumentException(String.format(
+                "[JustTest] Cannot convert parameter '%s' to %s in case '%s' (%s): %s",
+                key, target, caseName, casePath, cause.getMessage()), cause);
     }
 
     // ---- 执行结果 ----

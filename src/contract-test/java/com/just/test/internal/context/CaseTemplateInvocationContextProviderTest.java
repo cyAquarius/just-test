@@ -12,12 +12,15 @@ import com.just.test.internal.context.caseroot.inheritedmarker.child.Unannotated
 import com.just.test.internal.context.caseroot.missingcustom.MissingCustomRootCases;
 import com.just.test.internal.context.caseroot.multi.FirstConcreteCases;
 import com.just.test.internal.context.caseroot.multi.SecondConcreteCases;
+import com.just.test.internal.loader.DataSetLoader;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtensionConfigurationException;
 import org.junit.jupiter.api.extension.ExtensionContext;
 
 import java.lang.reflect.Method;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -42,6 +45,16 @@ class CaseTemplateInvocationContextProviderTest {
                 "com/just/test/internal/context/caseroot/defaultdiscovery/package-case",
                 cases.get(0).getCasePath());
         assertEquals(7, cases.get(0).getInt("value"));
+    }
+
+    @Test
+    void discoversCasesUnderTheDefaultPackage() {
+        Set<String> caseNames = new CaseTemplateInvocationContextProvider().findCaseNames("");
+
+        assertTrue(caseNames.contains("just-test-default-package-case"), caseNames.toString());
+        Map<String, Object> request = DataSetLoader.parseYamlByPath(
+                "just-test-default-package-case", "request.yaml");
+        assertEquals(3, ((Number) request.get("value")).intValue());
     }
 
     @Test

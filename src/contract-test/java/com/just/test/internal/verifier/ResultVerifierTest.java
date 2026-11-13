@@ -65,6 +65,22 @@ class ResultVerifierTest {
     }
 
     @Test
+    void flagOnlyNDoesNotSkipLaterFields() {
+        Map<String, Object> actual = new LinkedHashMap<>();
+        Map<String, Object> nested = new LinkedHashMap<>();
+        nested.put("status", "wrong");
+        actual.put("nested", nested);
+
+        for (String casePath : Arrays.asList(
+                "com/just/test/verifier/result/flag-n-first",
+                "com/just/test/verifier/result/flag-n-last")) {
+            List<String> failures = ResultVerifier.verify(actual, casePath);
+            assertTrue(failures.stream().anyMatch(failure -> failure.contains("result.nested.status")),
+                    casePath + " " + failures);
+        }
+    }
+
+    @Test
     void rejectsLowercaseCnInsteadOfExactMatch() {
         Map<String, Object> actual = new LinkedHashMap<>();
         actual.put("status", "ready");

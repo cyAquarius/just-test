@@ -2,6 +2,8 @@ package com.just.test.internal.matcher;
 
 import com.alibaba.fastjson2.JSON;
 
+import java.math.BigDecimal;
+import java.math.BigInteger;
 import java.util.List;
 import java.util.Map;
 import java.util.regex.Pattern;
@@ -19,7 +21,7 @@ import java.util.regex.Pattern;
  *   <tr><td>R</td><td>Regex — 正则匹配</td><td>expect</td><td>{@code name[R]: "张.*"}</td></tr>
  *   <tr><td>A</td><td>Available — 非空断言</td><td>expect</td><td>{@code create_by[A]:}</td></tr>
  *   <tr><td>D</td><td>Date — 相对当前时刻的新鲜度（秒），YAML 期望值不比较</td><td>expect</td><td>{@code gmt_create[D60]:} 距现在 60 秒内</td></tr>
- *   <tr><td>J</td><td>JSON — JSON 结构比较</td><td>expect</td><td>{@code ext_info[J]: '{"k":"v"}'}</td></tr>
+ *   <tr><td>J</td><td>JSON — JSON 结构比较；数值按 BigDecimal 归一后比较</td><td>expect</td><td>{@code ext_info[J]: '{"k":"v"}'}</td></tr>
  *   <tr><td>F</td><td>Function — DB 函数（prepare 阶段插入）</td><td>prepare</td><td>{@code gmt_create[F]: "NOW()"}</td></tr>
  * </table>
  *
@@ -110,7 +112,12 @@ public final class BuiltInMatchers {
         if (flag.length() == 1) {
             return 60; // 默认 60 秒
         }
-        return Integer.parseInt(flag.substring(1));
+        try {
+            return Integer.parseInt(flag.substring(1));
+        } catch (NumberFormatException e) {
+            throw new IllegalArgumentException(
+                    "[JustTest] Invalid date tolerance [" + flag + "]", e);
+        }
     }
 
     // ==================== Flag 白名单 ====================
@@ -149,10 +156,38 @@ public final class BuiltInMatchers {
 
     private static void requireKnownFlag(String rawKey, FlagStage stage, String caseLocation) {
         String flag = extractFlag(rawKey);
-        if (flag == null || isAllowed(flag, stage)) {
+        if (flag == null) {
             return;
         }
-        throw new IllegalArgumentException(unknownFlagMessage(rawKey, flag, stage, caseLocation));
+        if (!isAllowed(flag, stage)) {
+            throw new IllegalArgumentException(unknownFlagMessage(rawKey, flag, stage, caseLocation));
+        }
+        requireParsableDateTolerance(rawKey, flag, caseLocation);
+    }
+
+    /**
+     * {@code [D60]} 的秒数必须能被 {@link Integer#parseInt} 接受。
+     * 超出 int 范围时失败，并带上字段和 case，而不是裸 {@link NumberFormatException}。
+     */
+    private static void requireParsableDateTolerance(String rawKey, String flag, String caseLocation) {
+        if (!isDateFlag(flag) || flag.length() == 1) {
+            return;
+        }
+        try {
+            extractDateTolerance(flag);
+        } catch (IllegalArgumentException e) {
+            String fieldName = extractFieldName(rawKey);
+            if (fieldName == null || fieldName.isEmpty()) {
+                fieldName = rawKey;
+            }
+            String location = caseLocation == null || caseLocation.trim().isEmpty()
+                    ? "(unknown)" : caseLocation;
+            throw new IllegalArgumentException(
+                    "[JustTest] Invalid date tolerance [" + flag + "] on field '" + fieldName
+                            + "' in case '" + location
+                            + "'. Tolerance must fit in a Java int number of seconds.",
+                    e);
+        }
     }
 
     /**
@@ -236,7 +271,13 @@ public final class BuiltInMatchers {
         }
 
         if (flag != null && isDateFlag(flag)) {
-            int tolerance = extractDateTolerance(flag);
+            int tolerance;
+            try {
+                tolerance = extractDateTolerance(flag);
+            } catch (IllegalArgumentException e) {
+                throw new IllegalArgumentException(
+                        "[JustTest] Invalid date tolerance [" + flag + "] at '" + fieldPath + "'", e);
+            }
             FieldMatcher matcher = dateMatcher(tolerance);
             return matcher.matches(actualValue) ? ""
                     : String.format("[%s]: expected %s but got <%s>", fieldPath, matcher.describe(), actualValue);
@@ -363,19 +404,85 @@ public final class BuiltInMatchers {
             if (actualValue == null || expectedJson == null) {
                 return false;
             }
-            try {
-                Object expected = JSON.parse(expectedJson);
-                Object actual = JSON.parse(actualValue.toString());
-                return expected.equals(actual);
-            } catch (Exception e) {
-                // JSON 解析失败，降级为字符串比较
-                return expectedJson.equals(actualValue.toString());
-            }
+            Object expected = parseJson(expectedJson, "expected");
+            Object actual = parseJson(actualValue.toString(), "actual");
+            return jsonEquals(expected, actual);
         }
 
         @Override
         public String describe() {
             return "[J](" + expectedJson + ")";
+        }
+
+        private static Object parseJson(String text, String side) {
+            try {
+                return JSON.parse(text);
+            } catch (RuntimeException e) {
+                throw new IllegalArgumentException(
+                        "[JustTest] [J] failed to parse " + side + " JSON <" + text + ">: "
+                                + e.getMessage(),
+                        e);
+            }
+        }
+
+        /**
+         * 数值先归一成 BigDecimal，再用 {@link BigDecimal#compareTo} 比较，因此 {@code 1} 与 {@code 1.0} 相等。
+         * 不改动字符串、布尔或对象结构的比较。
+         */
+        private static boolean jsonEquals(Object left, Object right) {
+            if (left == right) {
+                return true;
+            }
+            if (left == null || right == null) {
+                return false;
+            }
+            if (left instanceof Number && right instanceof Number) {
+                return toBigDecimal((Number) left).compareTo(toBigDecimal((Number) right)) == 0;
+            }
+            if (left instanceof Map && right instanceof Map) {
+                Map<?, ?> leftMap = (Map<?, ?>) left;
+                Map<?, ?> rightMap = (Map<?, ?>) right;
+                if (leftMap.size() != rightMap.size()) {
+                    return false;
+                }
+                for (Map.Entry<?, ?> entry : leftMap.entrySet()) {
+                    if (!rightMap.containsKey(entry.getKey())) {
+                        return false;
+                    }
+                    if (!jsonEquals(entry.getValue(), rightMap.get(entry.getKey()))) {
+                        return false;
+                    }
+                }
+                return true;
+            }
+            if (left instanceof List && right instanceof List) {
+                List<?> leftList = (List<?>) left;
+                List<?> rightList = (List<?>) right;
+                if (leftList.size() != rightList.size()) {
+                    return false;
+                }
+                for (int i = 0; i < leftList.size(); i++) {
+                    if (!jsonEquals(leftList.get(i), rightList.get(i))) {
+                        return false;
+                    }
+                }
+                return true;
+            }
+            return left.equals(right);
+        }
+
+        private static BigDecimal toBigDecimal(Number number) {
+            if (number instanceof BigDecimal) {
+                return (BigDecimal) number;
+            }
+            if (number instanceof BigInteger) {
+                return new BigDecimal((BigInteger) number);
+            }
+            if (number instanceof Long || number instanceof Integer
+                    || number instanceof Short || number instanceof Byte) {
+                return BigDecimal.valueOf(number.longValue());
+            }
+            return new BigDecimal(number.toString());
         }
     }
 }

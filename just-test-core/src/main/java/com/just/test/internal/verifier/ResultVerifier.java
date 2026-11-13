@@ -319,16 +319,9 @@ public class ResultVerifier {
             String flag = BuiltInMatchers.extractFlag(rawKey);
             String fieldName = BuiltInMatchers.extractFieldName(rawKey);
 
-            // flag-only key（如 [A]:、[N]:）— fieldName 为空，作用于当前对象整体
+            // flag-only key（如 [A]:、[N]:）没有字段名。
+            // [N] 只跳过这个键；不能 return，否则 YAML 键序靠前时会静默跳过后续字段。
             if (flag != null && fieldName.isEmpty()) {
-                if (BuiltInMatchers.FLAG_N.equals(flag)) {
-                    return; // 跳过当前 Map 的所有后续比较
-                }
-                if (BuiltInMatchers.FLAG_A.equals(flag)) {
-                    // 当前 Map 已非 null（否则不会进入 compareMap），直接通过
-                    continue;
-                }
-                // 其他 flag-only key 忽略
                 continue;
             }
 

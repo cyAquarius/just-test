@@ -2,8 +2,10 @@ package com.just.test.internal.verifier;
 
 import org.junit.jupiter.api.Test;
 
+import java.util.Arrays;
 import java.util.List;
 
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -59,6 +61,21 @@ class ExceptionVerifierTest {
     }
 
     @Test
+    void emptyExpectExceptionDoesNotSwallowNullPointerException() {
+        assertIncompleteExpectException("com/just/test/verifier/exception/empty");
+        assertIncompleteExpectException("com/just/test/verifier/exception/empty-map");
+        assertIncompleteExpectException("com/just/test/verifier/exception/notype");
+    }
+
+    @Test
+    void missingExpectExceptionAgreesWithContentCheck() {
+        String casePath = "com/just/test/verifier/exception/absent";
+
+        assertFalse(ExceptionVerifier.hasExpectException(casePath));
+        assertTrue(ExceptionVerifier.verify(new NullPointerException("boom"), casePath).isEmpty());
+    }
+
+    @Test
     void failsFastWhenExpectExceptionHasBothSuffixes() {
         IllegalStateException error = assertThrows(IllegalStateException.class,
                 () -> ExceptionVerifier.hasExpectException(
@@ -66,6 +83,20 @@ class ExceptionVerifierTest {
         assertTrue(error.getMessage().contains("same case stage"), error.getMessage());
         assertTrue(error.getMessage().contains("expect_exception.yaml"), error.getMessage());
         assertTrue(error.getMessage().contains("expect_exception.yml"), error.getMessage());
+    }
+
+    private static void assertIncompleteExpectException(String casePath) {
+        NullPointerException npe = new NullPointerException("boom");
+        IllegalArgumentException fromVerify = assertThrows(IllegalArgumentException.class,
+                () -> ExceptionVerifier.verify(npe, casePath));
+        IllegalArgumentException fromExistence = assertThrows(IllegalArgumentException.class,
+                () -> ExceptionVerifier.hasExpectException(casePath));
+        for (IllegalArgumentException error : Arrays.asList(fromVerify, fromExistence)) {
+            String message = error.getMessage();
+            assertTrue(message.contains(casePath), message);
+            assertTrue(message.contains("empty or missing type"), message);
+            assertTrue(message.contains("does not swallow"), message);
+        }
     }
 
     private static void assertUnknownFlag(IllegalArgumentException error, String field, String flag,

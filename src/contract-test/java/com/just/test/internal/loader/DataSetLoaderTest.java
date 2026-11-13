@@ -82,6 +82,22 @@ class DataSetLoaderTest {
     }
 
     @Test
+    void rejectsDuplicateKeysOnTheSharedParsePath() {
+        String casePath = "com/just/test/internal/loader/duplicate-keys";
+        for (String fileName : Arrays.asList("prepare.yaml", "expect.yaml", "response.yaml")) {
+            RuntimeException error = assertThrows(RuntimeException.class,
+                    () -> DataSetLoader.parseYamlRaw(casePath, fileName));
+            String message = error.getMessage();
+            assertTrue(message.toLowerCase().contains("duplicate"), message);
+            assertTrue(message.contains("name"), message);
+
+            RuntimeException asMap = assertThrows(RuntimeException.class,
+                    () -> DataSetLoader.parseYamlByPath(casePath, fileName));
+            assertTrue(asMap.getMessage().toLowerCase().contains("duplicate"), asMap.getMessage());
+        }
+    }
+
+    @Test
     void rejectsUnsafeColumnNames() {
         Map<String, Object> row = new LinkedHashMap<>();
         row.put("id;drop", 1);

@@ -227,7 +227,13 @@ public class DataSetLoader {
                 log.debug("[JustTest] YAML file not found: {}", resourcePath);
                 return null;
             }
-            Yaml yaml = new Yaml(new SafeConstructor(new LoaderOptions()));
+            // SnakeYAML 1.33 / 2.4 的 Yaml(BaseConstructor) 会用一份默认 LoaderOptions
+            // 把 constructor 的 allowDuplicateKeys 重新设回 true。先记下 false，构造后再写回去。
+            LoaderOptions options = new LoaderOptions();
+            options.setAllowDuplicateKeys(false);
+            SafeConstructor constructor = new SafeConstructor(options);
+            Yaml yaml = new Yaml(constructor);
+            constructor.setAllowDuplicateKeys(false);
             Object raw = yaml.load(new InputStreamReader(is, StandardCharsets.UTF_8));
             return normalizeYamlKeys(raw);
         } catch (RuntimeException e) {

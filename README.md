@@ -233,7 +233,7 @@ src/test/java/com/example/justtest/order/
     └── ok/
 ```
 
-Each case directory may include `request.yaml`, `prepare.yaml`, `response.yaml`, `expect.yaml`, and `expect_exception.yaml` as needed. The same stage also accepts `.yml`. If both suffixes exist for one stage, JustTest fails fast and names both paths.
+Each case directory may include `request.yaml`, `prepare.yaml`, `response.yaml`, `expect.yaml`, and `expect_exception.yaml` as needed. The same stage also accepts `.yml`. If both suffixes exist for one stage, JustTest fails fast and names both paths. Duplicate keys in a case file fail at parse time.
 
 Map those YAML files onto the test classpath:
 
@@ -513,7 +513,7 @@ flowchart TD
 - `prepare.yaml`: rows inserted before the case.
 - `response.yaml`: expected return value. Compared only to the object written with `CaseContext.setResult`, not the test method's Java return value.
 - `expect.yaml`: expected database rows.
-- `expect_exception.yaml`: expected exception type and optional message.
+- `expect_exception.yaml`: expected exception type and optional message. A file that is present but empty or missing `type` is a configuration error and does not accept an arbitrary exception.
 
 Field suffix flags are stage-specific:
 
@@ -537,7 +537,7 @@ Field suffix flags are stage-specific:
 
 Flags are case-sensitive. An unknown flag such as `[cn]` or `[CC]`, or a flag used outside its stage, fails immediately. The error names the field, the case path, and the flags legal for that stage.
 
-For database expectations, prefer explicit `[C]` fields so the intended row is unambiguous.
+For database expectations, prefer explicit `[C]` fields so the intended row is unambiguous. A `[C]` condition that matches more than one row fails until it is tightened to one row. `[J]` compares JSON structure; numeric values match as BigDecimal, so `1` and `1.0` are equal, and JSON that cannot be parsed is an error.
 
 <a id="lifecycle"></a>
 
@@ -689,6 +689,7 @@ A parallel failure is not automatically a JustTest isolation failure; first insp
 
 The current Maven Central release is `1.2.9`. The rules above match that release.
 
+- **1.2.10 (upcoming)** — YAML load and assertion edges fail fast instead of passing silently. Duplicate keys are rejected. An `expect_exception.yaml` that exists but is empty or missing `type` is a configuration error and does not swallow exceptions. An `expect.yaml` `[C]` that matches more than one row fails until `[C]` is tightened. `[J]` compares numbers as BigDecimal (`1` equals `1.0`) and reports JSON parse failures instead of falling back to string comparison. A flag-only `[N]:` inside an object skips that key only. [Issue #113](https://github.com/cyAquarius/just-test/issues/113).
 - **1.2.10 (upcoming)** — unknown or wrong-case YAML flags such as `[cn]` and `[CC]` fail fast instead of falling through to exact matching. The error names the field, the case path, and the flags legal for that stage. [Issue #108](https://github.com/cyAquarius/just-test/issues/108).
 - **1.2.10 (upcoming)** — load `.yml` case stage files that discovery already accepts. A directory that only has `.yml` fixtures applies prepare data and assertions. The same stage with both `.yaml` and `.yml` fails fast. [Issue #100](https://github.com/cyAquarius/just-test/issues/100).
 

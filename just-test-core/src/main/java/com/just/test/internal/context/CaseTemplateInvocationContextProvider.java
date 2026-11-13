@@ -164,7 +164,7 @@ public class CaseTemplateInvocationContextProvider implements TestTemplateInvoca
         return packageName.isEmpty() ? "<default>" : packageName;
     }
 
-    private Set<String> findCaseNames(String caseRoot) {
+    Set<String> findCaseNames(String caseRoot) {
         try {
             PathMatchingResourcePatternResolver resolver = new PathMatchingResourcePatternResolver();
             List<Resource> resources = new ArrayList<>();
@@ -172,14 +172,14 @@ public class CaseTemplateInvocationContextProvider implements TestTemplateInvoca
             Collections.addAll(resources, resolver.getResources("classpath*:" + caseRoot + "/*/*.yml"));
 
             Set<String> caseNames = new TreeSet<>();
-            String marker = caseRoot.isEmpty() ? "" : caseRoot + "/";
+            // 默认包没有包路径。lastIndexOf("") 会截到字符串末尾，相对路径变成空串，case 永远发现不到。
+            String marker = caseRoot.isEmpty() ? null : caseRoot + "/";
             for (Resource resource : resources) {
                 String location = resource.getURL().toExternalForm();
-                int markerIndex = location.lastIndexOf(marker);
-                if (markerIndex < 0) {
+                String relative = relativeCasePath(location, marker);
+                if (relative == null) {
                     continue;
                 }
-                String relative = location.substring(markerIndex + marker.length());
                 int separator = relative.indexOf('/');
                 if (separator > 0 && relative.indexOf('/', separator + 1) < 0) {
                     caseNames.add(relative.substring(0, separator));
@@ -190,6 +190,44 @@ public class CaseTemplateInvocationContextProvider implements TestTemplateInvoca
             throw new ExtensionConfigurationException(
                     "[JustTest] Failed to discover YAML cases under " + caseRoot, e);
         }
+    }
+
+    /**
+     * @param marker {@code null} 表示默认包（classpath 根）。非空时为 {@code caseRoot + "/"}。
+     */
+    private static String relativeCasePath(String location, String marker) {
+        if (marker == null) {
+            return lastTwoPathSegments(location);
+        }
+        int markerIndex = location.lastIndexOf(marker);
+        if (markerIndex < 0) {
+            return null;
+        }
+        return location.substring(markerIndex + marker.length());
+    }
+
+    /**
+     * 取 URL 最后两段，即 {@code caseName/file.yaml}。搜索模式只匹配 case 目录下一层文件。
+     */
+    private static String lastTwoPathSegments(String location) {
+        String path = location;
+        int query = path.indexOf('?');
+        if (query >= 0) {
+            path = path.substring(0, query);
+        }
+        int fragment = path.indexOf('#');
+        if (fragment >= 0) {
+            path = path.substring(0, fragment);
+        }
+        int fileSlash = path.lastIndexOf('/');
+        if (fileSlash <= 0) {
+            return null;
+        }
+        int caseSlash = path.lastIndexOf('/', fileSlash - 1);
+        if (caseSlash < 0) {
+            return null;
+        }
+        return path.substring(caseSlash + 1);
     }
 
     private CaseContext toCaseContext(String caseName, String caseRoot) {
