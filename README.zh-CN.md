@@ -468,6 +468,18 @@ flowchart TD
 ### `@ThreadScopedMock` 与自动配置
 
 - `@ThreadScopedMock` 把同一套 scoped mock 用在标注的 `@Bean` 方法上。
+- 方法只声明类型和 Bean 名。框架忽略方法体，始终自己创建线程作用域 mock。
+- 方法体里的自定义 `MockSettings`、`defaultAnswer`、name、`extraInterfaces` 或手写 fake 不会生效。
+- 定制 stub 写在 `beforeExecute` 或 `@BeforeCase`。
+
+```java
+@Bean
+@ThreadScopedMock
+public TaskCenterClient taskCenterClient() {
+    return null; // 方法体不会执行。stub 写在 beforeExecute 或 @BeforeCase
+}
+```
+
 - 若 `@JustMock` 或 `@ThreadScopedMock` 仍与某个 `*AutoConfiguration` 的同类型 Bean 共存，JustTest 在 Context 启动时 fail-fast 一次。
 - 诊断包含冲突类型、候选 Bean 名、mock 与自动配置来源，以及下一步：`excludeAutoConfiguration` 或删掉多余 mock。
 - 不会自动 exclude 自动配置，不会静默让 mock 胜出，也不会改 `@Resource` 匹配。
@@ -689,6 +701,7 @@ junit.jupiter.execution.parallel.mode.classes.default=concurrent
 
 当前 Maven Central 发布版本是 `1.2.9`。上面的规则对应该版本。
 
+- **1.2.10（待发布）** — `@ThreadScopedMock` 的 `@Bean` 方法只声明类型和 Bean 名。框架忽略方法体，仍然自己创建线程作用域 mock。定制 stub 写在 `beforeExecute` 或 `@BeforeCase`。[Issue #106](https://github.com/cyAquarius/just-test/issues/106)。
 - **1.2.10（待发布）** — static 的 `@JustMock` 和 `@JustSpy` 字段在 `BeforeAll` fail-fast。错误信息会指出字段名，并说明 static mock/spy 字段会破坏线程隔离：并发 case 会写同一个字段，stub 互相覆盖。实例字段行为不变。[Issue #105](https://github.com/cyAquarius/just-test/issues/105)。
 - **1.2.10（待发布）** — Boot 2 在 `@JustMock` 替换、`@JustSpy` 或真实 Bean 拦截要 mock 具体类，且该类或其父类（不含 `java.lang.Object`）声明了 public 或 protected 的 final 实例方法、当前 MockMaker 又不是 inline 时，启动期 fail-fast。错误信息会提示配置 `mockito-extensions/org.mockito.plugins.MockMaker`，或引入 `mockito-inline`。JustTest 仍然不会选定 MockMaker。private、包内可见和 static 的 final 不会触发；Boot 3 行为不变。[Issue #104](https://github.com/cyAquarius/just-test/issues/104)。
 - **1.2.10（待发布）** — `@JustMock` 替换 Bean，以及拦截隐藏真实 Bean 时，会保留该 Bean 的别名。`@Qualifier("alias")` 与 `@Resource(name = "alias")` 仍然注入线程作用域 mock。恢复别名时若与已有 Bean 名或其他别名冲突，则跳过该别名并记录警告，其余安装继续完成。[Issue #103](https://github.com/cyAquarius/just-test/issues/103)。

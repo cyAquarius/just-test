@@ -11,6 +11,11 @@ import java.lang.annotation.Target;
  * <p>框架将带此注解的 {@code @Bean} 定义替换为线程作用域 ScopedProxy，
  * 与 {@code @JustMock} 字段注解同一套机制。</p>
  *
+ * <p>方法只声明类型和 Bean 名。框架忽略方法体，始终自己创建线程作用域 mock。
+ * 方法体里的自定义 {@code MockSettings}（{@code defaultAnswer}、name、
+ * {@code extraInterfaces}）或手写 fake 不会生效。定制 stub 写在
+ * {@code beforeExecute} 或 {@link BeforeCase}。</p>
+ *
  * <p>实例仅能在活动 JustTest case 线程中访问；异步线程不会继承 case 上下文。</p>
  *
  * <p>适用场景：{@code @Configuration} 里的全局外部依赖 mock（Feign Client、Redis、Cos 等）。
@@ -24,7 +29,7 @@ import java.lang.annotation.Target;
  *     &#64;Bean
  *     &#64;ThreadScopedMock
  *     public TaskCenterClient taskCenterClient() {
- *         return Mockito.mock(TaskCenterClient.class);
+ *         return null; // 方法体不会执行。stub 写在 beforeExecute 或 @BeforeCase
  *     }
  * }
  * </pre>
