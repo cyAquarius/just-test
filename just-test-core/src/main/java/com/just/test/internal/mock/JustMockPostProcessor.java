@@ -364,6 +364,7 @@ class JustMockPostProcessor implements BeanFactoryPostProcessor {
             throw JustMockBeanOrigins.sameBeanSpyMockConflict(targetBeanName, spy, definition);
         }
         Class<?> mockType = resolveMockType(beanFactory, registry, targetBeanName, definition);
+        FinalMethodMockGuard.check(mockType);
         BeanDefinition originalDefinition = null;
         BeanDefinition originalScopedTarget = null;
         String[] aliases = null;
@@ -585,6 +586,7 @@ class JustMockPostProcessor implements BeanFactoryPostProcessor {
                                          Set<Class<?>> feignBlocked,
                                          Map<Class<?>, String> installed) {
         Class<?> mockType = mockTypeForGroup(beanFactory, publicName, group);
+        FinalMethodMockGuard.check(mockType);
         assertMockable(mockType);
         registerThreadScopedIntercept(beanFactory, registry, mockType, publicName);
         registeredBeanNames.add(publicName);
@@ -1215,6 +1217,7 @@ class JustMockPostProcessor implements BeanFactoryPostProcessor {
                     + ". @JustSpy does not create a bean.");
         }
         Class<?> mockType = resolveMockType(beanFactory, registry, publicName, definition);
+        FinalMethodMockGuard.check(mockType);
         BeanDefinition original = registry.getBeanDefinition(publicName);
         String scopedTargetName = ScopedProxyUtils.getTargetBeanName(publicName);
         BeanDefinition originalScopedTarget = registry.containsBeanDefinition(scopedTargetName)
