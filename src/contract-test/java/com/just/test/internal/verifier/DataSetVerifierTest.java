@@ -4,12 +4,14 @@ import org.junit.jupiter.api.Test;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.datasource.SingleConnectionDataSource;
 
+import java.math.BigDecimal;
 import java.sql.Timestamp;
 import java.util.Arrays;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -150,6 +152,50 @@ class DataSetVerifierTest {
         IllegalArgumentException error = assertThrows(IllegalArgumentException.class,
                 () -> DataSetVerifier.verifyFromMap(new JdbcTemplate(), expected));
         assertTrue(error.getMessage().contains("column name"), error.getMessage());
+    }
+
+    @Test
+    void matchesYamlIntegerToDecimalScale() {
+        SingleConnectionDataSource dataSource = new SingleConnectionDataSource(
+                "jdbc:h2:mem:verifier_decimal_scale;MODE=MySQL;DB_CLOSE_DELAY=-1", "sa", "", true);
+        try {
+            JdbcTemplate jdbcTemplate = new JdbcTemplate(dataSource);
+            jdbcTemplate.execute("CREATE TABLE money_sample(id INT, amount DECIMAL(10,2))");
+            jdbcTemplate.update("INSERT INTO money_sample(id, amount) VALUES (1, 100.00)");
+            Object stored = jdbcTemplate.queryForObject(
+                    "SELECT amount FROM money_sample", Object.class);
+            assertTrue(stored instanceof BigDecimal, String.valueOf(stored));
+            assertEquals("100.00", ((BigDecimal) stored).toPlainString());
+
+            List<String> failures = DataSetVerifier.verify(jdbcTemplate,
+                    "com/just/test/verifier/database/decimal-scale");
+
+            assertTrue(failures.isEmpty(), failures.toString());
+        } finally {
+            dataSource.destroy();
+        }
+    }
+
+    @Test
+    void rejectsDecimalThatDiffersAfterScaleNormalization() {
+        SingleConnectionDataSource dataSource = new SingleConnectionDataSource(
+                "jdbc:h2:mem:verifier_decimal_miss;MODE=MySQL;DB_CLOSE_DELAY=-1", "sa", "", true);
+        try {
+            JdbcTemplate jdbcTemplate = new JdbcTemplate(dataSource);
+            jdbcTemplate.execute("CREATE TABLE money_sample(id INT, amount DECIMAL(10,2))");
+            jdbcTemplate.update("INSERT INTO money_sample(id, amount) VALUES (1, 100.01)");
+
+            List<String> failures = DataSetVerifier.verify(jdbcTemplate,
+                    "com/just/test/verifier/database/decimal-scale");
+
+            assertTrue(failures.stream().anyMatch(failure ->
+                    failure.contains("money_sample")
+                            && failure.contains("amount")
+                            && failure.contains("<100>")
+                            && failure.contains("<100.01>")), failures.toString());
+        } finally {
+            dataSource.destroy();
+        }
     }
 
     private static void assertUnknownExpect(String casePath, String field, String flag) {

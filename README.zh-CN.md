@@ -701,6 +701,7 @@ junit.jupiter.execution.parallel.mode.classes.default=concurrent
 
 当前 Maven Central 发布版本是 `1.2.9`。上面的规则对应该版本。
 
+- **1.2.10（待发布）** — 任一侧是 `BigDecimal` 时，精确比较忽略标度。YAML 的 `100` 匹配 JDBC 的 `100.00`。YAML 的 `100` 与 JDBC 的 `100.01` 不相等。Integer、Long、Double 彼此之间按字符串精确比较。裸 YAML 时间戳（如 `2026-11-13 10:00:00`）保持该字符串；需要日期匹配时用 `[D]` 或 `[R]`。`toList` 改为与 `toMap` 一样按字段序列化，没有 getter 的 POJO 在两条路径上比较结果一致。[Issue #110](https://github.com/cyAquarius/just-test/issues/110)。
 - **1.2.10（待发布）** — `[D]` / `[D60]` 接受 `LocalDateTime`、`Instant`、`OffsetDateTime` 和 `ZonedDateTime`，仍用同一容差窗口比较。`LocalDateTime` 按系统默认时区换算。时间字符串可以带 ISO `T`。`java.util.Date` 与 `java.sql.Timestamp` 行为不变。[Issue #109](https://github.com/cyAquarius/just-test/issues/109)。
 - **1.2.10（待发布）** — `@ThreadScopedMock` 的 `@Bean` 方法只声明类型和 Bean 名。框架忽略方法体，仍然自己创建线程作用域 mock。定制 stub 写在 `beforeExecute` 或 `@BeforeCase`。[Issue #106](https://github.com/cyAquarius/just-test/issues/106)。
 - **1.2.10（待发布）** — static 的 `@JustMock` 和 `@JustSpy` 字段在 `BeforeAll` fail-fast。错误信息会指出字段名，并说明 static mock/spy 字段会破坏线程隔离：并发 case 会写同一个字段，stub 互相覆盖。实例字段行为不变。[Issue #105](https://github.com/cyAquarius/just-test/issues/105)。

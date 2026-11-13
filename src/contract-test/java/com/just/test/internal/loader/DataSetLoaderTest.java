@@ -128,6 +128,30 @@ class DataSetLoaderTest {
         }
     }
 
+    @Test
+    void keepsBareTimestampsAsStrings() {
+        Object scalar = DataSetLoader.parseYamlRaw(
+                "com/just/test/internal/loader/timestamp-scalar", "response.yaml");
+        assertEquals("2026-11-13 10:00:00", scalar);
+        assertEquals(String.class, scalar.getClass());
+
+        Map<String, Object> yaml = DataSetLoader.parseYamlByPath(
+                "com/just/test/internal/loader/timestamp-types", "response.yaml");
+        assertNotNull(yaml);
+        assertTimestampString(yaml, "plain", "2026-11-13 10:00:00");
+        assertTimestampString(yaml, "date", "2026-11-13");
+        assertTimestampString(yaml, "iso", "2026-11-13T10:00:00");
+        assertTimestampString(yaml, "quoted", "2026-11-13 10:00:00");
+        assertEquals(Integer.valueOf(100), yaml.get("number"));
+        assertEquals(Boolean.TRUE, yaml.get("flag"));
+    }
+
+    private static void assertTimestampString(Map<String, Object> yaml, String key, String expected) {
+        Object value = yaml.get(key);
+        assertEquals(expected, value);
+        assertEquals(String.class, value.getClass(), key);
+    }
+
     private static void assertUnknownPrepare(JdbcTemplate jdbcTemplate, String casePath,
                                              String field, String flag) {
         IllegalArgumentException error = assertThrows(IllegalArgumentException.class,

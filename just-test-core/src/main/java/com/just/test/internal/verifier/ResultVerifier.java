@@ -8,6 +8,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.math.BigDecimal;
+import java.math.BigInteger;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
@@ -376,6 +377,9 @@ public class ResultVerifier {
 
     private static void compareSimple(Object expectValue, Object actualValue,
                                       String path, List<String> failures) {
+        if (decimalScalesMatch(expectValue, actualValue)) {
+            return;
+        }
         String expectedStr = expectValue == null ? null : expectValue.toString();
         String actualStr = actualValue == null ? null : normalizeForComparison(actualValue);
         if (expectedStr == null && actualStr != null) {
@@ -383,6 +387,47 @@ public class ResultVerifier {
         } else if (expectedStr != null && !expectedStr.equals(actualStr)) {
             failures.add(String.format("[%s]: expected <%s> but got <%s>", path, expectedStr, actualStr));
         }
+    }
+
+    /**
+     * 任一侧已经是 BigDecimal（例如 JDBC DECIMAL）时，用 {@link BigDecimal#compareTo} 忽略标度。
+     * 另一侧只在它是 Number 或数字字符串时转换。没有 BigDecimal 的数值对继续走字符串精确比较。
+     */
+    private static boolean decimalScalesMatch(Object expectValue, Object actualValue) {
+        if (!(expectValue instanceof BigDecimal) && !(actualValue instanceof BigDecimal)) {
+            return false;
+        }
+        BigDecimal expected = toComparableDecimal(expectValue);
+        BigDecimal actual = toComparableDecimal(actualValue);
+        return expected != null && actual != null && expected.compareTo(actual) == 0;
+    }
+
+    private static BigDecimal toComparableDecimal(Object value) {
+        if (value instanceof BigDecimal) {
+            return (BigDecimal) value;
+        }
+        if (value instanceof BigInteger) {
+            return new BigDecimal((BigInteger) value);
+        }
+        if (value instanceof Long || value instanceof Integer
+                || value instanceof Short || value instanceof Byte) {
+            return BigDecimal.valueOf(((Number) value).longValue());
+        }
+        if (value instanceof Number) {
+            try {
+                return new BigDecimal(value.toString());
+            } catch (NumberFormatException ex) {
+                return null;
+            }
+        }
+        if (value instanceof String) {
+            try {
+                return new BigDecimal((String) value);
+            } catch (NumberFormatException ex) {
+                return null;
+            }
+        }
+        return null;
     }
 
     /**
@@ -421,7 +466,8 @@ public class ResultVerifier {
             return (List<Object>) obj;
         }
         try {
-            String json = JSON.toJSONString(obj);
+            // 与 toMap 一样按字段序列化，没有 getter 的 POJO 在两条路径上看到同一组字段。
+            String json = JSON.toJSONString(obj, JSONWriter.Feature.FieldBased);
             return JSON.parseArray(json, Object.class);
         } catch (Exception e) {
             log.warn("[JustTest] Failed to convert object to List: {}", e.getMessage());
