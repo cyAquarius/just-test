@@ -5,7 +5,7 @@
 - 不要编造公司业务包、表结构或用例。
 - 在本仓库改框架时，演示只放 `src/contract-test` 的 `com.just.test.demo`。
 
-待发布 `1.2.10`：`io.github.cyaquarius:just-test-boot2:1.2.10` / `io.github.cyaquarius:just-test-boot3:1.2.10` 会加载 case 目录中的 `.yml` 阶段文件；同一阶段 `.yaml` 与 `.yml` 同时存在时 fail-fast。重复 key、空的或缺少 `type` 的 `expect_exception.yaml`、以及 `[C]` 命中多行都会 fail-fast。`[J]` 按 BigDecimal 比较数值。Maven Central 已发布版本仍是 `1.2.9`。消费待发布修复需先本地 `mvn install`。
+待发布 `1.2.10`：`io.github.cyaquarius:just-test-boot2:1.2.10` / `io.github.cyaquarius:just-test-boot3:1.2.10` 会加载 case 目录中的 `.yml` 阶段文件；同一阶段 `.yaml` 与 `.yml` 同时存在时 fail-fast。重复 key、空的或缺少 `type` 的 `expect_exception.yaml`、以及 `[C]` 命中多行都会 fail-fast。`[J]` 按 BigDecimal 比较数值。`DATE_FORMAT` 的英文 literal 会加引号；`%M`、`%T`、`%%` 会改写；未知说明符 fail-fast，错误信息包含原始格式串。Maven Central 已发布版本仍是 `1.2.9`。消费待发布修复需先本地 `mvn install`。
 
 ## 生成顺序
 

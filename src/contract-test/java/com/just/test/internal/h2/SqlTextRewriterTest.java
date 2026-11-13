@@ -4,6 +4,8 @@ import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertSame;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class SqlTextRewriterTest {
 
@@ -63,8 +65,76 @@ class SqlTextRewriterTest {
         String sql = "SELECT DATE_FORMAT(create_time, \"%Y-%m-%d \"\"UTC\"\"\") FROM sample";
 
         assertEquals(
-                "SELECT FORMATDATETIME(create_time, 'yyyy-MM-dd \"UTC\"') FROM sample",
+                "SELECT FORMATDATETIME(create_time, 'yyyy-MM-dd'' \"UTC\"''') FROM sample",
                 SqlTextRewriter.rewriteDateFormatFunctions(sql));
+    }
+
+    @Test
+    void quotesAsciiLiteralTextInDateFormatPattern() {
+        String sql = "SELECT DATE_FORMAT(created_at, 'Date: %Y'), DATE_FORMAT(created_at, 'Day %d') "
+                + "FROM sample";
+
+        assertEquals(
+                "SELECT FORMATDATETIME(created_at, '''Date: ''yyyy'), "
+                        + "FORMATDATETIME(created_at, '''Day ''dd') FROM sample",
+                SqlTextRewriter.rewriteDateFormatFunctions(sql));
+    }
+
+    @Test
+    void rewritesMonthNameTimeAndEscapedPercent() {
+        String sql = "SELECT DATE_FORMAT(created_at, '%M'), DATE_FORMAT(created_at, '%T'), "
+                + "DATE_FORMAT(created_at, '%%'), DATE_FORMAT(created_at, '%% done') FROM sample";
+
+        assertEquals(
+                "SELECT FORMATDATETIME(created_at, 'MMMM'), "
+                        + "FORMATDATETIME(created_at, 'HH:mm:ss'), "
+                        + "FORMATDATETIME(created_at, '%'), "
+                        + "FORMATDATETIME(created_at, '''% done''') FROM sample",
+                SqlTextRewriter.rewriteDateFormatFunctions(sql));
+    }
+
+    @Test
+    void keepsNumericAndCjkDateFormatPatternsUnquoted() {
+        String sql = "SELECT DATE_FORMAT(created_at, '%Y年%m月%d日') FROM sample";
+
+        assertEquals(
+                "SELECT FORMATDATETIME(created_at, 'yyyy年MM月dd日') FROM sample",
+                SqlTextRewriter.rewriteDateFormatFunctions(sql));
+    }
+
+    @Test
+    void doublesApostrophesInsideDateFormatLiterals() {
+        String sql = "SELECT DATE_FORMAT(created_at, 'It''s %Y') FROM sample";
+
+        assertEquals(
+                "SELECT FORMATDATETIME(created_at, '''It''''s ''yyyy') FROM sample",
+                SqlTextRewriter.rewriteDateFormatFunctions(sql));
+    }
+
+    @Test
+    void rejectsUnknownDateFormatSpecifierWithOriginalFormat() {
+        String format = "Date: %Q";
+        IllegalArgumentException error = assertThrows(IllegalArgumentException.class, () ->
+                SqlTextRewriter.rewriteDateFormatFunctions(
+                        "SELECT DATE_FORMAT(created_at, '" + format + "') FROM sample"));
+
+        assertTrue(error.getMessage().contains(format));
+        assertTrue(error.getMessage().contains("%Q"));
+
+        IllegalArgumentException quoted = assertThrows(IllegalArgumentException.class, () ->
+                SqlTextRewriter.rewriteDateFormatFunctions(
+                        "SELECT DATE_FORMAT(created_at, 'It''s %Q') FROM sample"));
+        assertTrue(quoted.getMessage().contains("It's %Q"));
+    }
+
+    @Test
+    void rejectsTrailingPercentInDateFormatPattern() {
+        String format = "100%";
+        IllegalArgumentException error = assertThrows(IllegalArgumentException.class, () ->
+                SqlTextRewriter.rewriteDateFormatFunctions(
+                        "SELECT DATE_FORMAT(created_at, '" + format + "') FROM sample"));
+
+        assertTrue(error.getMessage().contains(format));
     }
 
     @Test
