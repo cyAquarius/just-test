@@ -207,6 +207,7 @@ public void configureStaticMocks(CaseContext context, StaticMockContext mocks) {
 - Boot 2 使用 Mockito 4。静态 Mock 或 final 类型 Mock 需要 inline mock maker：在 `src/test/resources/mockito-extensions/org.mockito.plugins.MockMaker` 写入 `mock-maker-inline`，或引入版本一致的 `mockito-inline`。
 - Boot 3 使用 Mockito 5，默认 mock maker 已是 inline。消费工程若覆盖了 MockMaker，仍需自行保证静态 / final Mock。
 - JustTest 不会全局指定 MockMaker。
+- Boot 2 的 final 方法守卫只在 Mockito 版本以 `4.` 开头、且当前 MockMaker 未被当成 inline 时执行。实现 `InlineMockMaker`，或类名包含 `inline`，会被当成 inline。类名这条约定可能漏掉自定义 MockMaker。Boot 2 的 classpath 若把 Mockito 覆盖成 2.x 或 3.x，守卫不会运行，public / protected 的 final 实例方法仍可能在 mock 上执行。JustTest 不探测 MockMaker 能力。
 
 <a id="case-directories"></a>
 
@@ -672,6 +673,7 @@ junit.jupiter.execution.parallel.mode.classes.default=concurrent
 - `ParallelFirstJustTest` 与 `ParallelSecondJustTest`（类间重叠）跑在 `parallel-class-contract`。
 - `default-test` 仍并发运行其余契约类。
 - 这些重叠类留在各自的 execution。放回 `default-test`、把 case 改成串行、放宽重叠断言，或只加大屏障超时，都解决不了同一处调度停滞。
+- Spring 上下文关闭时会销毁 `JustTestRoutingDataSource`，销毁使用 60 秒 `tryLock`。若 case 租约仍占着生命周期读锁，销毁会先打 ERROR 日志 `[JustTest] DESTROY TIMEOUT`（含持锁线程和 `executionId`），再抛出异常。在这条真实的上下文关闭路径上，Spring Framework 的 `DisposableBeanAdapter`（Boot 2 为 5.3.31，Boot 3 为 6.2.19）会接住 `DisposableBean.destroy()`，并把 `Invocation of destroy method failed on bean with name '...'` 记成 WARN，套件不会因此失败。这条 ERROR 才是超时信号。JustTest 不改变 Spring 的这一处理。
 
 <a id="antipatterns"></a>
 
@@ -709,6 +711,11 @@ junit.jupiter.execution.parallel.mode.classes.default=concurrent
 - **1.2.12**（待发布）— 覆写并重新标注的 `@BeforeCase` 方法只执行一次，按方法签名保留最派生的那个。接口 default 方法上的 `@BeforeCase` 不受支持，不收集也不校验。[Issue #139](https://github.com/cyAquarius/just-test/issues/139)。
 
 - **1.2.12（待发布）** — MySQL DDL 清洗会把单引号字符串里的反斜杠转义写成 H2 能接受的字面量：`\'` 变成 `''`，`\\` 按 MySQL 转义规则处理。因此 mysqldump 的 `DEFAULT 'it\'s ok'` 可以建表，默认值内容不变。`DATE_FORMAT` 对每个非说明符 literal 都加引号，`'{%Y}'` 以及含 `{`、`}`、`#` 的文本会按字面格式化；数字、符号和中文加引号不改变格式结果。两处已知的引号转义限制保持原样，并用契约测试钉住当前行为，而不是推荐写法：`DATE_FORMAT(d,'x\')` 不会被改写，`"a\"b"` 仍会得到破碎结果 `'a\'b"`。[Issue #138](https://github.com/cyAquarius/just-test/issues/138)。
+
+- **1.2.12（待发布）** — 发布用的 SNAPSHOT 门禁与 Maven `ArtifactUtils.isSnapshot` 对齐。版本最后八个字母不论大小写只要是 `SNAPSHOT` 就会被拒绝，包括 `1.2.10-snapshot` 和 `1.2.10-Snapshot`；时间戳快照（如 `1.0-20261116.120000-1`）同样拒绝。`1.2.11` 这类正式版仍然放行。[Issue #140](https://github.com/cyAquarius/just-test/issues/140)。
+- **1.2.12（待发布）** — `require-jdk-toolchain.sh` 只统计 `<type>jdk</type>` 的条目。多行的 `<version>` / `<type>`，以及同一行里的多个 toolchain，都会被读到。非 JDK toolchain 的 `<version>` 即使等于请求的主版本，也不算通过。[Issue #140](https://github.com/cyAquarius/just-test/issues/140)。
+- **1.2.12（待发布）** — 数据库销毁若在 60 秒内拿不到生命周期写锁，会先以 ERROR 记下 `[JustTest] DESTROY TIMEOUT`（含持锁线程和 execution id），再抛出异常。Spring `DisposableBeanAdapter` 在上下文关闭时仍把该异常记成 WARN，套件不会因此失败。见[并行](#parallel)。[Issue #140](https://github.com/cyAquarius/just-test/issues/140)。
+- **1.2.12（待发布）** — Boot 2 final 方法守卫的适用前提已写入文档。Mockito 版本以 `4.` 开头才视为 Boot 2；实现 `InlineMockMaker` 或类名包含 `inline` 才视为 inline。覆盖成 Mockito 2 / 3，或只靠类名判断，都可能漏报。JustTest 仍然不会选定 MockMaker。[Issue #140](https://github.com/cyAquarius/just-test/issues/140)。
 
 - **1.2.11** — `@JustSpy` 包裹沿用 `@JustMock` 替换和真实 Bean 拦截的同一条路径，在 `removeBeanDefinition` 前后快照并恢复 Bean 别名，以适配移除定义时会丢掉别名的 registry。标准 `DefaultListableBeanFactory` 本身会保留别名。恢复别名时若与已有 Bean 名或其他别名冲突，则跳过该别名并记录警告，其余安装继续完成。[Issue #103](https://github.com/cyAquarius/just-test/issues/103)。
 

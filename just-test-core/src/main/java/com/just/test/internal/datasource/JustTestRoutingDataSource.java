@@ -44,6 +44,13 @@ public class JustTestRoutingDataSource extends AbstractDataSource implements Dis
      */
     static final long DESTROY_LOCK_TIMEOUT_SECONDS = 60L;
 
+    /**
+     * 销毁超时的 ERROR 标记。Spring {@code DisposableBeanAdapter} 会吞掉
+     * {@code DisposableBean.destroy()} 的异常并只打 WARN，上下文关闭路径上
+     * 套件不会因此失败；这条 ERROR 是还能看见的诊断（#140）。
+     */
+    static final String DESTROY_TIMEOUT_MARKER = "[JustTest] DESTROY TIMEOUT";
+
     private final String urlTemplate;
     private final String instanceKey = "justtest_" + INSTANCE_SEQUENCE.incrementAndGet();
     private final ConcurrentHashMap<String, SingleConnectionDataSource> dataSources = new ConcurrentHashMap<>();
@@ -218,6 +225,7 @@ public class JustTestRoutingDataSource extends AbstractDataSource implements Dis
 
     /**
      * 在限定时间内取得生命周期写锁后销毁。超时则失败，并带上仍持有 case 读锁的线程和 executionId。
+     * 抛出前先打 ERROR：Spring {@code DisposableBeanAdapter} 会接住这次异常。
      * 不改变读/写锁模型，也不改变 {@code templateLock} 的串行方式。
      */
     void destroyWithin(long timeout, TimeUnit unit) {
@@ -230,11 +238,17 @@ public class JustTestRoutingDataSource extends AbstractDataSource implements Dis
                     "[JustTest] Interrupted while waiting to destroy the database.", interrupted);
         }
         if (!acquired) {
+            String diagnosis = diagnoseLifecycleLock();
+            log.error("{}: timed out after {} {} waiting to destroy the database. "
+                            + "A case lease or other lifecycle read lock is still held. "
+                            + "Spring DisposableBeanAdapter logs this destroy failure as WARN "
+                            + "during context close. {}",
+                    DESTROY_TIMEOUT_MARKER, Long.valueOf(timeout), unit, diagnosis);
             throw new IllegalStateException(
                     "[JustTest] Timed out after " + timeout + " " + unit
                             + " waiting to destroy the database. "
                             + "A case lease or other lifecycle read lock is still held. "
-                            + diagnoseLifecycleLock());
+                            + diagnosis);
         }
         try {
             if (!destroyed.compareAndSet(false, true)) {

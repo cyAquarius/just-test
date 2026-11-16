@@ -19,6 +19,14 @@ import java.util.jar.Manifest;
  * Boot 2 默认的 subclass MockMaker 盖不住具体类上的 public / protected final 实例方法，
  * 这些方法会在未初始化的 mock 上执行。只在 Boot 2 且当前 MockMaker 不是 inline 时失败，
  * 并给出配置指引。不安装、不切换 MockMaker。Mockito 5（Boot 3）不走这条失败。
+ *
+ * <p>适用前提（#140）：本守卫在 Boot 2 使用 Mockito 4.x、且当前 maker 是预期的
+ * subclass 或 inline 实现时才可靠。Boot 2 线用版本是否以 {@code 4.} 开头来判断，
+ * inline 用 {@link InlineMockMaker} 或类名包含 {@code inline} 来判断。
+ * 消费方把 Boot 2 的 Mockito 覆盖成 2.x / 3.x 时版本判断为假，守卫不会执行。
+ * 类名里碰巧带 {@code inline} 的非 inline maker，或类名不含 {@code inline}
+ * 且未实现 {@link InlineMockMaker} 的 inline maker，都会被分错，守卫可能漏报。
+ * 这里不探测 MockMaker 能力，JustTest 也不选定 MockMaker。</p>
  */
 final class FinalMethodMockGuard {
 
@@ -45,6 +53,10 @@ final class FinalMethodMockGuard {
         return hasRelevantFinalInstanceMethod(mockType);
     }
 
+    /**
+     * Boot 2 线的版本代理：Mockito 实现版本以 {@code 4.} 开头。
+     * 覆盖成 Mockito 2.x / 3.x 时返回 false，{@link #check(Class)} 直接返回。
+     */
     static boolean boot2Line() {
         String version = mockitoVersion();
         return version != null && version.startsWith("4.");
@@ -62,7 +74,9 @@ final class FinalMethodMockGuard {
     }
 
     /**
-     * 查询当前 MockMaker，不改插件、不创建 mock。
+     * 查询当前 MockMaker，不改插件、不创建 mock，也不探测 maker 能不能 mock final。
+     * 实现 {@link InlineMockMaker} 时视为 inline。类名包含 {@code inline} 只是启发式，
+     * 自定义 MockMaker 可能因此被漏判或误判。
      */
     static boolean inlineMockMaker() {
         MockMaker maker = Plugins.getMockMaker();
