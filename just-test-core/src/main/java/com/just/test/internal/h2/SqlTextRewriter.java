@@ -356,8 +356,9 @@ final class SqlTextRewriter {
     }
 
     /**
-     * H2 {@code FORMATDATETIME} 使用 {@code DateTimeFormatter}：未加引号的 ASCII 字母是模式符。
-     * 非说明符片段只在含字母或单引号时加引号，内部单引号双写。
+     * H2 {@code FORMATDATETIME} 使用 {@code DateTimeFormatter}。
+     * 非说明符片段一律加引号，内部单引号双写。数字、符号和中文加引号不改变结果，
+     * 同时覆盖 #、{、} 这类保留字符。
      */
     private static String rewriteDateFormatPattern(String pattern) {
         StringBuilder result = new StringBuilder(pattern.length());
@@ -422,35 +423,17 @@ final class SqlTextRewriter {
         if (literal.length() == 0) {
             return;
         }
-        if (dateFormatLiteralNeedsQuoting(literal)) {
-            result.append('\'');
-            for (int index = 0; index < literal.length(); index++) {
-                char current = literal.charAt(index);
-                if (current == '\'') {
-                    result.append("''");
-                } else {
-                    result.append(current);
-                }
-            }
-            result.append('\'');
-        } else {
-            result.append(literal);
-        }
-        literal.setLength(0);
-    }
-
-    private static boolean dateFormatLiteralNeedsQuoting(CharSequence literal) {
+        result.append('\'');
         for (int index = 0; index < literal.length(); index++) {
             char current = literal.charAt(index);
-            if (current == '\'' || isAsciiLetter(current)) {
-                return true;
+            if (current == '\'') {
+                result.append("''");
+            } else {
+                result.append(current);
             }
         }
-        return false;
-    }
-
-    private static boolean isAsciiLetter(char current) {
-        return (current >= 'A' && current <= 'Z') || (current >= 'a' && current <= 'z');
+        result.append('\'');
+        literal.setLength(0);
     }
 
     private static IllegalArgumentException unsupportedDateFormatSpecifier(String pattern, String specifier) {

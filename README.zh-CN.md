@@ -22,6 +22,7 @@ Maven Central 的 group 为 `io.github.cyaquarius`。当前已发布版本为 `1
 | Java / Spring Boot | 8 / 2.7.18 | 17 / 3.5.16 |
 | Java 包名 | `com.just.test` | `com.just.test` |
 | 已发布版本 | `1.2.11` | `1.2.11` |
+| 待发布 / 本地安装 | `1.2.12` | `1.2.12` |
 
 Java 8 / Boot 2：
 
@@ -39,7 +40,7 @@ Java 8 / Boot 2：
 - Central **只发布** `just-test-boot2` 与 `just-test-boot3`。
 - 公司私服已代理 Central 时，只需上面的依赖声明。
 - 环境访问不了 Central 时，可代理 Central，或把 boot2 / boot3 制品上传到私服 release 仓库，并保持 group 为 `io.github.cyaquarius`。
-- 基于本仓库开发仍用本地 `mvn install`，装到的是 `1.2.11`。版本记录见[变更记录](#changelog)。依赖基线见[兼容性](#compatibility)。
+- 基于本仓库开发仍用本地 `mvn install`，装到的是待发布的 `1.2.12`。版本记录见[变更记录](#changelog)。依赖基线见[兼容性](#compatibility)。
 
 <a id="capabilities"></a>
 
@@ -699,6 +700,8 @@ junit.jupiter.execution.parallel.mode.classes.default=concurrent
 ## 变更记录
 
 当前 Maven Central 发布版本是 `1.2.11`。上面的规则对应该版本。
+
+- **1.2.12（待发布）** — MySQL DDL 清洗会把单引号字符串里的反斜杠转义写成 H2 能接受的字面量：`\'` 变成 `''`，`\\` 按 MySQL 转义规则处理。因此 mysqldump 的 `DEFAULT 'it\'s ok'` 可以建表，默认值内容不变。`DATE_FORMAT` 对每个非说明符 literal 都加引号，`'{%Y}'` 以及含 `{`、`}`、`#` 的文本会按字面格式化；数字、符号和中文加引号不改变格式结果。两处已知的引号转义限制保持原样，并用契约测试钉住当前行为，而不是推荐写法：`DATE_FORMAT(d,'x\')` 不会被改写，`"a\"b"` 仍会得到破碎结果 `'a\'b"`。[Issue #138](https://github.com/cyAquarius/just-test/issues/138)。
 
 - **1.2.11** — `@JustSpy` 包裹沿用 `@JustMock` 替换和真实 Bean 拦截的同一条路径，在 `removeBeanDefinition` 前后快照并恢复 Bean 别名，以适配移除定义时会丢掉别名的 registry。标准 `DefaultListableBeanFactory` 本身会保留别名。恢复别名时若与已有 Bean 名或其他别名冲突，则跳过该别名并记录警告，其余安装继续完成。[Issue #103](https://github.com/cyAquarius/just-test/issues/103)。
 
