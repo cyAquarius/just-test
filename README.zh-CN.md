@@ -14,15 +14,14 @@
 
 ## 坐标
 
-Maven Central 的 group 为 `io.github.cyaquarius`。当前已发布版本为 `1.2.10`。
+Maven Central 的 group 为 `io.github.cyaquarius`。当前已发布版本为 `1.2.11`。
 
 | | Boot 2 | Boot 3 |
 | --- | --- | --- |
 | `artifactId` | `just-test-boot2` | `just-test-boot3` |
 | Java / Spring Boot | 8 / 2.7.18 | 17 / 3.5.16 |
 | Java 包名 | `com.just.test` | `com.just.test` |
-| 已发布版本 | `1.2.10` | `1.2.10` |
-| 待发布 / 本地安装 | `1.2.11` | `1.2.11` |
+| 已发布版本 | `1.2.11` | `1.2.11` |
 
 Java 8 / Boot 2：
 
@@ -30,7 +29,7 @@ Java 8 / Boot 2：
 <dependency>
     <groupId>io.github.cyaquarius</groupId>
     <artifactId>just-test-boot2</artifactId>
-    <version>1.2.10</version>
+    <version>1.2.11</version>
     <scope>test</scope>
 </dependency>
 ```
@@ -40,7 +39,7 @@ Java 8 / Boot 2：
 - Central **只发布** `just-test-boot2` 与 `just-test-boot3`。
 - 公司私服已代理 Central 时，只需上面的依赖声明。
 - 环境访问不了 Central 时，可代理 Central，或把 boot2 / boot3 制品上传到私服 release 仓库，并保持 group 为 `io.github.cyaquarius`。
-- 基于本仓库开发仍用本地 `mvn install`，装到的是待发布的 `1.2.11`。版本记录见[变更记录](#changelog)。依赖基线见[兼容性](#compatibility)。
+- 基于本仓库开发仍用本地 `mvn install`，装到的是 `1.2.11`。版本记录见[变更记录](#changelog)。依赖基线见[兼容性](#compatibility)。
 
 <a id="capabilities"></a>
 
@@ -699,9 +698,9 @@ junit.jupiter.execution.parallel.mode.classes.default=concurrent
 
 ## 变更记录
 
-当前 Maven Central 发布版本是 `1.2.10`。上面的规则对应该版本。
+当前 Maven Central 发布版本是 `1.2.11`。上面的规则对应该版本。
 
-- **1.2.11（待发布）** — `@JustSpy` 包裹真实 Bean 时，沿用 `@JustMock` 替换和拦截的同一条别名恢复路径。`@Qualifier("alias")` 与 `@Resource(name = "alias")` 仍然注入线程作用域 spy。恢复别名时若与已有 Bean 名或其他别名冲突，则跳过该别名并记录警告，其余安装继续完成。[Issue #103](https://github.com/cyAquarius/just-test/issues/103)。
+- **1.2.11** — `@JustSpy` 包裹真实 Bean 时，沿用 `@JustMock` 替换和拦截的同一条别名恢复路径。`@Qualifier("alias")` 与 `@Resource(name = "alias")` 仍然注入线程作用域 spy。恢复别名时若与已有 Bean 名或其他别名冲突，则跳过该别名并记录警告，其余安装继续完成。[Issue #103](https://github.com/cyAquarius/just-test/issues/103)。
 
 - **1.2.10** — 类级 `@Disabled` 的 `@JustTest`（包括自身带 `@Disabled` 的组合注解）不再进入真实 Bean `@JustMock` 的拦截并集。同一次启动类扫描里，未禁用的类仍然贡献类型。只在方法上标 `@Disabled` 不会丢掉整个类。已知来源缓存的 key 加入测试 `ClassLoader`。`ThreadScope` 的 conversation id 改为按线程递增且保持稳定，reset 会先复制销毁回调再执行。`@ThreadScopedMock` 改读 Bean 定义元数据，不再为了获知类型而初始化 `FactoryBean`。primitive 或数组的 `@JustMock` / `@JustSpy` 字段会 fail-fast。JavaBeans decapitalize 保留缩略词（`URLClient` 仍是 `URLClient`）。嵌套 `*AutoConfiguration` 冲突诊断会写出 `Outer.NestedAutoConfiguration.class`。同类型的第二个 Feign Bean，或后出现的 `@JustTestProject` Feign、数据源别名、MyBatis 贡献，只记警告并保留先注册的那一份。[Issue #114](https://github.com/cyAquarius/just-test/issues/114)。
 - **1.2.10** — `@BeforeCase` 改为父类方法先于子类执行，同一类中的方法按方法名排序。这是相对 1.2.9 的合同收紧：1.2.9 先执行子类方法。带参数的 `@BeforeCase` 在 `BeforeAll` 失败，错误信息会指出方法名，并说明该方法必须无参。`afterExecute` 行为不变：测试抛出时仍会调用，`beforeExecute` 失败时不调用；生命周期文档已改成这一表述。[Issue #112](https://github.com/cyAquarius/just-test/issues/112)。
