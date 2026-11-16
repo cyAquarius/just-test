@@ -14,15 +14,14 @@
 
 ## 坐标
 
-Maven Central 的 group 为 `io.github.cyaquarius`。当前已发布版本为 `1.2.9`。
+Maven Central 的 group 为 `io.github.cyaquarius`。当前已发布版本为 `1.2.10`。
 
 | | Boot 2 | Boot 3 |
 | --- | --- | --- |
 | `artifactId` | `just-test-boot2` | `just-test-boot3` |
 | Java / Spring Boot | 8 / 2.7.18 | 17 / 3.5.16 |
 | Java 包名 | `com.just.test` | `com.just.test` |
-| 已发布版本 | `1.2.9` | `1.2.9` |
-| 待发布 / 本地安装 | `1.2.10` | `1.2.10` |
+| 已发布版本 | `1.2.10` | `1.2.10` |
 
 Java 8 / Boot 2：
 
@@ -30,7 +29,7 @@ Java 8 / Boot 2：
 <dependency>
     <groupId>io.github.cyaquarius</groupId>
     <artifactId>just-test-boot2</artifactId>
-    <version>1.2.9</version>
+    <version>1.2.10</version>
     <scope>test</scope>
 </dependency>
 ```
@@ -40,7 +39,7 @@ Java 8 / Boot 2：
 - Central **只发布** `just-test-boot2` 与 `just-test-boot3`。
 - 公司私服已代理 Central 时，只需上面的依赖声明。
 - 环境访问不了 Central 时，可代理 Central，或把 boot2 / boot3 制品上传到私服 release 仓库，并保持 group 为 `io.github.cyaquarius`。
-- 基于本仓库开发仍用本地 `mvn install`，装到的是待发布的 `1.2.10`。版本记录见[变更记录](#changelog)。依赖基线见[兼容性](#compatibility)。
+- 基于本仓库开发仍用本地 `mvn install`，装到的是 `1.2.10`。版本记录见[变更记录](#changelog)。依赖基线见[兼容性](#compatibility)。
 
 <a id="capabilities"></a>
 
@@ -699,22 +698,22 @@ junit.jupiter.execution.parallel.mode.classes.default=concurrent
 
 ## 变更记录
 
-当前 Maven Central 发布版本是 `1.2.9`。上面的规则对应该版本。
+当前 Maven Central 发布版本是 `1.2.10`。上面的规则对应该版本。
 
-- **1.2.10（待发布）** — 类级 `@Disabled` 的 `@JustTest`（包括自身带 `@Disabled` 的组合注解）不再进入真实 Bean `@JustMock` 的拦截并集。同一次启动类扫描里，未禁用的类仍然贡献类型。只在方法上标 `@Disabled` 不会丢掉整个类。已知来源缓存的 key 加入测试 `ClassLoader`。`ThreadScope` 的 conversation id 改为按线程递增且保持稳定，reset 会先复制销毁回调再执行。`@ThreadScopedMock` 改读 Bean 定义元数据，不再为了获知类型而初始化 `FactoryBean`。primitive 或数组的 `@JustMock` / `@JustSpy` 字段会 fail-fast。JavaBeans decapitalize 保留缩略词（`URLClient` 仍是 `URLClient`）。嵌套 `*AutoConfiguration` 冲突诊断会写出 `Outer.NestedAutoConfiguration.class`。同类型的第二个 Feign Bean，或后出现的 `@JustTestProject` Feign、数据源别名、MyBatis 贡献，只记警告并保留先注册的那一份。[Issue #114](https://github.com/cyAquarius/just-test/issues/114)。
-- **1.2.10（待发布）** — `@BeforeCase` 改为父类方法先于子类执行，同一类中的方法按方法名排序。这是相对 1.2.9 的合同收紧：1.2.9 先执行子类方法。带参数的 `@BeforeCase` 在 `BeforeAll` 失败，错误信息会指出方法名，并说明该方法必须无参。`afterExecute` 行为不变：测试抛出时仍会调用，`beforeExecute` 失败时不调用；生命周期文档已改成这一表述。[Issue #112](https://github.com/cyAquarius/just-test/issues/112)。
-- **1.2.10（待发布）** — 任一侧是 `BigDecimal` 时，精确比较忽略标度。YAML 的 `100` 匹配 JDBC 的 `100.00`。YAML 的 `100` 与 JDBC 的 `100.01` 不相等。Integer、Long、Double 彼此之间按字符串精确比较。裸 YAML 时间戳（如 `2026-11-13 10:00:00`）保持该字符串；需要日期匹配时用 `[D]` 或 `[R]`。`toList` 改为与 `toMap` 一样按字段序列化，没有 getter 的 POJO 在两条路径上比较结果一致。[Issue #110](https://github.com/cyAquarius/just-test/issues/110)。
-- **1.2.10（待发布）** — `[D]` / `[D60]` 接受 `LocalDateTime`、`Instant`、`OffsetDateTime` 和 `ZonedDateTime`，仍用同一容差窗口比较。`LocalDateTime` 按系统默认时区换算。时间字符串可以带 ISO `T`。`java.util.Date` 与 `java.sql.Timestamp` 行为不变。[Issue #109](https://github.com/cyAquarius/just-test/issues/109)。
-- **1.2.10（待发布）** — `@ThreadScopedMock` 的 `@Bean` 方法只声明类型和 Bean 名。框架忽略方法体，仍然自己创建线程作用域 mock。定制 stub 写在 `beforeExecute` 或 `@BeforeCase`。[Issue #106](https://github.com/cyAquarius/just-test/issues/106)。
-- **1.2.10（待发布）** — static 的 `@JustMock` 和 `@JustSpy` 字段在 `BeforeAll` fail-fast。错误信息会指出字段名，并说明 static mock/spy 字段会破坏线程隔离：并发 case 会写同一个字段，stub 互相覆盖。实例字段行为不变。[Issue #105](https://github.com/cyAquarius/just-test/issues/105)。
-- **1.2.10（待发布）** — Boot 2 在 `@JustMock` 替换、`@JustSpy` 或真实 Bean 拦截要 mock 具体类，且该类或其父类（不含 `java.lang.Object`）声明了 public 或 protected 的 final 实例方法、当前 MockMaker 又不是 inline 时，启动期 fail-fast。错误信息会提示配置 `mockito-extensions/org.mockito.plugins.MockMaker`，或引入 `mockito-inline`。JustTest 仍然不会选定 MockMaker。private、包内可见和 static 的 final 不会触发；Boot 3 行为不变。[Issue #104](https://github.com/cyAquarius/just-test/issues/104)。
-- **1.2.10（待发布）** — `@JustMock` 替换 Bean，以及拦截隐藏真实 Bean 时，会保留该 Bean 的别名。`@Qualifier("alias")` 与 `@Resource(name = "alias")` 仍然注入线程作用域 mock。恢复别名时若与已有 Bean 名或其他别名冲突，则跳过该别名并记录警告，其余安装继续完成。[Issue #103](https://github.com/cyAquarius/just-test/issues/103)。
-- **1.2.10（待发布）** — MySQL DDL 清洗不再改写字符串、注释和反引号标识符里的文本。注释里的转义引号（`\'` 或 `''`）会随 `COMMENT` 一起去掉，不再残留片段导致 H2 建表失败。`COLLATE` 仍会去掉列级 `COLLATE name` 和表级 `COLLATE=name`，不会再删掉 `collate_flag` 这类标识符。[Issue #102](https://github.com/cyAquarius/just-test/issues/102)。
-- **1.2.10（待发布）** — 历史双引号字符串的兼容范围加上 `CONCAT`。`CONCAT("a","b")` 会改成 `CONCAT('a','b')`。新 SQL 仍应使用单引号。[Issue #107](https://github.com/cyAquarius/just-test/issues/107)。
-- **1.2.10（待发布）** — `DATE_FORMAT` 的字面文本会为 H2 `FORMATDATETIME` 加上引号，因此 `Date: %Y`、`Day %d` 这类英文不会再被当成模式符。`%M` 映射为月份名，`%T` 映射为 `HH:mm:ss`，`%%` 映射为一个 `%`。未知说明符会 fail-fast，错误信息包含原始格式串。`%Y-%m-%d %H:%i:%s` 这类纯数字格式和中文 literal 的结果保持不变。[Issue #101](https://github.com/cyAquarius/just-test/issues/101)。
-- **1.2.10（待发布）** — YAML 加载和断言的静默通过改为 fail-fast。重复 key 会被拒绝。存在但为空或缺少 `type` 的 `expect_exception.yaml` 是配置错误，不会吞掉异常。`expect.yaml` 的 `[C]` 命中多行时失败，直到收紧到唯一一行。`[J]` 把数值按 BigDecimal 比较（`1` 等于 `1.0`），JSON 解析失败会报错，不再退回字符串比较。对象内部单独的 `[N]:` 只跳过该键。[Issue #113](https://github.com/cyAquarius/just-test/issues/113)。
-- **1.2.10（待发布）** — 未知或大小写错误的 YAML flag（如 `[cn]`、`[CC]`）立即失败，不再降级为精确匹配。错误信息包含字段名、case 路径和该阶段合法 flag。[Issue #108](https://github.com/cyAquarius/just-test/issues/108)。
-- **1.2.10（待发布）** — 加载发现阶段已经接受的 `.yml` 用例文件。只含 `.yml` 夹具的目录会执行预置和断言。同一阶段同时存在 `.yaml` 与 `.yml` 时 fail-fast。[Issue #100](https://github.com/cyAquarius/just-test/issues/100)。
+- **1.2.10** — 类级 `@Disabled` 的 `@JustTest`（包括自身带 `@Disabled` 的组合注解）不再进入真实 Bean `@JustMock` 的拦截并集。同一次启动类扫描里，未禁用的类仍然贡献类型。只在方法上标 `@Disabled` 不会丢掉整个类。已知来源缓存的 key 加入测试 `ClassLoader`。`ThreadScope` 的 conversation id 改为按线程递增且保持稳定，reset 会先复制销毁回调再执行。`@ThreadScopedMock` 改读 Bean 定义元数据，不再为了获知类型而初始化 `FactoryBean`。primitive 或数组的 `@JustMock` / `@JustSpy` 字段会 fail-fast。JavaBeans decapitalize 保留缩略词（`URLClient` 仍是 `URLClient`）。嵌套 `*AutoConfiguration` 冲突诊断会写出 `Outer.NestedAutoConfiguration.class`。同类型的第二个 Feign Bean，或后出现的 `@JustTestProject` Feign、数据源别名、MyBatis 贡献，只记警告并保留先注册的那一份。[Issue #114](https://github.com/cyAquarius/just-test/issues/114)。
+- **1.2.10** — `@BeforeCase` 改为父类方法先于子类执行，同一类中的方法按方法名排序。这是相对 1.2.9 的合同收紧：1.2.9 先执行子类方法。带参数的 `@BeforeCase` 在 `BeforeAll` 失败，错误信息会指出方法名，并说明该方法必须无参。`afterExecute` 行为不变：测试抛出时仍会调用，`beforeExecute` 失败时不调用；生命周期文档已改成这一表述。[Issue #112](https://github.com/cyAquarius/just-test/issues/112)。
+- **1.2.10** — 任一侧是 `BigDecimal` 时，精确比较忽略标度。YAML 的 `100` 匹配 JDBC 的 `100.00`。YAML 的 `100` 与 JDBC 的 `100.01` 不相等。Integer、Long、Double 彼此之间按字符串精确比较。裸 YAML 时间戳（如 `2026-11-13 10:00:00`）保持该字符串；需要日期匹配时用 `[D]` 或 `[R]`。`toList` 改为与 `toMap` 一样按字段序列化，没有 getter 的 POJO 在两条路径上比较结果一致。[Issue #110](https://github.com/cyAquarius/just-test/issues/110)。
+- **1.2.10** — `[D]` / `[D60]` 接受 `LocalDateTime`、`Instant`、`OffsetDateTime` 和 `ZonedDateTime`，仍用同一容差窗口比较。`LocalDateTime` 按系统默认时区换算。时间字符串可以带 ISO `T`。`java.util.Date` 与 `java.sql.Timestamp` 行为不变。[Issue #109](https://github.com/cyAquarius/just-test/issues/109)。
+- **1.2.10** — `@ThreadScopedMock` 的 `@Bean` 方法只声明类型和 Bean 名。框架忽略方法体，仍然自己创建线程作用域 mock。定制 stub 写在 `beforeExecute` 或 `@BeforeCase`。[Issue #106](https://github.com/cyAquarius/just-test/issues/106)。
+- **1.2.10** — static 的 `@JustMock` 和 `@JustSpy` 字段在 `BeforeAll` fail-fast。错误信息会指出字段名，并说明 static mock/spy 字段会破坏线程隔离：并发 case 会写同一个字段，stub 互相覆盖。实例字段行为不变。[Issue #105](https://github.com/cyAquarius/just-test/issues/105)。
+- **1.2.10** — Boot 2 在 `@JustMock` 替换、`@JustSpy` 或真实 Bean 拦截要 mock 具体类，且该类或其父类（不含 `java.lang.Object`）声明了 public 或 protected 的 final 实例方法、当前 MockMaker 又不是 inline 时，启动期 fail-fast。错误信息会提示配置 `mockito-extensions/org.mockito.plugins.MockMaker`，或引入 `mockito-inline`。JustTest 仍然不会选定 MockMaker。private、包内可见和 static 的 final 不会触发；Boot 3 行为不变。[Issue #104](https://github.com/cyAquarius/just-test/issues/104)。
+- **1.2.10** — `@JustMock` 替换 Bean，以及拦截隐藏真实 Bean 时，会保留该 Bean 的别名。`@Qualifier("alias")` 与 `@Resource(name = "alias")` 仍然注入线程作用域 mock。恢复别名时若与已有 Bean 名或其他别名冲突，则跳过该别名并记录警告，其余安装继续完成。[Issue #103](https://github.com/cyAquarius/just-test/issues/103)。
+- **1.2.10** — MySQL DDL 清洗不再改写字符串、注释和反引号标识符里的文本。注释里的转义引号（`\'` 或 `''`）会随 `COMMENT` 一起去掉，不再残留片段导致 H2 建表失败。`COLLATE` 仍会去掉列级 `COLLATE name` 和表级 `COLLATE=name`，不会再删掉 `collate_flag` 这类标识符。[Issue #102](https://github.com/cyAquarius/just-test/issues/102)。
+- **1.2.10** — 历史双引号字符串的兼容范围加上 `CONCAT`。`CONCAT("a","b")` 会改成 `CONCAT('a','b')`。新 SQL 仍应使用单引号。[Issue #107](https://github.com/cyAquarius/just-test/issues/107)。
+- **1.2.10** — `DATE_FORMAT` 的字面文本会为 H2 `FORMATDATETIME` 加上引号，因此 `Date: %Y`、`Day %d` 这类英文不会再被当成模式符。`%M` 映射为月份名，`%T` 映射为 `HH:mm:ss`，`%%` 映射为一个 `%`。未知说明符会 fail-fast，错误信息包含原始格式串。`%Y-%m-%d %H:%i:%s` 这类纯数字格式和中文 literal 的结果保持不变。[Issue #101](https://github.com/cyAquarius/just-test/issues/101)。
+- **1.2.10** — YAML 加载和断言的静默通过改为 fail-fast。重复 key 会被拒绝。存在但为空或缺少 `type` 的 `expect_exception.yaml` 是配置错误，不会吞掉异常。`expect.yaml` 的 `[C]` 命中多行时失败，直到收紧到唯一一行。`[J]` 把数值按 BigDecimal 比较（`1` 等于 `1.0`），JSON 解析失败会报错，不再退回字符串比较。对象内部单独的 `[N]:` 只跳过该键。[Issue #113](https://github.com/cyAquarius/just-test/issues/113)。
+- **1.2.10** — 未知或大小写错误的 YAML flag（如 `[cn]`、`[CC]`）立即失败，不再降级为精确匹配。错误信息包含字段名、case 路径和该阶段合法 flag。[Issue #108](https://github.com/cyAquarius/just-test/issues/108)。
+- **1.2.10** — 加载发现阶段已经接受的 `.yml` 用例文件。只含 `.yml` 夹具的目录会执行预置和断言。同一阶段同时存在 `.yaml` 与 `.yml` 时 fail-fast。[Issue #100](https://github.com/cyAquarius/just-test/issues/100)。
 
 - **1.2.9** — 安装线程拦截时读取 MapperFactoryBean 产品类型元数据，不提前初始化无关 FactoryBean。[Issue #97](https://github.com/cyAquarius/just-test/issues/97)。
 
