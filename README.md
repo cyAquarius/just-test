@@ -550,6 +550,8 @@ Flags are case-sensitive. An unknown flag such as `[cn]` or `[CC]`, or a flag us
 
 For database expectations, prefer explicit `[C]` fields so the intended row is unambiguous. A `[C]` condition that matches more than one row fails until it is tightened to one row. `[J]` compares JSON structure; numeric values match as BigDecimal, so `1` and `1.0` are equal, and JSON that cannot be parsed is an error.
 
+Exact comparison drops a trailing `.0` from a `java.sql.Timestamp` on both the database and result paths, so YAML `2026-11-13 10:00:00` matches `2026-11-13 10:00:00.0`. `[D]` parses an actual timestamp string with ISO instant, offset date-time, and local date-time formatters before `yyyy-MM-dd HH:mm:ss`; a local date-time uses the system default zone.
+
 <a id="lifecycle"></a>
 
 ## Lifecycle
@@ -584,6 +586,8 @@ For every YAML case JustTest performs:
 5. invoke matching `@BeforeCase("case-name")` methods and `beforeExecute`, execute the test, then call `afterExecute`. `afterExecute` still runs when the test throws; it is not called if `beforeExecute` failed. Then verify exception, result, and database data. If `afterExecute` itself throws, YAML verification is skipped and that exception is propagated (the original test exception is added as suppressed when present). An exception that is not declared in `expect_exception.yaml` and not handled by `verifyException` is rethrown after `afterExecute` and YAML verification;
 6. execute user `@AfterEach` methods;
 7. close static and scoped mocks and release the case database, retaining cleanup failures without hiding the original test failure.
+
+- `@BeforeCase` on a class method that overrides a superclass method runs once. JustTest keeps the most-derived method for that signature, then runs parent methods before child methods and sorts methods in one class by name. `@BeforeCase` on an interface default method is unsupported: those methods are not collected and not validated.
 
 <a id="compatibility"></a>
 
@@ -698,7 +702,10 @@ A parallel failure is not automatically a JustTest isolation failure; first insp
 
 ## Changelog
 
-The current Maven Central release is `1.2.11`. The rules above match that release.
+The current Maven Central release is `1.2.11`. The rules above match that release, plus the upcoming 1.2.12 items in the changelog.
+
+- **1.2.12** (upcoming) — Exact comparison drops a trailing `.0` from `java.sql.Timestamp` on both `expect.yaml` and `response.yaml`. YAML `2026-11-13 10:00:00` matches a timestamp whose `toString()` is `2026-11-13 10:00:00.0`. A non-zero fraction stays on the exact string. `[D]` timestamp strings try `ISO_INSTANT`, `ISO_OFFSET_DATE_TIME`, and `ISO_LOCAL_DATE_TIME` before `Timestamp.valueOf`, so a `Z` suffix, a numeric offset, and a missing seconds field parse. `ISO_LOCAL_DATE_TIME` uses the system default zone. [Issue #139](https://github.com/cyAquarius/just-test/issues/139).
+- **1.2.12** (upcoming) — An overriding `@BeforeCase` method runs once. JustTest keeps the most-derived method for that signature. `@BeforeCase` on an interface default method is unsupported and is not collected or validated. [Issue #139](https://github.com/cyAquarius/just-test/issues/139).
 
 - **1.2.11** — `@JustSpy` wrap snapshots and restores bean aliases around `removeBeanDefinition` on the same path as `@JustMock` replacement and real-bean intercept, honoring registries that drop aliases on removal. Stock `DefaultListableBeanFactory` keeps them. An alias that would clash with an existing bean name or another alias is skipped and logged; the rest of the install continues. [Issue #103](https://github.com/cyAquarius/just-test/issues/103).
 

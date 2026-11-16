@@ -21,7 +21,9 @@ import java.lang.annotation.Target;
  *
  * <p>方法必须无参；带参数会在 {@code BeforeAll} 失败。
  * 继承树上先调用父类再调用子类中匹配的方法（与 JUnit {@code @BeforeEach} 一致），
- * 同一类中按方法名排序，然后再调用 {@code beforeExecute}。</p>
+ * 同一类中按方法名排序，然后再调用 {@code beforeExecute}。
+ * 子类覆写父类方法并重新标注时，只调用最派生的方法一次。
+ * 接口 default 方法上的 {@code @BeforeCase} 不受支持，不收集也不校验。</p>
  */
 @Target(ElementType.METHOD)
 @Retention(RetentionPolicy.RUNTIME)

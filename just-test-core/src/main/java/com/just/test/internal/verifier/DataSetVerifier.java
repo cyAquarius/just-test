@@ -6,8 +6,6 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.jdbc.core.JdbcTemplate;
 
-import java.math.BigDecimal;
-import java.math.BigInteger;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -167,12 +165,12 @@ public class DataSetVerifier {
                 continue;
             }
 
-            // Y（默认）— 精确匹配。任一侧是 BigDecimal 时忽略标度。
-            if (decimalScalesMatch(field.value, actualValue)) {
+            // Y（默认）— 精确匹配。BigDecimal 标度与 Timestamp 尾部 .0 走 ExactComparison。
+            if (ExactComparison.decimalScalesMatch(field.value, actualValue)) {
                 continue;
             }
             String expectedStr = field.value == null ? null : field.value.toString();
-            String actualStr = actualValue == null ? null : normalizeToString(actualValue);
+            String actualStr = actualValue == null ? null : ExactComparison.normalizeActual(actualValue);
             if (expectedStr == null && actualStr != null) {
                 failures.add(String.format("[%s] row[%d].%s: expected null but got <%s>",
                         tableName, rowIndex, field.fieldName, actualStr));
@@ -227,59 +225,6 @@ public class DataSetVerifier {
             result.add(new ParsedField(fieldName, flag, entry.getValue()));
         }
         return result;
-    }
-
-    /**
-     * 任一侧已经是 BigDecimal（例如 JDBC DECIMAL）时，用 {@link BigDecimal#compareTo} 忽略标度。
-     * 另一侧只在它是 Number 或数字字符串时转换。没有 BigDecimal 的数值对继续走字符串精确比较。
-     */
-    private static boolean decimalScalesMatch(Object expectValue, Object actualValue) {
-        if (!(expectValue instanceof BigDecimal) && !(actualValue instanceof BigDecimal)) {
-            return false;
-        }
-        BigDecimal expected = toComparableDecimal(expectValue);
-        BigDecimal actual = toComparableDecimal(actualValue);
-        return expected != null && actual != null && expected.compareTo(actual) == 0;
-    }
-
-    private static BigDecimal toComparableDecimal(Object value) {
-        if (value instanceof BigDecimal) {
-            return (BigDecimal) value;
-        }
-        if (value instanceof BigInteger) {
-            return new BigDecimal((BigInteger) value);
-        }
-        if (value instanceof Long || value instanceof Integer
-                || value instanceof Short || value instanceof Byte) {
-            return BigDecimal.valueOf(((Number) value).longValue());
-        }
-        if (value instanceof Number) {
-            try {
-                return new BigDecimal(value.toString());
-            } catch (NumberFormatException ex) {
-                return null;
-            }
-        }
-        if (value instanceof String) {
-            try {
-                return new BigDecimal((String) value);
-            } catch (NumberFormatException ex) {
-                return null;
-            }
-        }
-        return null;
-    }
-
-    private static String normalizeToString(Object value) {
-        if (value instanceof BigDecimal) {
-            return ((BigDecimal) value).toPlainString();
-        }
-        String str = value.toString();
-        if (value instanceof java.sql.Timestamp) {
-            // 统一去掉尾部的 .0、.00、.000 等零精度后缀
-            return str.replaceAll("\\.0+$", "");
-        }
-        return str;
     }
 
     private static Object getColumnValue(Map<String, Object> row, String columnName) {
