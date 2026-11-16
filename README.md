@@ -22,6 +22,7 @@ Maven Central group is `io.github.cyaquarius`. The current released version is `
 | Java / Spring Boot | 8 / 2.7.18 | 17 / 3.5.16 |
 | Java package | `com.just.test` | `com.just.test` |
 | Released version | `1.2.10` | `1.2.10` |
+| Upcoming / local install | `1.2.11` | `1.2.11` |
 
 Java 8 / Boot 2:
 
@@ -39,7 +40,7 @@ Java 8 / Boot 2:
 - Central publishes only `just-test-boot2` and `just-test-boot3`.
 - A repository that already proxies Central only needs the dependency above.
 - Without Central access, proxy Central, or upload the boot2 / boot3 artifacts to a private release repository and keep group `io.github.cyaquarius`.
-- `mvn install` from this repository is for local development and installs `1.2.10`. Release history: [changelog](#changelog). Library baseline: [compatibility](#compatibility).
+- `mvn install` from this repository is for local development and installs upcoming `1.2.11`. Release history: [changelog](#changelog). Library baseline: [compatibility](#compatibility).
 
 <a id="capabilities"></a>
 
@@ -699,6 +700,8 @@ A parallel failure is not automatically a JustTest isolation failure; first insp
 ## Changelog
 
 The current Maven Central release is `1.2.10`. The rules above match that release.
+
+- **1.2.11 (upcoming)** — `@JustSpy` wrap keeps the bean's aliases on the same restore path as `@JustMock` replacement and real-bean intercept. `@Qualifier("alias")` and `@Resource(name = "alias")` still inject the thread-scoped spy. An alias that would clash with an existing bean name or another alias is skipped and logged; the rest of the install continues. [Issue #103](https://github.com/cyAquarius/just-test/issues/103).
 
 - **1.2.10** — a class-level `@Disabled` `@JustTest`, including a composed annotation that is itself `@Disabled`, is left out of the real-bean `@JustMock` intercept union. An enabled class in the same startup-class scan still contributes its types. A `@Disabled` test method does not drop the class. The known-source cache key includes the test `ClassLoader`. `ThreadScope` conversation ids are an incrementing id, stable for that thread, and reset copies destruction callbacks before running them. `@ThreadScopedMock` reads bean-definition metadata and does not initialize a `FactoryBean` to learn its type. A primitive or array `@JustMock` or `@JustSpy` field fails fast. JavaBeans decapitalize keeps an acronym (`URLClient` stays `URLClient`). A nested `*AutoConfiguration` conflict lists `Outer.NestedAutoConfiguration.class`. A second same-type Feign bean, or a later `@JustTestProject` Feign, data-source alias, or MyBatis contribution, is logged and the first one is kept. [Issue #114](https://github.com/cyAquarius/just-test/issues/114).
 - **1.2.10** — `@BeforeCase` runs parent methods before child methods, and methods in the same class run in method-name order. This is a contract tightening versus 1.2.9, where subclass methods ran first. A `@BeforeCase` method with parameters fails in `BeforeAll`; the error names the method and says it must have no parameters. `afterExecute` behavior is unchanged: it still runs when the test throws, and it is not called if `beforeExecute` failed. The lifecycle wording now matches that. [Issue #112](https://github.com/cyAquarius/just-test/issues/112).

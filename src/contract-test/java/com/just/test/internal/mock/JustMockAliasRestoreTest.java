@@ -1,6 +1,7 @@
 package com.just.test.internal.mock;
 
 import com.just.test.annotation.JustMock;
+import com.just.test.annotation.JustSpy;
 import com.just.test.context.CaseContext;
 import com.just.test.internal.context.CaseExecutionContext;
 import com.just.test.internal.scope.ThreadScope;
@@ -105,6 +106,45 @@ class JustMockAliasRestoreTest {
     }
 
     @Test
+    void qualifierAliasInjectsThreadScopedSpyAfterWrap() throws Exception {
+        // 当前 Spring 的 removeBeanDefinition 不会摘掉别名。这里在移除时丢掉它们，
+        // 这样 @JustSpy 若没有先快照再 restore，@Qualifier("liveClock") 就注入不到 spy。
+        AliasDroppingFactory factory = new AliasDroppingFactory();
+        AnnotationConfigApplicationContext context = new AnnotationConfigApplicationContext(factory);
+        context.register(AliasedClockConfiguration.class);
+        factory.registerScope("thread", new ThreadScope());
+        context.addBeanFactoryPostProcessor(new JustMockPostProcessor(
+                Collections.<JustMockDefinition>emptySet(),
+                Collections.singleton(spyDefinition(field(SpyClockField.class, "clock")))));
+        try {
+            context.refresh();
+            CaseExecutionContext.bind(new CaseContext("alias-spy", "alias-spy"));
+            DefaultListableBeanFactory beanFactory =
+                    (DefaultListableBeanFactory) context.getBeanFactory();
+            assertEquals("clock", beanFactory.canonicalName("liveClock"));
+            assertTrue(beanFactory.isAlias("liveClock"));
+            assertFalse(beanFactory.containsBeanDefinition("liveClock"));
+            assertTrue(beanFactory.containsBeanDefinition(
+                    JustMockPostProcessor.spyTargetBeanName("clock")));
+            assertFalse(beanFactory.getBeanDefinition(
+                    JustMockPostProcessor.spyTargetBeanName("clock")).isAutowireCandidate());
+
+            ClockReader reader = context.getBean(ClockReader.class);
+            assertEquals("live", reader.now());
+            Clock spy = (Clock) threadTarget(context.getBean("liveClock"));
+            assertTrue(Mockito.mockingDetails(spy).isMock());
+            assertSame(spy, threadTarget(context.getBean("clock")));
+            assertSame(spy, threadTarget(reader.clock));
+            Mockito.doReturn("frozen").when(spy).now();
+            assertEquals("frozen", reader.now());
+        } finally {
+            CaseExecutionContext.clear();
+            ThreadScope.clearCurrentThread();
+            context.close();
+        }
+    }
+
+    @Test
     void skipsAliasThatConflictsWithAnExistingBeanAndContinues() throws Exception {
         OccupyingFactory factory = new OccupyingFactory();
         GenericApplicationContext context = new GenericApplicationContext(factory);
@@ -159,11 +199,31 @@ class JustMockAliasRestoreTest {
         return JustMockDefinition.forField(mockField, mockField.getAnnotation(JustMock.class));
     }
 
+    private static JustMockDefinition spyDefinition(Field spyField) {
+        return JustMockDefinition.forSpyField(spyField, spyField.getAnnotation(JustSpy.class));
+    }
+
     private static Field field(Class<?> type, String name) {
         try {
             return type.getDeclaredField(name);
         } catch (NoSuchFieldException ex) {
             throw new AssertionError(ex);
+        }
+    }
+
+    /**
+     * 模拟「移除 Bean 定义时别名一起消失」。{@code @JustSpy} 必须用移除前的快照把别名挂回去。
+     */
+    static final class AliasDroppingFactory extends DefaultListableBeanFactory {
+        @Override
+        public void removeBeanDefinition(String beanName) throws NoSuchBeanDefinitionException {
+            String[] aliases = getAliases(beanName).clone();
+            super.removeBeanDefinition(beanName);
+            for (String alias : aliases) {
+                if (isAlias(alias)) {
+                    removeAlias(alias);
+                }
+            }
         }
     }
 
@@ -191,6 +251,11 @@ class JustMockAliasRestoreTest {
 
     static class ClockField {
         @JustMock
+        private Clock clock;
+    }
+
+    static class SpyClockField {
+        @JustSpy
         private Clock clock;
     }
 

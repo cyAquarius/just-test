@@ -172,9 +172,10 @@ class MockRegistrar {
     }
 
     /**
-     * 替换或隐藏后只按规范名重新注册。{@code removeBeanDefinition} 可能同时丢掉别名，
-     * 所以先快照，新定义落定后再 {@code registerAlias}。名字若已是 Bean 定义、
-     * 单例，或指向其他 Bean 的别名，则跳过并警告，不覆盖已有注册。
+     * 替换或隐藏后只按规范名重新注册。{@code @JustMock}、{@code @JustSpy} 和拦截共用。
+     * {@code removeBeanDefinition} 可能同时丢掉别名，所以先快照，新定义落定后再
+     * {@code registerAlias}。名字若已是 Bean 定义、单例，或指向其他 Bean 的别名，
+     * 则跳过并警告，不覆盖已有注册。
      */
     void restoreBeanAliases(ConfigurableListableBeanFactory beanFactory,
                             BeanDefinitionRegistry registry,
@@ -255,10 +256,12 @@ class MockRegistrar {
                     original, originalScopedTarget);
         }
 
+        String[] aliases = beanFactory.getAliases(publicName).clone();
         registry.removeBeanDefinition(publicName);
         hideRealTarget(original);
         registry.registerBeanDefinition(hiddenName, original);
         registry.registerBeanDefinition(publicName, proxy.getBeanDefinition());
+        restoreBeanAliases(beanFactory, registry, publicName, aliases);
         log.info("[JustSpy] Registered thread-scoped spy for {} as '{}' delegating to '{}'",
                 mockType.getSimpleName(), publicName, hiddenName);
         return publicName;
