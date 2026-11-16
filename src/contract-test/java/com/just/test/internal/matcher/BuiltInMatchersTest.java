@@ -68,6 +68,35 @@ class BuiltInMatchersTest {
     }
 
     @Test
+    void dateMatcherAcceptsIsoInstantOffsetAndMissingSeconds() {
+        String ignoredExpected = "1999-01-01 00:00:00";
+        ZoneOffset notSystemOffset = OffsetDateTime.now().getOffset().getTotalSeconds() == 0
+                ? ZoneOffset.ofHours(8) : ZoneOffset.UTC;
+        DateTimeFormatter missingMinutes = DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm");
+        DateTimeFormatter missingMinutesOffset = DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mmXXX");
+
+        assertDateFlagPasses(DateTimeFormatter.ISO_INSTANT.format(Instant.now()), ignoredExpected);
+        assertDateFlagPasses(
+                DateTimeFormatter.ISO_OFFSET_DATE_TIME.format(OffsetDateTime.now(notSystemOffset)),
+                ignoredExpected);
+        // 截到分钟最多早 60 秒，再加上断言本身的耗时，用 120 秒窗口避免卡在整分钟边界。
+        assertEquals("", BuiltInMatchers.assertMatcherFlag(
+                "D120", ignoredExpected, LocalDateTime.now().format(missingMinutes), "row.gmt_create"));
+        assertEquals("", BuiltInMatchers.assertMatcherFlag(
+                "D120", ignoredExpected,
+                OffsetDateTime.now(notSystemOffset).format(missingMinutesOffset),
+                "row.gmt_create"));
+        assertEquals("", BuiltInMatchers.assertMatcherFlag(
+                "D120", ignoredExpected,
+                OffsetDateTime.now(ZoneOffset.UTC).format(missingMinutesOffset),
+                "row.gmt_create"));
+
+        assertDateFlagFails(
+                DateTimeFormatter.ISO_INSTANT.format(Instant.now().minusSeconds(120)), ignoredExpected);
+        assertDateFlagFails(LocalDateTime.now().minusMinutes(3).format(missingMinutes), ignoredExpected);
+    }
+
+    @Test
     void jsonMatcherComparesNumbersAsBigDecimal() {
         assertEquals("", BuiltInMatchers.assertMatcherFlag("J", "1", "1.0", "row.n"));
         assertEquals("", BuiltInMatchers.assertMatcherFlag(

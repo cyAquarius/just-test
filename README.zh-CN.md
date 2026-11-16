@@ -551,6 +551,8 @@ Flag 区分大小写。未知 Flag（如 `[cn]`、`[CC]`）或用在不适用阶
 
 数据库断言建议显式提供 `[C]` 字段，避免行定位含义不明确。`[C]` 命中多行时失败，需要收紧条件直到只命中一行。`[J]` 比较 JSON 结构；数值按 BigDecimal 比较，所以 `1` 与 `1.0` 相等，无法解析的 JSON 会报错。
 
+精确比较在数据库和返回值两条路径上都会去掉 `java.sql.Timestamp` 尾部的 `.0`，因此 YAML 的 `2026-11-13 10:00:00` 与 `2026-11-13 10:00:00.0` 相等。`[D]` 解析实际时间字符串时，先尝试 ISO instant、带偏移的日期时间和本地日期时间，再接受 `yyyy-MM-dd HH:mm:ss`；本地日期时间按系统默认时区换算。
+
 <a id="lifecycle"></a>
 
 ## 生命周期
@@ -585,6 +587,8 @@ sequenceDiagram
 5. 调用匹配的 `@BeforeCase("case-name")` 与 `beforeExecute`，执行测试方法。测试抛出时仍调用 `afterExecute`；`beforeExecute` 失败时不调用 `afterExecute`。然后再进行异常、返回值和数据库验证。若 `afterExecute` 自身抛出，则跳过 YAML 验证并直接抛出该异常（若测试方法也抛过异常，会作为 suppressed 附加）。无 `expect_exception.yaml` 且 `verifyException` 未处理的异常会在 `afterExecute` 与 YAML 验证之后重新抛出；
 6. 执行用户的 `@AfterEach`；
 7. 关闭静态与 scoped mock，释放 case 数据库；清理失败不会掩盖原始测试失败。
+
+- 类方法上的 `@BeforeCase` 若覆写父类方法，只执行一次。JustTest 按方法签名保留最派生的那个，然后父类方法先于子类，同一类中按方法名排序。接口 default 方法上的 `@BeforeCase` 不受支持：这些方法不收集，也不校验。
 
 <a id="compatibility"></a>
 
@@ -699,7 +703,10 @@ junit.jupiter.execution.parallel.mode.classes.default=concurrent
 
 ## 变更记录
 
-当前 Maven Central 发布版本是 `1.2.11`。上面的规则对应该版本。
+当前 Maven Central 发布版本是 `1.2.11`。上面的规则对应该版本，以及变更记录里待发布的 1.2.12。
+
+- **1.2.12**（待发布）— 精确比较在 `expect.yaml` 和 `response.yaml` 两条路径上都会去掉 `java.sql.Timestamp` 尾部的 `.0`。YAML 的 `2026-11-13 10:00:00` 匹配 `toString()` 为 `2026-11-13 10:00:00.0` 的时间戳。非零小数仍按原字符串比较。`[D]` 的时间字符串先尝试 `ISO_INSTANT`、`ISO_OFFSET_DATE_TIME`、`ISO_LOCAL_DATE_TIME`，再回退 `Timestamp.valueOf`，因此 `Z` 后缀、数字时区偏移和缺秒格式可以解析。`ISO_LOCAL_DATE_TIME` 按系统默认时区换算。[Issue #139](https://github.com/cyAquarius/just-test/issues/139)。
+- **1.2.12**（待发布）— 覆写并重新标注的 `@BeforeCase` 方法只执行一次，按方法签名保留最派生的那个。接口 default 方法上的 `@BeforeCase` 不受支持，不收集也不校验。[Issue #139](https://github.com/cyAquarius/just-test/issues/139)。
 
 - **1.2.12（待发布）** — MySQL DDL 清洗会把单引号字符串里的反斜杠转义写成 H2 能接受的字面量：`\'` 变成 `''`，`\\` 按 MySQL 转义规则处理。因此 mysqldump 的 `DEFAULT 'it\'s ok'` 可以建表，默认值内容不变。`DATE_FORMAT` 对每个非说明符 literal 都加引号，`'{%Y}'` 以及含 `{`、`}`、`#` 的文本会按字面格式化；数字、符号和中文加引号不改变格式结果。两处已知的引号转义限制保持原样，并用契约测试钉住当前行为，而不是推荐写法：`DATE_FORMAT(d,'x\')` 不会被改写，`"a\"b"` 仍会得到破碎结果 `'a\'b"`。[Issue #138](https://github.com/cyAquarius/just-test/issues/138)。
 

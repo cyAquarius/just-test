@@ -161,6 +161,8 @@ class CreateJustTest extends OrderJustTestSupport {
 
 外部依赖必须在 `beforeExecute` 或 `@BeforeCase("case-name")` 里给出明确 stub，不要把未定义返回值交给业务 fail-open。
 
+子类覆写父类方法并再次标注 `@BeforeCase` 时只执行最派生方法一次。接口 default 方法上的 `@BeforeCase` 不受支持，框架不收集也不校验。
+
 ## H2 与 SQL
 
 - 必须提供 `src/test/resources/sql/schema.sql`。对 MySQL dump，清理器只剥离常见附加语法（如 `ROW_FORMAT`、`UNSIGNED`、`ON UPDATE CURRENT_TIMESTAMP` 等），不覆盖全部 MySQL 方言。字符串、注释和反引号标识符里的文本保持原样。不要假定任意生产 DDL 都能原样跑在 H2 上。

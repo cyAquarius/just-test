@@ -32,10 +32,12 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.junit.jupiter.SpringExtension;
 
 import java.lang.reflect.Method;
+import java.lang.reflect.Modifier;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.Comparator;
+import java.util.Iterator;
 import java.util.List;
 
 /**
@@ -378,17 +380,79 @@ public final class JustTestExtension implements BeforeEachCallback, AfterEachCal
             hierarchy.add(type);
         }
         // 与 JUnit @BeforeEach 一致：先父类后子类。同类按方法名，避免 getDeclaredMethods 顺序不确定。
+        // 覆写且重新标注时只保留最派生方法。invoke 会虚分派，父子 Method 各调一次会把子类方法体执行两遍。
+        // 接口 default 方法不在这条类继承链上，不收集。
         Collections.reverse(hierarchy);
+        List<Method> selected = new ArrayList<>();
         for (Class<?> type : hierarchy) {
             Method[] methods = type.getDeclaredMethods();
             Arrays.sort(methods, Comparator.comparing(Method::getName));
             for (Method method : methods) {
                 BeforeCase annotation = method.getAnnotation(BeforeCase.class);
-                if (annotation != null && annotation.value().equals(caseName)) {
-                    invokeBeforeCaseMethod(testInstance, method, caseName);
+                if (annotation == null || !annotation.value().equals(caseName)) {
+                    continue;
                 }
+                if (isOverridableInstance(method)) {
+                    dropOverridden(selected, method);
+                }
+                selected.add(method);
             }
         }
+        for (Method method : selected) {
+            invokeBeforeCaseMethod(testInstance, method, caseName);
+        }
+    }
+
+    /**
+     * 去掉被 {@code derived} 覆盖的较不派生方法，让覆写留在子类自己的位置上。
+     */
+    private static void dropOverridden(List<Method> selected, Method derived) {
+        Iterator<Method> iterator = selected.iterator();
+        while (iterator.hasNext()) {
+            if (overrides(derived, iterator.next())) {
+                iterator.remove();
+            }
+        }
+    }
+
+    private static boolean isOverridableInstance(Method method) {
+        int modifiers = method.getModifiers();
+        return !Modifier.isStatic(modifiers) && !Modifier.isPrivate(modifiers);
+    }
+
+    /**
+     * {@code derived} 是否覆盖 {@code base}。private / static 不覆盖。
+     * 包访问方法只在同一包内覆盖。
+     */
+    private static boolean overrides(Method derived, Method base) {
+        if (!isOverridableInstance(derived) || !isOverridableInstance(base)) {
+            return false;
+        }
+        if (!derived.getName().equals(base.getName())
+                || !Arrays.equals(derived.getParameterTypes(), base.getParameterTypes())) {
+            return false;
+        }
+        if (derived.getDeclaringClass() == base.getDeclaringClass()
+                || !base.getDeclaringClass().isAssignableFrom(derived.getDeclaringClass())) {
+            return false;
+        }
+        if (isPackagePrivate(derived) || isPackagePrivate(base)) {
+            return packageName(derived.getDeclaringClass()).equals(packageName(base.getDeclaringClass()));
+        }
+        return true;
+    }
+
+    private static boolean isPackagePrivate(Method method) {
+        int modifiers = method.getModifiers();
+        return !Modifier.isPublic(modifiers)
+                && !Modifier.isProtected(modifiers)
+                && !Modifier.isPrivate(modifiers);
+    }
+
+    private static String packageName(Class<?> type) {
+        String name = type.getName();
+        int dot = name.lastIndexOf('.');
+        return dot < 0 ? "" : name.substring(0, dot);
     }
 
     private void invokeBeforeCaseMethod(Object testInstance, Method method, String caseName) {
