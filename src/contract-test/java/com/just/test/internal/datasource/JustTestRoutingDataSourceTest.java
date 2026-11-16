@@ -8,6 +8,8 @@ import org.junit.jupiter.api.parallel.Isolated;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.datasource.SingleConnectionDataSource;
 
+import java.io.ByteArrayOutputStream;
+import java.io.PrintStream;
 import java.lang.reflect.Field;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -395,14 +397,28 @@ class JustTestRoutingDataSourceTest {
             });
 
             assertTrue(holding.await(5, TimeUnit.SECONDS));
-            IllegalStateException failure = assertThrows(IllegalStateException.class,
-                    () -> dataSource.destroyWithin(200, TimeUnit.MILLISECONDS));
+            PrintStream previousErr = System.err;
+            ByteArrayOutputStream logBuffer = new ByteArrayOutputStream();
+            System.setErr(new PrintStream(logBuffer, true, "UTF-8"));
+            IllegalStateException failure;
+            try {
+                failure = assertThrows(IllegalStateException.class,
+                        () -> dataSource.destroyWithin(200, TimeUnit.MILLISECONDS));
+            } finally {
+                System.setErr(previousErr);
+            }
+            String logs = logBuffer.toString("UTF-8");
             String message = failure.getMessage();
-            assertTrue(message.contains("Timed out after 200 MILLISECONDS"));
-            assertTrue(message.contains("thread=justtest-destroy-timeout"));
-            assertTrue(message.contains("executionId=" + executionId.get()));
-            assertTrue(message.contains("readLockCount=1"));
-            assertTrue(message.contains("writeLocked=false"));
+            assertTrue(message.contains("Timed out after 200 MILLISECONDS"), message);
+            assertTrue(message.contains("thread=justtest-destroy-timeout"), message);
+            assertTrue(message.contains("executionId=" + executionId.get()), message);
+            assertTrue(message.contains("readLockCount=1"), message);
+            assertTrue(message.contains("writeLocked=false"), message);
+            assertTrue(logs.contains("ERROR"), logs);
+            assertTrue(logs.contains(JustTestRoutingDataSource.DESTROY_TIMEOUT_MARKER), logs);
+            assertTrue(logs.contains("thread=justtest-destroy-timeout"), logs);
+            assertTrue(logs.contains("executionId=" + executionId.get()), logs);
+            assertTrue(logs.contains("readLockCount=1"), logs);
 
             timeoutObserved.countDown();
             assertEquals(0, holder.get(5, TimeUnit.SECONDS));

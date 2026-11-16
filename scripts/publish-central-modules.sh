@@ -12,8 +12,9 @@
 # upload. The publish job timeout must cover two of these waits.
 #
 # SNAPSHOT coordinates are refused before credentials or Central are touched.
-# Negative check (no upload):
-#   bash -c 'source scripts/reject-snapshot-version.sh; reject_snapshot_version 1.2.10-SNAPSHOT just-test-boot2'
+# The gate matches Maven ArtifactUtils.isSnapshot (any SNAPSHOT case, plus timestamp snapshots).
+# Negative matrix (no upload):
+#   bash scripts/reject-snapshot-version-matrix.sh
 set -euo pipefail
 
 root="$(cd "$(dirname "$0")/.." && pwd)"

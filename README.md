@@ -206,6 +206,7 @@ public void configureStaticMocks(CaseContext context, StaticMockContext mocks) {
 - Boot 2 uses Mockito 4. Static mocks and final-type mocks need the inline mock maker: put `mock-maker-inline` in `src/test/resources/mockito-extensions/org.mockito.plugins.MockMaker`, or add the matching `mockito-inline`.
 - Boot 3 uses Mockito 5. Its default mock maker is inline. A consumer that overrides MockMaker still owns static and final mock support.
 - JustTest does not select a MockMaker globally.
+- Boot 2's final-method guard runs when the Mockito version starts with `4.` and the current MockMaker is not treated as inline. Inline means the maker implements `InlineMockMaker`, or its class name contains `inline`. That class-name check can miss a custom MockMaker. A Boot 2 classpath that overrides Mockito with 2.x or 3.x leaves the guard inactive, so public or protected final instance methods can still run on the mock. JustTest does not probe MockMaker capabilities.
 
 <a id="case-directories"></a>
 
@@ -667,6 +668,7 @@ junit.jupiter.execution.parallel.mode.classes.default=concurrent
 - `ParallelFirstJustTest` and `ParallelSecondJustTest` (class-level overlap) run in `parallel-class-contract`.
 - The `default-test` execution still runs the other contract classes concurrently.
 - Leave the overlap classes in those executions. Moving them back into `default-test`, serializing their cases, weakening the overlap assertions, or only raising the barrier timeout leaves the same stall in place.
+- Closing the Spring context destroys `JustTestRoutingDataSource` with a 60-second `tryLock`. If a case lease still holds the lifecycle read lock, destroy logs `[JustTest] DESTROY TIMEOUT` at ERROR with the holding thread and `executionId`, then throws. On that context-close path, Spring Framework `DisposableBeanAdapter` (5.3.31 on Boot 2, 6.2.19 on Boot 3) catches `DisposableBean.destroy()` and logs `Invocation of destroy method failed on bean with name '...'` at WARN, so the suite does not fail. The ERROR line is the timeout signal. JustTest leaves Spring's destroy handling unchanged.
 
 <a id="antipatterns"></a>
 
@@ -699,6 +701,11 @@ A parallel failure is not automatically a JustTest isolation failure; first insp
 ## Changelog
 
 The current Maven Central release is `1.2.11`. The rules above match that release.
+
+- **1.2.12 (upcoming)** — the publish SNAPSHOT gate follows Maven `ArtifactUtils.isSnapshot`. A version is refused when its last eight letters are `SNAPSHOT` in any case, including `1.2.10-snapshot` and `1.2.10-Snapshot`, or when it is a timestamp snapshot such as `1.0-20261116.120000-1`. Release versions such as `1.2.11` still pass. [Issue #140](https://github.com/cyAquarius/just-test/issues/140).
+- **1.2.12 (upcoming)** — `require-jdk-toolchain.sh` counts only `<type>jdk</type>` entries. Multiline `<version>` / `<type>` tags and several toolchains written on one line are read. A non-JDK toolchain whose `<version>` equals the requested major does not satisfy the gate. [Issue #140](https://github.com/cyAquarius/just-test/issues/140).
+- **1.2.12 (upcoming)** — a database destroy that cannot take the lifecycle write lock within 60 seconds logs `[JustTest] DESTROY TIMEOUT` at ERROR with the holding thread and execution id before it throws. Spring `DisposableBeanAdapter` still records that exception as WARN on context close, so the suite does not fail there. See [parallel execution](#parallel). [Issue #140](https://github.com/cyAquarius/just-test/issues/140).
+- **1.2.12 (upcoming)** — the Boot 2 final-method guard's preconditions are documented. It treats a Mockito version that starts with `4.` as Boot 2, and treats `InlineMockMaker` or a class name containing `inline` as inline. Overriding Mockito 2 or 3, or relying on the class-name check, can miss. JustTest still does not select a MockMaker. [Issue #140](https://github.com/cyAquarius/just-test/issues/140).
 
 - **1.2.11** — `@JustSpy` wrap snapshots and restores bean aliases around `removeBeanDefinition` on the same path as `@JustMock` replacement and real-bean intercept, honoring registries that drop aliases on removal. Stock `DefaultListableBeanFactory` keeps them. An alias that would clash with an existing bean name or another alias is skipped and logged; the rest of the install continues. [Issue #103](https://github.com/cyAquarius/just-test/issues/103).
 

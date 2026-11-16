@@ -200,6 +200,21 @@
                             </arguments>
                         </configuration>
                     </execution>
+                    <execution>
+                        <id>release-gate-matrices</id>
+                        <phase>validate</phase>
+                        <goals>
+                            <goal>exec</goal>
+                        </goals>
+                        <configuration>
+                            <executable>bash</executable>
+                            <workingDirectory>${project.basedir}</workingDirectory>
+                            <arguments>
+                                <argument>-c</argument>
+                                <argument><![CDATA[if [ -f "$PWD/scripts/run-release-gate-matrices.sh" ]; then exec bash "$PWD/scripts/run-release-gate-matrices.sh"; fi]]></argument>
+                            </arguments>
+                        </configuration>
+                    </execution>
                 </executions>
             </plugin>
         </plugins>
