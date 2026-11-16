@@ -238,7 +238,8 @@ public class SchemaInitializer {
     /**
      * 把已经切出的单引号内容从 MySQL 反斜杠转义写成 H2 源码。
      * {@code \'} 写成 {@code ''}，{@code \\} 写成一个 {@code \}。
-     * {@code \n}、{@code \t} 等控制转义还原成对应字符，未知转义丢掉反斜杠。
+     * {@code \n}、{@code \t} 等控制转义还原成对应字符。
+     * {@code \%}、{@code \_} 保留反斜杠；其余未知转义丢掉反斜杠。
      * 已经是 {@code ''} 的内容不含反斜杠，原样保留。
      */
     private static String normalizeMySqlSingleQuotedLiteral(String content) {
@@ -281,6 +282,10 @@ public class SchemaInitializer {
                     break;
                 case '\\':
                     normalized.append('\\');
+                    break;
+                case '%':
+                case '_':
+                    normalized.append('\\').append(escaped);
                     break;
                 default:
                     normalized.append(escaped);

@@ -80,7 +80,10 @@ class SchemaInitializerTest {
         assertEquals("DEFAULT 'line\nbreak'", SchemaInitializer.cleanMySqlSyntax("DEFAULT 'line\\nbreak'"));
         assertEquals("DEFAULT 'tab\there'", SchemaInitializer.cleanMySqlSyntax("DEFAULT 'tab\\there'"));
         assertEquals("DEFAULT 'say \"hi\"'", SchemaInitializer.cleanMySqlSyntax("DEFAULT 'say \\\"hi\\\"'"));
-        assertEquals("DEFAULT '100%_x'", SchemaInitializer.cleanMySqlSyntax("DEFAULT '100\\%\\_\\x'"));
+        assertEquals("DEFAULT '100\\%\\_x'", SchemaInitializer.cleanMySqlSyntax("DEFAULT '100\\%\\_\\x'"));
+        assertEquals("DEFAULT '\\%'", SchemaInitializer.cleanMySqlSyntax("DEFAULT '\\%'"));
+        assertEquals("DEFAULT '\\_'", SchemaInitializer.cleanMySqlSyntax("DEFAULT '\\_'"));
+        assertEquals("DEFAULT 'x'", SchemaInitializer.cleanMySqlSyntax("DEFAULT '\\x'"));
         assertEquals("DEFAULT \"it\\'s ok\"", SchemaInitializer.cleanMySqlSyntax("DEFAULT \"it\\'s ok\""));
         assertEquals("`it\\'s`", SchemaInitializer.cleanMySqlSyntax("`it\\'s`"));
         assertEquals("/* 'it\\'s' */ id INT", SchemaInitializer.cleanMySqlSyntax("/* 'it\\'s' */ id INT"));
@@ -103,6 +106,8 @@ class SchemaInitializerTest {
                     "SELECT path FROM exported_default", String.class));
             assertEquals("it's ok", jdbcTemplate.queryForObject(
                     "SELECT doubled FROM exported_default", String.class));
+            assertEquals("100\\%\\_x", jdbcTemplate.queryForObject(
+                    "SELECT pattern FROM exported_default", String.class));
         } finally {
             CaseExecutionContext.clear();
             dataSource.destroy();
