@@ -5,12 +5,10 @@ description: 在 Spring Boot 消费工程中编写或核对 JustTest 用例时�
 
 # JustTest 采用方编写用例
 
-给消费工程里的模型或代理。产品细节以仓库 [README.zh-CN.md](../../../README.zh-CN.md) / [README.md](../../../README.md) 和 [docs/ai-justtest-authoring.md](../../ai-justtest-authoring.md) 为准；本 skill 只收生成与核对规则。当前已发布版本是 `1.2.9`。
+给消费工程里的模型或代理。产品细节以仓库 [README.zh-CN.md](../../../README.zh-CN.md) / [README.md](../../../README.md) 和 [docs/ai-justtest-authoring.md](../../ai-justtest-authoring.md) 为准；本 skill 只收生成与核对规则。当前已发布版本是 `1.2.10`。
 
 - 不要编造公司业务包、表结构或用例；只根据当前工程里已有的需求、接口和代码写。
 - 不要改 just-test 框架源码，也不要依赖 `com.just.test.internal`。
-
-待发布 `1.2.10`：`io.github.cyaquarius:just-test-boot2:1.2.10` / `io.github.cyaquarius:just-test-boot3:1.2.10` 会加载 case 目录中的 `.yml` 阶段文件；同一阶段 `.yaml` 与 `.yml` 同时存在时 fail-fast。重复 key、空的或缺少 `type` 的 `expect_exception.yaml`、以及 `[C]` 命中多行都会 fail-fast。`[J]` 按 BigDecimal 比较数值。`DATE_FORMAT` 的英文 literal 会加引号；`%M`、`%T`、`%%` 会改写；未知说明符 fail-fast，错误信息包含原始格式串。Maven Central 已发布版本仍是 `1.2.9`。消费待发布修复需先本地 `mvn install`。
 
 ## 做什么、不做什么
 
@@ -38,12 +36,12 @@ flowchart LR
 
 ## 坐标
 
-只选一条产品线，`scope` 用 `test`，版本用已发布的 `1.2.9`：
+只选一条产品线，`scope` 用 `test`，版本用已发布的 `1.2.10`：
 
 | 消费工程 | Maven Central |
 | --- | --- |
-| Java 8 / Spring Boot 2 | `io.github.cyaquarius:just-test-boot2:1.2.9` |
-| Java 17 / Spring Boot 3 | `io.github.cyaquarius:just-test-boot3:1.2.9` |
+| Java 8 / Spring Boot 2 | `io.github.cyaquarius:just-test-boot2:1.2.10` |
+| Java 17 / Spring Boot 3 | `io.github.cyaquarius:just-test-boot3:1.2.10` |
 
 - 不要同时引入两个顶层 artifact。
 - 不要单独声明 `just-test-core`：它已 shade 进 boot JAR，Central 不上架。
@@ -222,7 +220,7 @@ junit.jupiter.execution.parallel.mode.classes.default=concurrent
 
 ## 写出前核对
 
-- [ ] 只依赖 `just-test-boot2` 或 `just-test-boot3` 之一，已发布版本 `1.2.9`，`scope` 为 `test`，没有 `just-test-core`。
+- [ ] 只依赖 `just-test-boot2` 或 `just-test-boot3` 之一，已发布版本 `1.2.10`，`scope` 为 `test`，没有 `just-test-core`。
 - [ ] 用例从需求或接口的入口方法出发，不按内部方法拆单测，也不写端到端。
 - [ ] 有 `src/test/resources/sql/schema.sql`，且启动类不加载生产 DataSource / 事务管理器。不要假设全部 MySQL 方言都能直接跑在 H2 上；新 SQL 用单引号。
 - [ ] 没有为 `@RefreshScope` 再引入 Spring Cloud refresh，也没有自己覆盖框架的 scope 注册。
