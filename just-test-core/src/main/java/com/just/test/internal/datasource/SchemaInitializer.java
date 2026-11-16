@@ -124,7 +124,8 @@ public class SchemaInitializer {
      * 清理 MySQL 特有语法，使 DDL 兼容 H2。
      *
      * <p>清洗前先把字符串、反引号标识符和注释换成占位符，正则只改占位符以外的文本，最后再还原。
-     * 这只划定词法边界，不是 SQL 解析器。</p>
+     * 还原单引号字符串时，把 MySQL 反斜杠转义写成 H2 字面量：{@code \'} 变成 {@code ''}，
+     * {@code \\} 以及其他转义按 MySQL 规则还原。这只划定词法边界，不是 SQL 解析器。</p>
      */
     static String cleanMySqlSyntax(String ddl) {
         List<String> protectedSegments = new ArrayList<>();
@@ -179,7 +180,11 @@ public class SchemaInitializer {
             return end;
         }
         int id = protectedSegments.size();
-        protectedSegments.add(ddl.substring(index + 1, end - 1));
+        String segment = ddl.substring(index + 1, end - 1);
+        if (quote == '\'') {
+            segment = normalizeMySqlSingleQuotedLiteral(segment);
+        }
+        protectedSegments.add(segment);
         code.append(quote);
         appendSegmentMark(code, id);
         code.append(quote);
@@ -228,6 +233,62 @@ public class SchemaInitializer {
             index++;
         }
         return result.toString();
+    }
+
+    /**
+     * 把已经切出的单引号内容从 MySQL 反斜杠转义写成 H2 源码。
+     * {@code \'} 写成 {@code ''}，{@code \\} 写成一个 {@code \}。
+     * {@code \n}、{@code \t} 等控制转义还原成对应字符，未知转义丢掉反斜杠。
+     * 已经是 {@code ''} 的内容不含反斜杠，原样保留。
+     */
+    private static String normalizeMySqlSingleQuotedLiteral(String content) {
+        int escape = content.indexOf('\\');
+        if (escape < 0) {
+            return content;
+        }
+        StringBuilder normalized = new StringBuilder(content.length());
+        normalized.append(content, 0, escape);
+        int index = escape;
+        while (index < content.length()) {
+            char current = content.charAt(index);
+            if (current != '\\' || index + 1 >= content.length()) {
+                normalized.append(current);
+                index++;
+                continue;
+            }
+            char escaped = content.charAt(index + 1);
+            switch (escaped) {
+                case '\'':
+                    normalized.append("''");
+                    break;
+                case '0':
+                    normalized.append('\0');
+                    break;
+                case 'b':
+                    normalized.append('\b');
+                    break;
+                case 'n':
+                    normalized.append('\n');
+                    break;
+                case 'r':
+                    normalized.append('\r');
+                    break;
+                case 't':
+                    normalized.append('\t');
+                    break;
+                case 'Z':
+                    normalized.append((char) 26);
+                    break;
+                case '\\':
+                    normalized.append('\\');
+                    break;
+                default:
+                    normalized.append(escaped);
+                    break;
+            }
+            index += 2;
+        }
+        return normalized.toString();
     }
 
     private static int endOfQuoted(String sql, int index, char quote, boolean backslashEscapes) {

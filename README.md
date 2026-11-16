@@ -22,6 +22,7 @@ Maven Central group is `io.github.cyaquarius`. The current released version is `
 | Java / Spring Boot | 8 / 2.7.18 | 17 / 3.5.16 |
 | Java package | `com.just.test` | `com.just.test` |
 | Released version | `1.2.11` | `1.2.11` |
+| Upcoming / local install | `1.2.12` | `1.2.12` |
 
 Java 8 / Boot 2:
 
@@ -39,7 +40,7 @@ Java 8 / Boot 2:
 - Central publishes only `just-test-boot2` and `just-test-boot3`.
 - A repository that already proxies Central only needs the dependency above.
 - Without Central access, proxy Central, or upload the boot2 / boot3 artifacts to a private release repository and keep group `io.github.cyaquarius`.
-- `mvn install` from this repository is for local development and installs `1.2.11`. Release history: [changelog](#changelog). Library baseline: [compatibility](#compatibility).
+- `mvn install` from this repository is for local development and installs upcoming `1.2.12`. Release history: [changelog](#changelog). Library baseline: [compatibility](#compatibility).
 
 <a id="capabilities"></a>
 
@@ -699,6 +700,8 @@ A parallel failure is not automatically a JustTest isolation failure; first insp
 ## Changelog
 
 The current Maven Central release is `1.2.11`. The rules above match that release.
+
+- **1.2.12 (upcoming)** — MySQL DDL cleanup normalizes backslash escapes inside single-quoted literals for H2: `\'` becomes `''`, and `\\` follows MySQL escape rules, so a mysqldump default such as `DEFAULT 'it\'s ok'` creates the table and keeps the same string value. `DATE_FORMAT` quotes every non-specifier literal, so `'{%Y}'` and other text containing `{`, `}`, or `#` format as written; quoting digits, symbols, and CJK does not change the formatted value. Two known quote-escape limits stay pinned as current behavior, not recommended spellings: `DATE_FORMAT(d,'x\')` is not rewritten, and `"a\"b"` still becomes the broken `'a\'b"`. [Issue #138](https://github.com/cyAquarius/just-test/issues/138).
 
 - **1.2.11** — `@JustSpy` wrap snapshots and restores bean aliases around `removeBeanDefinition` on the same path as `@JustMock` replacement and real-bean intercept, honoring registries that drop aliases on removal. Stock `DefaultListableBeanFactory` keeps them. An alias that would clash with an existing bean name or another alias is skipped and logged; the rest of the install continues. [Issue #103](https://github.com/cyAquarius/just-test/issues/103).
 
