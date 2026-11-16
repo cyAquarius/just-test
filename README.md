@@ -14,15 +14,15 @@ Adopt in this order: [coordinates](#coordinates), [write a test](#write-a-test),
 
 ## Coordinates
 
-Maven Central group is `io.github.cyaquarius`. The current released version is `1.2.12`.
+Maven Central group is `io.github.cyaquarius`. The current released version is `1.2.13`.
 
 | | Boot 2 | Boot 3 |
 | --- | --- | --- |
 | `artifactId` | `just-test-boot2` | `just-test-boot3` |
 | Java / Spring Boot | 8 / 2.7.18 | 17 / 3.5.16 |
 | Java package | `com.just.test` | `com.just.test` |
-| Released version | `1.2.12` | `1.2.12` |
-| Upcoming / local install | `1.2.13` | `1.2.13` |
+| Released version | `1.2.13` | `1.2.13` |
+| Local install | `1.2.13` | `1.2.13` |
 
 Java 8 / Boot 2:
 
@@ -30,7 +30,7 @@ Java 8 / Boot 2:
 <dependency>
     <groupId>io.github.cyaquarius</groupId>
     <artifactId>just-test-boot2</artifactId>
-    <version>1.2.12</version>
+    <version>1.2.13</version>
     <scope>test</scope>
 </dependency>
 ```
@@ -40,7 +40,7 @@ Java 8 / Boot 2:
 - Central publishes only `just-test-boot2` and `just-test-boot3`.
 - A repository that already proxies Central only needs the dependency above.
 - Without Central access, proxy Central, or upload the boot2 / boot3 artifacts to a private release repository and keep group `io.github.cyaquarius`.
-- `mvn install` from this repository is for local development and installs upcoming `1.2.13`. Release history: [changelog](#changelog). Library baseline: [compatibility](#compatibility).
+- `mvn install` from this repository is for local development and installs `1.2.13`, the same version now published on Maven Central. Release history: [changelog](#changelog). Library baseline: [compatibility](#compatibility).
 
 <a id="capabilities"></a>
 
@@ -705,9 +705,9 @@ A parallel failure is not automatically a JustTest isolation failure; first insp
 
 ## Changelog
 
-The current Maven Central release is `1.2.12`. The rules above match that release, plus the upcoming 1.2.13 items in the changelog.
+The current Maven Central release is `1.2.13`. The rules above match that release.
 
-- **1.2.13** (upcoming) — MySQL DDL cleanup keeps the backslash in single-quoted `\%` and `\_`, matching MySQL outside pattern matching. Other unknown escapes such as `\x` still drop the backslash, so H2 stores `\%`, `\_`, and `x`. [Issue #145](https://github.com/cyAquarius/just-test/issues/145).
+- **1.2.13** — MySQL DDL cleanup keeps the backslash in single-quoted `\%` and `\_`, matching MySQL outside pattern matching. Other unknown escapes such as `\x` still drop the backslash, so H2 stores `\%`, `\_`, and `x`. [Issue #145](https://github.com/cyAquarius/just-test/issues/145).
 
 - **1.2.12** — Exact comparison drops a trailing `.0` from `java.sql.Timestamp` on both `expect.yaml` and `response.yaml`. YAML `2026-11-13 10:00:00` matches a timestamp whose `toString()` is `2026-11-13 10:00:00.0`. A non-zero fraction stays on the exact string. `[D]` timestamp strings try `ISO_INSTANT`, `ISO_OFFSET_DATE_TIME`, and `ISO_LOCAL_DATE_TIME` before `Timestamp.valueOf`, so a `Z` suffix, a numeric offset, and a missing seconds field parse. `ISO_LOCAL_DATE_TIME` uses the system default zone. [Issue #139](https://github.com/cyAquarius/just-test/issues/139).
 - **1.2.12** — An overriding `@BeforeCase` method runs once. JustTest keeps the most-derived method for that signature. `@BeforeCase` on an interface default method is unsupported and is not collected or validated. [Issue #139](https://github.com/cyAquarius/just-test/issues/139).
