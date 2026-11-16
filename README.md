@@ -14,15 +14,15 @@ Adopt in this order: [coordinates](#coordinates), [write a test](#write-a-test),
 
 ## Coordinates
 
-Maven Central group is `io.github.cyaquarius`. The current released version is `1.2.11`.
+Maven Central group is `io.github.cyaquarius`. The current released version is `1.2.12`.
 
 | | Boot 2 | Boot 3 |
 | --- | --- | --- |
 | `artifactId` | `just-test-boot2` | `just-test-boot3` |
 | Java / Spring Boot | 8 / 2.7.18 | 17 / 3.5.16 |
 | Java package | `com.just.test` | `com.just.test` |
-| Released version | `1.2.11` | `1.2.11` |
-| Upcoming / local install | `1.2.12` | `1.2.12` |
+| Released version | `1.2.12` | `1.2.12` |
+| Local install | `1.2.12` | `1.2.12` |
 
 Java 8 / Boot 2:
 
@@ -30,7 +30,7 @@ Java 8 / Boot 2:
 <dependency>
     <groupId>io.github.cyaquarius</groupId>
     <artifactId>just-test-boot2</artifactId>
-    <version>1.2.11</version>
+    <version>1.2.12</version>
     <scope>test</scope>
 </dependency>
 ```
@@ -40,7 +40,7 @@ Java 8 / Boot 2:
 - Central publishes only `just-test-boot2` and `just-test-boot3`.
 - A repository that already proxies Central only needs the dependency above.
 - Without Central access, proxy Central, or upload the boot2 / boot3 artifacts to a private release repository and keep group `io.github.cyaquarius`.
-- `mvn install` from this repository is for local development and installs upcoming `1.2.12`. Release history: [changelog](#changelog). Library baseline: [compatibility](#compatibility).
+- `mvn install` from this repository is for local development and installs `1.2.12`, the same version now published on Maven Central. Release history: [changelog](#changelog). Library baseline: [compatibility](#compatibility).
 
 <a id="capabilities"></a>
 
@@ -705,17 +705,17 @@ A parallel failure is not automatically a JustTest isolation failure; first insp
 
 ## Changelog
 
-The current Maven Central release is `1.2.11`. The rules above match that release, plus the upcoming 1.2.12 items in the changelog.
+The current Maven Central release is `1.2.12`. The rules above match that release.
 
-- **1.2.12** (upcoming) — Exact comparison drops a trailing `.0` from `java.sql.Timestamp` on both `expect.yaml` and `response.yaml`. YAML `2026-11-13 10:00:00` matches a timestamp whose `toString()` is `2026-11-13 10:00:00.0`. A non-zero fraction stays on the exact string. `[D]` timestamp strings try `ISO_INSTANT`, `ISO_OFFSET_DATE_TIME`, and `ISO_LOCAL_DATE_TIME` before `Timestamp.valueOf`, so a `Z` suffix, a numeric offset, and a missing seconds field parse. `ISO_LOCAL_DATE_TIME` uses the system default zone. [Issue #139](https://github.com/cyAquarius/just-test/issues/139).
-- **1.2.12** (upcoming) — An overriding `@BeforeCase` method runs once. JustTest keeps the most-derived method for that signature. `@BeforeCase` on an interface default method is unsupported and is not collected or validated. [Issue #139](https://github.com/cyAquarius/just-test/issues/139).
+- **1.2.12** — Exact comparison drops a trailing `.0` from `java.sql.Timestamp` on both `expect.yaml` and `response.yaml`. YAML `2026-11-13 10:00:00` matches a timestamp whose `toString()` is `2026-11-13 10:00:00.0`. A non-zero fraction stays on the exact string. `[D]` timestamp strings try `ISO_INSTANT`, `ISO_OFFSET_DATE_TIME`, and `ISO_LOCAL_DATE_TIME` before `Timestamp.valueOf`, so a `Z` suffix, a numeric offset, and a missing seconds field parse. `ISO_LOCAL_DATE_TIME` uses the system default zone. [Issue #139](https://github.com/cyAquarius/just-test/issues/139).
+- **1.2.12** — An overriding `@BeforeCase` method runs once. JustTest keeps the most-derived method for that signature. `@BeforeCase` on an interface default method is unsupported and is not collected or validated. [Issue #139](https://github.com/cyAquarius/just-test/issues/139).
 
-- **1.2.12 (upcoming)** — MySQL DDL cleanup normalizes backslash escapes inside single-quoted literals for H2: `\'` becomes `''`, and `\\` follows MySQL escape rules, so a mysqldump default such as `DEFAULT 'it\'s ok'` creates the table and keeps the same string value. `DATE_FORMAT` quotes every non-specifier literal, so `'{%Y}'` and other text containing `{`, `}`, or `#` format as written; quoting digits, symbols, and CJK does not change the formatted value. Two known quote-escape limits stay pinned as current behavior, not recommended spellings: `DATE_FORMAT(d,'x\')` is not rewritten, and `"a\"b"` still becomes the broken `'a\'b"`. [Issue #138](https://github.com/cyAquarius/just-test/issues/138).
+- **1.2.12** — MySQL DDL cleanup normalizes backslash escapes inside single-quoted literals for H2: `\'` becomes `''`, and `\\` follows MySQL escape rules, so a mysqldump default such as `DEFAULT 'it\'s ok'` creates the table and keeps the same string value. `DATE_FORMAT` quotes every non-specifier literal, so `'{%Y}'` and other text containing `{`, `}`, or `#` format as written; quoting digits, symbols, and CJK does not change the formatted value. Two known quote-escape limits stay pinned as current behavior, not recommended spellings: `DATE_FORMAT(d,'x\')` is not rewritten, and `"a\"b"` still becomes the broken `'a\'b"`. [Issue #138](https://github.com/cyAquarius/just-test/issues/138).
 
-- **1.2.12 (upcoming)** — the publish SNAPSHOT gate follows Maven `ArtifactUtils.isSnapshot`. A version is refused when its last eight letters are `SNAPSHOT` in any case, including `1.2.10-snapshot` and `1.2.10-Snapshot`, or when it is a timestamp snapshot such as `1.0-20261116.120000-1`. Release versions such as `1.2.11` still pass. [Issue #140](https://github.com/cyAquarius/just-test/issues/140).
-- **1.2.12 (upcoming)** — `require-jdk-toolchain.sh` counts only `<type>jdk</type>` entries. Multiline `<version>` / `<type>` tags and several toolchains written on one line are read. A non-JDK toolchain whose `<version>` equals the requested major does not satisfy the gate. [Issue #140](https://github.com/cyAquarius/just-test/issues/140).
-- **1.2.12 (upcoming)** — a database destroy that cannot take the lifecycle write lock within 60 seconds logs `[JustTest] DESTROY TIMEOUT` at ERROR with the holding thread and execution id before it throws. Spring `DisposableBeanAdapter` still records that exception as WARN on context close, so the suite does not fail there. See [parallel execution](#parallel). [Issue #140](https://github.com/cyAquarius/just-test/issues/140).
-- **1.2.12 (upcoming)** — the Boot 2 final-method guard's preconditions are documented. It treats a Mockito version that starts with `4.` as Boot 2, and treats `InlineMockMaker` or a class name containing `inline` as inline. Overriding Mockito 2 or 3, or relying on the class-name check, can miss. JustTest still does not select a MockMaker. [Issue #140](https://github.com/cyAquarius/just-test/issues/140).
+- **1.2.12** — the publish SNAPSHOT gate follows Maven `ArtifactUtils.isSnapshot`. A version is refused when its last eight letters are `SNAPSHOT` in any case, including `1.2.10-snapshot` and `1.2.10-Snapshot`, or when it is a timestamp snapshot such as `1.0-20261116.120000-1`. Release versions such as `1.2.11` still pass. [Issue #140](https://github.com/cyAquarius/just-test/issues/140).
+- **1.2.12** — `require-jdk-toolchain.sh` counts only `<type>jdk</type>` entries. Multiline `<version>` / `<type>` tags and several toolchains written on one line are read. A non-JDK toolchain whose `<version>` equals the requested major does not satisfy the gate. [Issue #140](https://github.com/cyAquarius/just-test/issues/140).
+- **1.2.12** — a database destroy that cannot take the lifecycle write lock within 60 seconds logs `[JustTest] DESTROY TIMEOUT` at ERROR with the holding thread and execution id before it throws. Spring `DisposableBeanAdapter` still records that exception as WARN on context close, so the suite does not fail there. See [parallel execution](#parallel). [Issue #140](https://github.com/cyAquarius/just-test/issues/140).
+- **1.2.12** — the Boot 2 final-method guard's preconditions are documented. It treats a Mockito version that starts with `4.` as Boot 2, and treats `InlineMockMaker` or a class name containing `inline` as inline. Overriding Mockito 2 or 3, or relying on the class-name check, can miss. JustTest still does not select a MockMaker. [Issue #140](https://github.com/cyAquarius/just-test/issues/140).
 
 - **1.2.11** — `@JustSpy` wrap snapshots and restores bean aliases around `removeBeanDefinition` on the same path as `@JustMock` replacement and real-bean intercept, honoring registries that drop aliases on removal. Stock `DefaultListableBeanFactory` keeps them. An alias that would clash with an existing bean name or another alias is skipped and logged; the rest of the install continues. [Issue #103](https://github.com/cyAquarius/just-test/issues/103).
 
