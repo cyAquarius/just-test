@@ -14,15 +14,15 @@
 
 ## 坐标
 
-Maven Central 的 group 为 `io.github.cyaquarius`。当前已发布版本为 `1.2.12`。
+Maven Central 的 group 为 `io.github.cyaquarius`。当前已发布版本为 `1.2.13`。
 
 | | Boot 2 | Boot 3 |
 | --- | --- | --- |
 | `artifactId` | `just-test-boot2` | `just-test-boot3` |
 | Java / Spring Boot | 8 / 2.7.18 | 17 / 3.5.16 |
 | Java 包名 | `com.just.test` | `com.just.test` |
-| 已发布版本 | `1.2.12` | `1.2.12` |
-| 待发布 / 本地安装 | `1.2.13` | `1.2.13` |
+| 已发布版本 | `1.2.13` | `1.2.13` |
+| 本地安装 | `1.2.13` | `1.2.13` |
 
 Java 8 / Boot 2：
 
@@ -30,7 +30,7 @@ Java 8 / Boot 2：
 <dependency>
     <groupId>io.github.cyaquarius</groupId>
     <artifactId>just-test-boot2</artifactId>
-    <version>1.2.12</version>
+    <version>1.2.13</version>
     <scope>test</scope>
 </dependency>
 ```
@@ -40,7 +40,7 @@ Java 8 / Boot 2：
 - Central **只发布** `just-test-boot2` 与 `just-test-boot3`。
 - 公司私服已代理 Central 时，只需上面的依赖声明。
 - 环境访问不了 Central 时，可代理 Central，或把 boot2 / boot3 制品上传到私服 release 仓库，并保持 group 为 `io.github.cyaquarius`。
-- 基于本仓库开发仍用本地 `mvn install`，装到的是待发布的 `1.2.13`。版本记录见[变更记录](#changelog)。依赖基线见[兼容性](#compatibility)。
+- 基于本仓库开发仍用本地 `mvn install`，装到的是已发布的 `1.2.13`。版本记录见[变更记录](#changelog)。依赖基线见[兼容性](#compatibility)。
 
 <a id="capabilities"></a>
 
@@ -705,9 +705,9 @@ junit.jupiter.execution.parallel.mode.classes.default=concurrent
 
 ## 变更记录
 
-当前 Maven Central 发布版本是 `1.2.12`。上面的规则对应该版本，以及变更记录里待发布的 1.2.13。
+当前 Maven Central 发布版本是 `1.2.13`。上面的规则对应该版本。
 
-- **1.2.13**（待发布）— MySQL DDL 清洗在单引号字面量里保留 `\%` 和 `\_` 的反斜杠，与模式匹配以外的 MySQL 语义一致。其余未知转义（如 `\x`）仍丢掉反斜杠，因此 H2 存下 `\%`、`\_` 和 `x`。[Issue #145](https://github.com/cyAquarius/just-test/issues/145)。
+- **1.2.13** — MySQL DDL 清洗在单引号字面量里保留 `\%` 和 `\_` 的反斜杠，与模式匹配以外的 MySQL 语义一致。其余未知转义（如 `\x`）仍丢掉反斜杠，因此 H2 存下 `\%`、`\_` 和 `x`。[Issue #145](https://github.com/cyAquarius/just-test/issues/145)。
 
 - **1.2.12** — 精确比较在 `expect.yaml` 和 `response.yaml` 两条路径上都会去掉 `java.sql.Timestamp` 尾部的 `.0`。YAML 的 `2026-11-13 10:00:00` 匹配 `toString()` 为 `2026-11-13 10:00:00.0` 的时间戳。非零小数仍按原字符串比较。`[D]` 的时间字符串先尝试 `ISO_INSTANT`、`ISO_OFFSET_DATE_TIME`、`ISO_LOCAL_DATE_TIME`，再回退 `Timestamp.valueOf`，因此 `Z` 后缀、数字时区偏移和缺秒格式可以解析。`ISO_LOCAL_DATE_TIME` 按系统默认时区换算。[Issue #139](https://github.com/cyAquarius/just-test/issues/139)。
 - **1.2.12** — 覆写并重新标注的 `@BeforeCase` 方法只执行一次，按方法签名保留最派生的那个。接口 default 方法上的 `@BeforeCase` 不受支持，不收集也不校验。[Issue #139](https://github.com/cyAquarius/just-test/issues/139)。
