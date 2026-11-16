@@ -46,8 +46,8 @@ class SqlTextRewriterTest {
                 + "date_format (updated_at, '%y/%m/%d %h:%i:%S') FROM sample";
 
         assertEquals(
-                "SELECT FORMATDATETIME(create_time, 'yyyy-MM-dd HH:mm:ss'), "
-                        + "FORMATDATETIME (updated_at, 'yy/MM/dd hh:mm:ss') FROM sample",
+                "SELECT FORMATDATETIME(create_time, 'yyyy''-''MM''-''dd'' ''HH'':''mm'':''ss'), "
+                        + "FORMATDATETIME (updated_at, 'yy''/''MM''/''dd'' ''hh'':''mm'':''ss') FROM sample",
                 SqlTextRewriter.rewriteDateFormatFunctions(sql));
     }
 
@@ -56,7 +56,7 @@ class SqlTextRewriterTest {
         String sql = "SELECT DATE_FORMAT(create_time, \"%Y-%m-%d\") FROM sample";
 
         assertEquals(
-                "SELECT FORMATDATETIME(create_time, 'yyyy-MM-dd') FROM sample",
+                "SELECT FORMATDATETIME(create_time, 'yyyy''-''MM''-''dd') FROM sample",
                 SqlTextRewriter.rewriteDateFormatFunctions(sql));
     }
 
@@ -65,7 +65,7 @@ class SqlTextRewriterTest {
         String sql = "SELECT DATE_FORMAT(create_time, \"%Y-%m-%d \"\"UTC\"\"\") FROM sample";
 
         assertEquals(
-                "SELECT FORMATDATETIME(create_time, 'yyyy-MM-dd'' \"UTC\"''') FROM sample",
+                "SELECT FORMATDATETIME(create_time, 'yyyy''-''MM''-''dd'' \"UTC\"''') FROM sample",
                 SqlTextRewriter.rewriteDateFormatFunctions(sql));
     }
 
@@ -88,17 +88,23 @@ class SqlTextRewriterTest {
         assertEquals(
                 "SELECT FORMATDATETIME(created_at, 'MMMM'), "
                         + "FORMATDATETIME(created_at, 'HH:mm:ss'), "
-                        + "FORMATDATETIME(created_at, '%'), "
+                        + "FORMATDATETIME(created_at, '''%'''), "
                         + "FORMATDATETIME(created_at, '''% done''') FROM sample",
                 SqlTextRewriter.rewriteDateFormatFunctions(sql));
     }
 
     @Test
-    void keepsNumericAndCjkDateFormatPatternsUnquoted() {
-        String sql = "SELECT DATE_FORMAT(created_at, '%Y年%m月%d日') FROM sample";
+    void quotesSymbolDigitAndCjkDateFormatLiterals() {
+        String sql = "SELECT DATE_FORMAT(created_at, '%Y年%m月%d日'), "
+                + "DATE_FORMAT(created_at, '{%Y}'), DATE_FORMAT(created_at, '#%Y#'), "
+                + "DATE_FORMAT(created_at, '%Y}'), DATE_FORMAT(created_at, '2024-%Y') FROM sample";
 
         assertEquals(
-                "SELECT FORMATDATETIME(created_at, 'yyyy年MM月dd日') FROM sample",
+                "SELECT FORMATDATETIME(created_at, 'yyyy''年''MM''月''dd''日'''), "
+                        + "FORMATDATETIME(created_at, '''{''yyyy''}'''), "
+                        + "FORMATDATETIME(created_at, '''#''yyyy''#'''), "
+                        + "FORMATDATETIME(created_at, 'yyyy''}'''), "
+                        + "FORMATDATETIME(created_at, '''2024-''yyyy') FROM sample",
                 SqlTextRewriter.rewriteDateFormatFunctions(sql));
     }
 
@@ -153,7 +159,7 @@ class SqlTextRewriterTest {
                 + "FROM sample";
 
         assertEquals(
-                "SELECT FORMATDATETIME(COALESCE(create_time, fallback_time), 'yyyy-MM-dd') "
+                "SELECT FORMATDATETIME(COALESCE(create_time, fallback_time), 'yyyy''-''MM''-''dd') "
                         + "FROM sample",
                 SqlTextRewriter.rewriteDateFormatFunctions(sql));
     }
@@ -189,6 +195,23 @@ class SqlTextRewriterTest {
 
         assertEquals("SELECT REPLACE(name, 'a', 'b') /* REPLACE(\"x\", \"y\") */",
                 SqlTextRewriter.rewriteDoubleQuotedLiterals(sql));
+    }
+
+    @Test
+    void pinsBackslashQuoteDateFormatAsUnrewritten() {
+        // #107 已知限制，钉住当前行为，不是推荐写法：
+        // H2 里 \' 是反斜杠加结束引号，扫描却把它当成转义，DATE_FORMAT(d,'x\') 整段漏改写。
+        String sql = "SELECT DATE_FORMAT(d,'x\\') FROM sample";
+
+        assertEquals(sql, SqlTextRewriter.rewriteDateFormatFunctions(sql));
+    }
+
+    @Test
+    void pinsBrokenEscapedDoubleQuoteRewrite() {
+        // #107 已知限制，钉住当前行为，不是推荐写法：
+        // \" 不会被当成转义，比较右值 "a\"b" 会变成破碎输出 'a\'b"。
+        assertEquals("name = 'a\\'b\"",
+                SqlTextRewriter.rewriteDoubleQuotedLiterals("name = \"a\\\"b\""));
     }
 
     @Test

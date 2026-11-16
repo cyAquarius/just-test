@@ -128,6 +128,7 @@ public final class JustTestClassValidator {
     /**
      * {@code @BeforeCase} 只接受无参方法。带参方法要到 case 执行时才会在反射调用处失败，
      * 且错误不指向根因，因此与其它配置错误一样在 BeforeAll 失败。
+     * 接口 default 方法上的 {@code @BeforeCase} 不受支持：这里不收集、也不校验。
      */
     private static void validateBeforeCaseMethods(Class<?> testClass) {
         for (Class<?> type = testClass; type != null && type != Object.class; type = type.getSuperclass()) {

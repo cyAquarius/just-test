@@ -22,6 +22,7 @@ Maven Central group is `io.github.cyaquarius`. The current released version is `
 | Java / Spring Boot | 8 / 2.7.18 | 17 / 3.5.16 |
 | Java package | `com.just.test` | `com.just.test` |
 | Released version | `1.2.11` | `1.2.11` |
+| Upcoming / local install | `1.2.12` | `1.2.12` |
 
 Java 8 / Boot 2:
 
@@ -39,7 +40,7 @@ Java 8 / Boot 2:
 - Central publishes only `just-test-boot2` and `just-test-boot3`.
 - A repository that already proxies Central only needs the dependency above.
 - Without Central access, proxy Central, or upload the boot2 / boot3 artifacts to a private release repository and keep group `io.github.cyaquarius`.
-- `mvn install` from this repository is for local development and installs `1.2.11`. Release history: [changelog](#changelog). Library baseline: [compatibility](#compatibility).
+- `mvn install` from this repository is for local development and installs upcoming `1.2.12`. Release history: [changelog](#changelog). Library baseline: [compatibility](#compatibility).
 
 <a id="capabilities"></a>
 
@@ -551,6 +552,8 @@ Flags are case-sensitive. An unknown flag such as `[cn]` or `[CC]`, or a flag us
 
 For database expectations, prefer explicit `[C]` fields so the intended row is unambiguous. A `[C]` condition that matches more than one row fails until it is tightened to one row. `[J]` compares JSON structure; numeric values match as BigDecimal, so `1` and `1.0` are equal, and JSON that cannot be parsed is an error.
 
+Exact comparison drops a trailing `.0` from a `java.sql.Timestamp` on both the database and result paths, so YAML `2026-11-13 10:00:00` matches `2026-11-13 10:00:00.0`. `[D]` parses an actual timestamp string with ISO instant, offset date-time, and local date-time formatters before `yyyy-MM-dd HH:mm:ss`; a local date-time uses the system default zone.
+
 <a id="lifecycle"></a>
 
 ## Lifecycle
@@ -585,6 +588,8 @@ For every YAML case JustTest performs:
 5. invoke matching `@BeforeCase("case-name")` methods and `beforeExecute`, execute the test, then call `afterExecute`. `afterExecute` still runs when the test throws; it is not called if `beforeExecute` failed. Then verify exception, result, and database data. If `afterExecute` itself throws, YAML verification is skipped and that exception is propagated (the original test exception is added as suppressed when present). An exception that is not declared in `expect_exception.yaml` and not handled by `verifyException` is rethrown after `afterExecute` and YAML verification;
 6. execute user `@AfterEach` methods;
 7. close static and scoped mocks and release the case database, retaining cleanup failures without hiding the original test failure.
+
+- `@BeforeCase` on a class method that overrides a superclass method runs once. JustTest keeps the most-derived method for that signature, then runs parent methods before child methods and sorts methods in one class by name. `@BeforeCase` on an interface default method is unsupported: those methods are not collected and not validated.
 
 <a id="compatibility"></a>
 
@@ -700,7 +705,12 @@ A parallel failure is not automatically a JustTest isolation failure; first insp
 
 ## Changelog
 
-The current Maven Central release is `1.2.11`. The rules above match that release.
+The current Maven Central release is `1.2.11`. The rules above match that release, plus the upcoming 1.2.12 items in the changelog.
+
+- **1.2.12** (upcoming) — Exact comparison drops a trailing `.0` from `java.sql.Timestamp` on both `expect.yaml` and `response.yaml`. YAML `2026-11-13 10:00:00` matches a timestamp whose `toString()` is `2026-11-13 10:00:00.0`. A non-zero fraction stays on the exact string. `[D]` timestamp strings try `ISO_INSTANT`, `ISO_OFFSET_DATE_TIME`, and `ISO_LOCAL_DATE_TIME` before `Timestamp.valueOf`, so a `Z` suffix, a numeric offset, and a missing seconds field parse. `ISO_LOCAL_DATE_TIME` uses the system default zone. [Issue #139](https://github.com/cyAquarius/just-test/issues/139).
+- **1.2.12** (upcoming) — An overriding `@BeforeCase` method runs once. JustTest keeps the most-derived method for that signature. `@BeforeCase` on an interface default method is unsupported and is not collected or validated. [Issue #139](https://github.com/cyAquarius/just-test/issues/139).
+
+- **1.2.12 (upcoming)** — MySQL DDL cleanup normalizes backslash escapes inside single-quoted literals for H2: `\'` becomes `''`, and `\\` follows MySQL escape rules, so a mysqldump default such as `DEFAULT 'it\'s ok'` creates the table and keeps the same string value. `DATE_FORMAT` quotes every non-specifier literal, so `'{%Y}'` and other text containing `{`, `}`, or `#` format as written; quoting digits, symbols, and CJK does not change the formatted value. Two known quote-escape limits stay pinned as current behavior, not recommended spellings: `DATE_FORMAT(d,'x\')` is not rewritten, and `"a\"b"` still becomes the broken `'a\'b"`. [Issue #138](https://github.com/cyAquarius/just-test/issues/138).
 
 - **1.2.12 (upcoming)** — the publish SNAPSHOT gate follows Maven `ArtifactUtils.isSnapshot`. A version is refused when its last eight letters are `SNAPSHOT` in any case, including `1.2.10-snapshot` and `1.2.10-Snapshot`, or when it is a timestamp snapshot such as `1.0-20261116.120000-1`. Release versions such as `1.2.11` still pass. [Issue #140](https://github.com/cyAquarius/just-test/issues/140).
 - **1.2.12 (upcoming)** — `require-jdk-toolchain.sh` counts only `<type>jdk</type>` entries. Multiline `<version>` / `<type>` tags and several toolchains written on one line are read. A non-JDK toolchain whose `<version>` equals the requested major does not satisfy the gate. [Issue #140](https://github.com/cyAquarius/just-test/issues/140).

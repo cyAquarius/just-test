@@ -211,6 +211,7 @@ class CreateJustTest extends OrderJustTestSupport {
 - 可执行方法只能有一个 `@CaseSource`。不要混 `@Test`。
 - `@CaseSource` 方法是 `void`。框架**不**采集 Java 返回值。`response.yaml` / `verifyResult` 只看 `context.setResult(...)`。漏写按 `null` 断言。
 - 外部依赖在 `beforeExecute` 或 `@BeforeCase("case-name")` 里 stub。不要把未定义返回值交给业务 fail-open。
+- 子类覆写父类方法并再次标注 `@BeforeCase` 时只执行最派生方法一次。接口 default 方法上的 `@BeforeCase` 不受支持，框架不收集也不校验。
 - 替换 Spring Bean 用 `@JustMock`。只 stub 已有 Bean 的个别方法、其余走真实逻辑（包括 `prepare.yaml` / H2）时用 `@JustSpy`。
 - 静态 Context / 工厂入口用 `configureStaticMocks` + `StaticMockContext`。
 - 使用 `@JustTestProject` 时，真实 Bean 的 `@JustMock` 不拆 Context：未 stub 必须是 Mockito 默认值，没声明 `@JustMock` 的类仍走真实 Bean。

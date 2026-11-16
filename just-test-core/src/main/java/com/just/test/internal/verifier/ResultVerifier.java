@@ -7,8 +7,6 @@ import com.just.test.internal.matcher.BuiltInMatchers;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.math.BigDecimal;
-import java.math.BigInteger;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
@@ -370,74 +368,23 @@ public class ResultVerifier {
                 continue;
             }
 
-            // Y（默认）— 精确匹配
+            // Y（默认）— 精确匹配。BigDecimal 标度与 Timestamp 尾部 .0 走 ExactComparison。
             compareSimple(expectValue, actualValue, fieldPath, failures);
         }
     }
 
     private static void compareSimple(Object expectValue, Object actualValue,
                                       String path, List<String> failures) {
-        if (decimalScalesMatch(expectValue, actualValue)) {
+        if (ExactComparison.decimalScalesMatch(expectValue, actualValue)) {
             return;
         }
         String expectedStr = expectValue == null ? null : expectValue.toString();
-        String actualStr = actualValue == null ? null : normalizeForComparison(actualValue);
+        String actualStr = actualValue == null ? null : ExactComparison.normalizeActual(actualValue);
         if (expectedStr == null && actualStr != null) {
             failures.add(String.format("[%s]: expected null but got <%s>", path, actualStr));
         } else if (expectedStr != null && !expectedStr.equals(actualStr)) {
             failures.add(String.format("[%s]: expected <%s> but got <%s>", path, expectedStr, actualStr));
         }
-    }
-
-    /**
-     * 任一侧已经是 BigDecimal（例如 JDBC DECIMAL）时，用 {@link BigDecimal#compareTo} 忽略标度。
-     * 另一侧只在它是 Number 或数字字符串时转换。没有 BigDecimal 的数值对继续走字符串精确比较。
-     */
-    private static boolean decimalScalesMatch(Object expectValue, Object actualValue) {
-        if (!(expectValue instanceof BigDecimal) && !(actualValue instanceof BigDecimal)) {
-            return false;
-        }
-        BigDecimal expected = toComparableDecimal(expectValue);
-        BigDecimal actual = toComparableDecimal(actualValue);
-        return expected != null && actual != null && expected.compareTo(actual) == 0;
-    }
-
-    private static BigDecimal toComparableDecimal(Object value) {
-        if (value instanceof BigDecimal) {
-            return (BigDecimal) value;
-        }
-        if (value instanceof BigInteger) {
-            return new BigDecimal((BigInteger) value);
-        }
-        if (value instanceof Long || value instanceof Integer
-                || value instanceof Short || value instanceof Byte) {
-            return BigDecimal.valueOf(((Number) value).longValue());
-        }
-        if (value instanceof Number) {
-            try {
-                return new BigDecimal(value.toString());
-            } catch (NumberFormatException ex) {
-                return null;
-            }
-        }
-        if (value instanceof String) {
-            try {
-                return new BigDecimal((String) value);
-            } catch (NumberFormatException ex) {
-                return null;
-            }
-        }
-        return null;
-    }
-
-    /**
-     * 类型感知的 toString，避免 Fastjson 往返导致的精度丢失。
-     */
-    private static String normalizeForComparison(Object value) {
-        if (value instanceof BigDecimal) {
-            return ((BigDecimal) value).toPlainString();
-        }
-        return value.toString();
     }
 
     @SuppressWarnings("unchecked")

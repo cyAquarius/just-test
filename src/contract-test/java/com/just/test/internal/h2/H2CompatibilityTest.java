@@ -107,6 +107,9 @@ class H2CompatibilityTest {
             assertEquals("2024年03月05日", dateFormat(jdbcTemplate, "'%Y年%m月%d日'"));
             assertEquals("12:30:45", dateFormat(jdbcTemplate, "'%T'"));
             assertEquals("%", dateFormat(jdbcTemplate, "'%%'"));
+            assertEquals("{2024}", dateFormat(jdbcTemplate, "'{%Y}'"));
+            assertEquals("#2024#", dateFormat(jdbcTemplate, "'#%Y#'"));
+            assertEquals("2024}", dateFormat(jdbcTemplate, "'%Y}'"));
             assertEquals("It's 2024", dateFormat(jdbcTemplate, "'It''s %Y'"));
             assertEquals("2024-03-05 \"UTC\"", dateFormat(jdbcTemplate, "\"%Y-%m-%d \"\"UTC\"\"\""));
             assertEquals(DateTimeFormatter.ofPattern("MMMM").format(

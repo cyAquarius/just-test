@@ -9,6 +9,8 @@ import java.time.LocalDateTime;
 import java.time.OffsetDateTime;
 import java.time.ZoneId;
 import java.time.ZonedDateTime;
+import java.time.format.DateTimeFormatter;
+import java.time.format.DateTimeParseException;
 import java.util.List;
 import java.util.Map;
 import java.util.regex.Pattern;
@@ -388,13 +390,11 @@ public final class BuiltInMatchers {
             } else if (actualValue instanceof ZonedDateTime) {
                 actualMillis = ((ZonedDateTime) actualValue).toInstant().toEpochMilli();
             } else {
-                // Timestamp.valueOf 只接受 yyyy-mm-dd hh:mm:ss。ISO-8601 的 'T' 先换成空格。
-                try {
-                    String text = actualValue.toString().replace('T', ' ');
-                    actualMillis = java.sql.Timestamp.valueOf(text).getTime();
-                } catch (IllegalArgumentException e) {
+                Long parsed = parseTimestampText(actualValue.toString());
+                if (parsed == null) {
                     return false;
                 }
+                actualMillis = parsed;
             }
             long diff = Math.abs(System.currentTimeMillis() - actualMillis);
             return diff <= (long) toleranceSeconds * 1000;
@@ -403,6 +403,46 @@ public final class BuiltInMatchers {
         @Override
         public String describe() {
             return "[D" + toleranceSeconds + "] (within " + toleranceSeconds + "s of now)";
+        }
+
+        /**
+         * 先试 Java 8 的 ISO instant、offset、local date-time，失败再走
+         * {@code Timestamp.valueOf}（{@code T} 换成空格）。
+         * {@code ISO_LOCAL_DATE_TIME} 与 {@link LocalDateTime} 分支一样按系统默认时区换算。
+         */
+        private static Long parseTimestampText(String text) {
+            Long isoMillis = parseIsoTimestamp(text);
+            if (isoMillis != null) {
+                return isoMillis;
+            }
+            try {
+                return java.sql.Timestamp.valueOf(text.replace('T', ' ')).getTime();
+            } catch (IllegalArgumentException ex) {
+                return null;
+            }
+        }
+
+        private static Long parseIsoTimestamp(String text) {
+            try {
+                return DateTimeFormatter.ISO_INSTANT.parse(text, Instant::from).toEpochMilli();
+            } catch (DateTimeParseException ex) {
+                // 不是 UTC instant，继续试带偏移和本地时间。
+            }
+            try {
+                return DateTimeFormatter.ISO_OFFSET_DATE_TIME.parse(text, OffsetDateTime::from)
+                        .toInstant()
+                        .toEpochMilli();
+            } catch (DateTimeParseException ex) {
+                // 不是带偏移的日期时间。
+            }
+            try {
+                return DateTimeFormatter.ISO_LOCAL_DATE_TIME.parse(text, LocalDateTime::from)
+                        .atZone(ZoneId.systemDefault())
+                        .toInstant()
+                        .toEpochMilli();
+            } catch (DateTimeParseException ex) {
+                return null;
+            }
         }
     }
 

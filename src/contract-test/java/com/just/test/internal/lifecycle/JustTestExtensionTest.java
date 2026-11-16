@@ -17,12 +17,15 @@ import java.util.List;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
 
 class JustTestExtensionTest {
 
@@ -107,6 +110,42 @@ class JustTestExtensionTest {
         assertEquals("afterExecute failed", failure.getMessage());
         assertEquals(1, failure.getSuppressed().length);
         assertSame(thrown, failure.getSuppressed()[0]);
+    }
+
+    @Test
+    void skipsAfterExecuteWhenBeforeExecuteFails() throws Throwable {
+        CaseContext caseContext = new CaseContext("before-fails",
+                "com/just/test/lifecycle/unhandled-missing");
+        AtomicInteger afterExecuteCalls = new AtomicInteger();
+        JustTestLifecycle lifecycle = new JustTestLifecycle() {
+            @Override
+            public void beforeExecute(CaseContext context) {
+                throw new IllegalStateException("beforeExecute failed");
+            }
+
+            @Override
+            public void afterExecute(CaseContext context) {
+                afterExecuteCalls.incrementAndGet();
+            }
+        };
+        JustTestExtension extension = new JustTestExtension(caseContext);
+        bindLifecycle(extension, lifecycle);
+
+        @SuppressWarnings("unchecked")
+        InvocationInterceptor.Invocation<Void> invocation = mock(InvocationInterceptor.Invocation.class);
+        @SuppressWarnings("unchecked")
+        ReflectiveInvocationContext<Method> invocationContext = mock(ReflectiveInvocationContext.class);
+        ExtensionContext extensionContext = mock(ExtensionContext.class);
+        doReturn(lifecycle).when(extensionContext).getRequiredTestInstance();
+        doReturn(lifecycle.getClass()).when(extensionContext).getRequiredTestClass();
+
+        IllegalStateException failure = assertThrows(IllegalStateException.class,
+                () -> extension.interceptTestTemplateMethod(invocation, invocationContext, extensionContext));
+
+        assertEquals("beforeExecute failed", failure.getMessage());
+        assertEquals(0, afterExecuteCalls.get());
+        assertNull(caseContext.getException());
+        verify(invocation, never()).proceed();
     }
 
     private static void interceptThrowing(JustTestExtension extension,
