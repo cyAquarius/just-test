@@ -581,7 +581,7 @@ sequenceDiagram
 
 - `@JustTest` is a class-level execution contract: the test class must implement `JustTestLifecycle`, and every executable test method in the class must use `@CaseSource`.
 - If the class does not implement the interface, or it contains `@Test`, `@RepeatedTest`, `@ParameterizedTest`, `@TestFactory`, or another ordinary JUnit test method, JustTest fails in `BeforeAll` and asks you to fix the class.
-- Combining `@TestInstance(PER_CLASS)` with concurrent case execution (only when `junit.jupiter.execution.parallel.enabled=true`) also fails in `BeforeAll`. See [parallel execution](#parallel).
+- When `junit.jupiter.execution.parallel.enabled=true`, a `@TestInstance(PER_CLASS)` case with an explicit `@Execution(CONCURRENT)` on its method or inherited from its class fails validation in `BeforeAll`. See [parallel execution](#parallel).
 - For incremental adoption, leave existing JUnit test classes unchanged and put new cases in a separate `@JustTest` class. Legacy classes without `@JustTest` are unaffected.
 - `@CaseSource` is itself the test annotation. Do not combine it with another JUnit test annotation.
 
@@ -648,9 +648,11 @@ flowchart TD
   on["classes.default = concurrent"] --> ask{"Static state, shared resources,<br>and async threads are safe?"}
   ask -->|no| seq["Keep mode.default = same_thread"]
   ask -->|yes| conc["Set mode.default = concurrent"]
-  conc --> per{"PER_CLASS, parallel enabled,<br>and cases would run concurrently?"}
-  per -->|yes| fail["BeforeAll fails"]
-  per -->|no| go["Cases may run together<br>Use PER_METHOD"]
+  conc --> per{"PER_CLASS?"}
+  per -->|yes| explicit{"Any case uses explicit CONCURRENT<br>from its method or class?"}
+  explicit -->|yes| fail["BeforeAll fails"]
+  explicit -->|no| same["Cases stay SAME_THREAD"]
+  per -->|no| go["PER_METHOD cases may run together"]
 ```
 
 Start with classes concurrent and cases inside each class sequential:
@@ -662,10 +664,10 @@ junit.jupiter.execution.parallel.mode.default=same_thread
 junit.jupiter.execution.parallel.mode.classes.default=concurrent
 ```
 
-- After verifying that application static state, external shared resources, and asynchronous threads are safe, set `mode.default` to `concurrent` to run cases within the same class concurrently.
+- After verifying that application static state, external shared resources, and asynchronous threads are safe, set `mode.default` to `concurrent` to allow `PER_METHOD` cases within the same class to run concurrently.
 - Normal tests do not need `@Execution`. Use `@Execution(ExecutionMode.SAME_THREAD)` only to downgrade an exceptional class that cannot satisfy the concurrency boundaries.
-- `@TestInstance(PER_CLASS)` cannot be combined with concurrent case execution when JUnit parallel is enabled (`junit.jupiter.execution.parallel.enabled=true`) and cases would run concurrently (`@Execution(CONCURRENT)` or `mode.default=concurrent`).
-- Those cases would share one test instance and can race `@JustMock` field injection.
+- JUnit runs `PER_CLASS` child nodes on `SAME_THREAD` by default. JustTest accepts a `PER_CLASS` class without `@Execution` even when `mode.default=concurrent`. When JUnit parallel is enabled (`junit.jupiter.execution.parallel.enabled=true`), JustTest rejects a `PER_CLASS` case whose method declares `@Execution(CONCURRENT)` or inherits it from the class. A method-level `@Execution(SAME_THREAD)` overrides class-level `CONCURRENT`.
+- Concurrent `PER_CLASS` cases would share one test instance and can race `@JustMock` field injection.
 - If parallel is disabled, leftover `@Execution` or `mode.default=concurrent` settings are ignored for this check.
 - Use the JUnit default `PER_METHOD` with concurrent cases, or keep `PER_CLASS` with `SAME_THREAD`.
 - Class-level parallelism (`mode.classes.default`) is not case concurrency.
@@ -718,7 +720,7 @@ The current Maven Central release is `1.2.13`. The rules above match that releas
 - **1.2.14** (upcoming) — `@JustTestProject` scans during configuration parsing and excludes other project bootstraps. Scanned MyBatis factories take precedence, MyBatis auto-configuration properties apply, custom scan filters work, and Feign auto-mock requires a directly annotated interface. [Issue #158](https://github.com/cyAquarius/just-test/issues/158).
 - **1.2.14** (upcoming) — Each case supports independent `REQUIRES_NEW` transactions. MySQL schema splitting preserves escapes. SQL compatibility fixes cover nested `DATE_FORMAT`, English month names, double-quoted comparisons, and `FIND_IN_SET('', '')`. [Issue #159](https://github.com/cyAquarius/just-test/issues/159).
 - **1.2.14** (upcoming) — YAML implicitly resolves only decimal integers and `true` / `false` booleans for those types. SQL identifiers are quoted. Response flags, null row selection, ambiguous matches, and exception keys are validated. [Issue #160](https://github.com/cyAquarius/just-test/issues/160).
-- **1.2.14** (upcoming) — Verification hooks preserve case failures. Transaction leaks fail aborted cases, and cleanup checks bound resources without creating lazy beans. Fixed `@BeforeCase` overrides, repeated `@Sql` validation, and parameter conversions. [Issue #161](https://github.com/cyAquarius/just-test/issues/161).
+- **1.2.14** (upcoming) — Verification hooks preserve case failures. Transaction leaks fail aborted cases, and cleanup checks bound resources without creating lazy beans. Fixed `@BeforeCase` overrides, repeated `@Sql` validation, and parameter conversions. Bare `PER_CLASS` now follows JUnit’s `SAME_THREAD` default under `mode.default=concurrent`. [Issue #161](https://github.com/cyAquarius/just-test/issues/161).
 - **1.2.14** (upcoming) — Publishing verifies staged artifacts in an isolated Maven repository and includes core sources and Javadocs. The publish job requires main or a tag, tag versions must match the POM, and toolchain validation uses Maven’s version matcher. [Issue #162](https://github.com/cyAquarius/just-test/issues/162).
 - **1.2.14** (upcoming) — Case directory names with spaces or Chinese characters load their stages on a file classpath. Discovered cases with no loadable stage files fail with the case path. [Issue #148](https://github.com/cyAquarius/just-test/issues/148).
 - **1.2.14** (upcoming) — Prepare and expect require a list of mappings for each table and report the stage file, table, and invalid row index where applicable. [Issue #149](https://github.com/cyAquarius/just-test/issues/149).
