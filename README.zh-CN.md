@@ -14,15 +14,15 @@
 
 ## 坐标
 
-Maven Central 的 group 为 `io.github.cyaquarius`。当前已发布版本为 `1.2.13`。
+Maven Central 的 group 为 `io.github.cyaquarius`。当前已发布版本为 `1.2.14`。
 
 | | Boot 2 | Boot 3 |
 | --- | --- | --- |
 | `artifactId` | `just-test-boot2` | `just-test-boot3` |
 | Java / Spring Boot | 8 / 2.7.18 | 17 / 3.5.16 |
 | Java 包名 | `com.just.test` | `com.just.test` |
-| 已发布版本 | `1.2.13` | `1.2.13` |
-| 待发布 / 本地安装 | `1.2.14` | `1.2.14` |
+| 已发布版本 | `1.2.14` | `1.2.14` |
+| 本地安装 | `1.2.14` | `1.2.14` |
 
 Java 8 / Boot 2：
 
@@ -30,7 +30,7 @@ Java 8 / Boot 2：
 <dependency>
     <groupId>io.github.cyaquarius</groupId>
     <artifactId>just-test-boot2</artifactId>
-    <version>1.2.13</version>
+    <version>1.2.14</version>
     <scope>test</scope>
 </dependency>
 ```
@@ -40,7 +40,7 @@ Java 8 / Boot 2：
 - Central **只发布** `just-test-boot2` 与 `just-test-boot3`。
 - 公司私服已代理 Central 时，只需上面的依赖声明。
 - 环境访问不了 Central 时，可代理 Central，或把 boot2 / boot3 制品上传到私服 release 仓库，并保持 group 为 `io.github.cyaquarius`。
-- 基于本仓库开发仍用本地 `mvn install`，装到的是待发布的 `1.2.14`。版本记录见[变更记录](#changelog)。依赖基线见[兼容性](#compatibility)。
+- 基于本仓库开发仍用本地 `mvn install`，装到的是 `1.2.14`，与当前 Maven Central 已发布版本相同。版本记录见[变更记录](#changelog)。依赖基线见[兼容性](#compatibility)。
 
 <a id="capabilities"></a>
 
@@ -713,20 +713,20 @@ junit.jupiter.execution.parallel.mode.classes.default=concurrent
 
 ## 变更记录
 
-当前 Maven Central 发布版本是 `1.2.13`。上面的规则对应该版本，以及变更记录里待发布的 1.2.14。
+当前 Maven Central 发布版本是 `1.2.14`。上面的规则对应该版本。
 
-- **1.2.14**（待发布）— 线程级 spy 与真实 Bean 拦截不再把 Spring 初始化和销毁回调转给真实单例。ThreadScope 支持嵌套获取不同 Bean。 [Issue #156](https://github.com/cyAquarius/just-test/issues/156)。
-- **1.2.14**（待发布）— 修复泛型 spy、命名及别名 mock 的 Context 缓存绑定。Bean 替换与包装保留工厂方法 qualifier。 [Issue #157](https://github.com/cyAquarius/just-test/issues/157)。
-- **1.2.14**（待发布）— `@JustTestProject` 在配置类解析期间扫描并排除其他项目启动类。保留扫描到的 MyBatis 工厂，支持 MyBatis 自动配置属性与自定义过滤器，Feign 自动 mock 仅匹配带注解的接口。 [Issue #158](https://github.com/cyAquarius/just-test/issues/158)。
-- **1.2.14**（待发布）— 每个 case 的 `REQUIRES_NEW` 使用独立连接。修复 MySQL DDL 拆分和转义、嵌套 `DATE_FORMAT`、英文月份名、双引号比较及 `FIND_IN_SET('', '')`。 [Issue #159](https://github.com/cyAquarius/just-test/issues/159)。
-- **1.2.14**（待发布）— YAML 只隐式识别十进制整数和 `true` / `false` 布尔值。表名和列名自动加引号。修复顶层 Flag、空值行定位、重复匹配及异常字段校验。 [Issue #160](https://github.com/cyAquarius/just-test/issues/160)。
-- **1.2.14**（待发布）— 校验钩子保留用例原异常。假设中止时若有事务泄漏则判失败。事务清理只检查已绑定资源。修复 `@BeforeCase` 覆写、重复 `@Sql` 和参数转换。未声明 `@Execution` 的 `PER_CLASS` 在 `mode.default=concurrent` 时遵循 JUnit 的 `SAME_THREAD` 默认行为。 [Issue #161](https://github.com/cyAquarius/just-test/issues/161)。
-- **1.2.14**（待发布）— 发布前用隔离 Maven 仓库验证暂存制品，发布包附带 core 源码和 Javadoc。发布限定 main 或 tag，tag 必须与 POM 版本一致，Java 工具链门禁与 Maven 版本匹配规则一致。 [Issue #162](https://github.com/cyAquarius/just-test/issues/162)。
-- **1.2.14**（待发布）— 文件 classpath 上含空格或中文的 case 目录可以加载阶段文件。已发现的 case 若无可加载阶段文件，立即报错并显示路径。 [Issue #148](https://github.com/cyAquarius/just-test/issues/148)。
-- **1.2.14**（待发布）— prepare 和 expect 中每张表都必须是映射列表。格式错误会显示阶段文件、表名，以及适用时的行下标。 [Issue #149](https://github.com/cyAquarius/just-test/issues/149)。
-- **1.2.14**（待发布）— request YAML 按 case 加载，格式错误只影响该次调用。YAML 解析错误会显示 classpath 路径。 [Issue #151](https://github.com/cyAquarius/just-test/issues/151) [Issue #153](https://github.com/cyAquarius/just-test/issues/153)。
-- **1.2.14**（待发布）— 整数参数转换拒绝小数截断和溢出，标量、对象、列表对整数字符串使用相同规则。 [Issue #152](https://github.com/cyAquarius/just-test/issues/152)。
-- **1.2.14**（待发布）— JUnit 假设中止保持跳过状态，`@BeforeCase` 保留断言失败。Central 上传设置连接及总超时，在 HTTP 错误时失败，并通过标准输入传递 Bearer 请求头。 [Issue #154](https://github.com/cyAquarius/just-test/issues/154)。
+- **1.2.14** — 线程级 spy 与真实 Bean 拦截不再把 Spring 初始化和销毁回调转给真实单例。ThreadScope 支持嵌套获取不同 Bean。 [Issue #156](https://github.com/cyAquarius/just-test/issues/156)。
+- **1.2.14** — 修复泛型 spy、命名及别名 mock 的 Context 缓存绑定。Bean 替换与包装保留工厂方法 qualifier。 [Issue #157](https://github.com/cyAquarius/just-test/issues/157)。
+- **1.2.14** — `@JustTestProject` 在配置类解析期间扫描并排除其他项目启动类。保留扫描到的 MyBatis 工厂，支持 MyBatis 自动配置属性与自定义过滤器，Feign 自动 mock 仅匹配带注解的接口。 [Issue #158](https://github.com/cyAquarius/just-test/issues/158)。
+- **1.2.14** — 每个 case 的 `REQUIRES_NEW` 使用独立连接。修复 MySQL DDL 拆分和转义、嵌套 `DATE_FORMAT`、英文月份名、双引号比较及 `FIND_IN_SET('', '')`。 [Issue #159](https://github.com/cyAquarius/just-test/issues/159)。
+- **1.2.14** — YAML 只隐式识别十进制整数和 `true` / `false` 布尔值。表名和列名自动加引号。修复顶层 Flag、空值行定位、重复匹配及异常字段校验。 [Issue #160](https://github.com/cyAquarius/just-test/issues/160)。
+- **1.2.14** — 校验钩子保留用例原异常。假设中止时若有事务泄漏则判失败。事务清理只检查已绑定资源。修复 `@BeforeCase` 覆写、重复 `@Sql` 和参数转换。未声明 `@Execution` 的 `PER_CLASS` 在 `mode.default=concurrent` 时遵循 JUnit 的 `SAME_THREAD` 默认行为。 [Issue #161](https://github.com/cyAquarius/just-test/issues/161)。
+- **1.2.14** — 发布前用隔离 Maven 仓库验证暂存制品，发布包附带 core 源码和 Javadoc。发布限定 main 或 tag，tag 必须与 POM 版本一致，Java 工具链门禁与 Maven 版本匹配规则一致。 [Issue #162](https://github.com/cyAquarius/just-test/issues/162)。
+- **1.2.14** — 文件 classpath 上含空格或中文的 case 目录可以加载阶段文件。已发现的 case 若无可加载阶段文件，立即报错并显示路径。 [Issue #148](https://github.com/cyAquarius/just-test/issues/148)。
+- **1.2.14** — prepare 和 expect 中每张表都必须是映射列表。格式错误会显示阶段文件、表名，以及适用时的行下标。 [Issue #149](https://github.com/cyAquarius/just-test/issues/149)。
+- **1.2.14** — request YAML 按 case 加载，格式错误只影响该次调用。YAML 解析错误会显示 classpath 路径。 [Issue #151](https://github.com/cyAquarius/just-test/issues/151) [Issue #153](https://github.com/cyAquarius/just-test/issues/153)。
+- **1.2.14** — 整数参数转换拒绝小数截断和溢出，标量、对象、列表对整数字符串使用相同规则。 [Issue #152](https://github.com/cyAquarius/just-test/issues/152)。
+- **1.2.14** — JUnit 假设中止保持跳过状态，`@BeforeCase` 保留断言失败。Central 上传设置连接及总超时，在 HTTP 错误时失败，并通过标准输入传递 Bearer 请求头。 [Issue #154](https://github.com/cyAquarius/just-test/issues/154)。
 
 - **1.2.13** — MySQL DDL 清洗在单引号字面量里保留 `\%` 和 `\_` 的反斜杠，与模式匹配以外的 MySQL 语义一致。其余未知转义（如 `\x`）仍丢掉反斜杠，因此 H2 存下 `\%`、`\_` 和 `x`。[Issue #145](https://github.com/cyAquarius/just-test/issues/145)。
 

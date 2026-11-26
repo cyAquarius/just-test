@@ -14,15 +14,15 @@ Adopt in this order: [coordinates](#coordinates), [write a test](#write-a-test),
 
 ## Coordinates
 
-Maven Central group is `io.github.cyaquarius`. The current released version is `1.2.13`.
+Maven Central group is `io.github.cyaquarius`. The current released version is `1.2.14`.
 
 | | Boot 2 | Boot 3 |
 | --- | --- | --- |
 | `artifactId` | `just-test-boot2` | `just-test-boot3` |
 | Java / Spring Boot | 8 / 2.7.18 | 17 / 3.5.16 |
 | Java package | `com.just.test` | `com.just.test` |
-| Released version | `1.2.13` | `1.2.13` |
-| Upcoming / local install | `1.2.14` | `1.2.14` |
+| Released version | `1.2.14` | `1.2.14` |
+| Local install | `1.2.14` | `1.2.14` |
 
 Java 8 / Boot 2:
 
@@ -30,7 +30,7 @@ Java 8 / Boot 2:
 <dependency>
     <groupId>io.github.cyaquarius</groupId>
     <artifactId>just-test-boot2</artifactId>
-    <version>1.2.13</version>
+    <version>1.2.14</version>
     <scope>test</scope>
 </dependency>
 ```
@@ -40,7 +40,7 @@ Java 8 / Boot 2:
 - Central publishes only `just-test-boot2` and `just-test-boot3`.
 - A repository that already proxies Central only needs the dependency above.
 - Without Central access, proxy Central, or upload the boot2 / boot3 artifacts to a private release repository and keep group `io.github.cyaquarius`.
-- `mvn install` from this repository is for local development and installs upcoming `1.2.14`. Release history: [changelog](#changelog). Library baseline: [compatibility](#compatibility).
+- `mvn install` from this repository is for local development and installs `1.2.14`, the same version now published on Maven Central. Release history: [changelog](#changelog). Library baseline: [compatibility](#compatibility).
 
 <a id="capabilities"></a>
 
@@ -713,20 +713,20 @@ A parallel failure is not automatically a JustTest isolation failure; first insp
 
 ## Changelog
 
-The current Maven Central release is `1.2.13`. The rules above match that release, plus the upcoming 1.2.14 items in the changelog.
+The current Maven Central release is `1.2.14`. The rules above match that release.
 
-- **1.2.14** (upcoming) — Thread-scoped spies and real-bean intercepts keep Spring lifecycle callbacks on the real singleton’s own lifecycle. ThreadScope supports nested bean creation. [Issue #156](https://github.com/cyAquarius/just-test/issues/156).
-- **1.2.14** (upcoming) — Context caching distinguishes generic spy fields and preserves named and aliased thread-scoped bindings. Mock and spy definitions retain factory-method qualifiers. [Issue #157](https://github.com/cyAquarius/just-test/issues/157).
-- **1.2.14** (upcoming) — `@JustTestProject` scans during configuration parsing and excludes other project bootstraps. Scanned MyBatis factories take precedence, MyBatis auto-configuration properties apply, custom scan filters work, and Feign auto-mock requires a directly annotated interface. [Issue #158](https://github.com/cyAquarius/just-test/issues/158).
-- **1.2.14** (upcoming) — Each case supports independent `REQUIRES_NEW` transactions. MySQL schema splitting preserves escapes. SQL compatibility fixes cover nested `DATE_FORMAT`, English month names, double-quoted comparisons, and `FIND_IN_SET('', '')`. [Issue #159](https://github.com/cyAquarius/just-test/issues/159).
-- **1.2.14** (upcoming) — YAML implicitly resolves only decimal integers and `true` / `false` booleans for those types. SQL identifiers are quoted. Response flags, null row selection, ambiguous matches, and exception keys are validated. [Issue #160](https://github.com/cyAquarius/just-test/issues/160).
-- **1.2.14** (upcoming) — Verification hooks preserve case failures. Transaction leaks fail aborted cases, and cleanup checks bound resources without creating lazy beans. Fixed `@BeforeCase` overrides, repeated `@Sql` validation, and parameter conversions. Bare `PER_CLASS` now follows JUnit’s `SAME_THREAD` default under `mode.default=concurrent`. [Issue #161](https://github.com/cyAquarius/just-test/issues/161).
-- **1.2.14** (upcoming) — Publishing verifies staged artifacts in an isolated Maven repository and includes core sources and Javadocs. The publish job requires main or a tag, tag versions must match the POM, and toolchain validation uses Maven’s version matcher. [Issue #162](https://github.com/cyAquarius/just-test/issues/162).
-- **1.2.14** (upcoming) — Case directory names with spaces or Chinese characters load their stages on a file classpath. Discovered cases with no loadable stage files fail with the case path. [Issue #148](https://github.com/cyAquarius/just-test/issues/148).
-- **1.2.14** (upcoming) — Prepare and expect require a list of mappings for each table and report the stage file, table, and invalid row index where applicable. [Issue #149](https://github.com/cyAquarius/just-test/issues/149).
-- **1.2.14** (upcoming) — Request YAML loads per case, so malformed input fails only that invocation. YAML parse errors include the classpath path. [Issue #151](https://github.com/cyAquarius/just-test/issues/151) [Issue #153](https://github.com/cyAquarius/just-test/issues/153).
-- **1.2.14** (upcoming) — Integer and long parameter accessors reject fractions and overflow and support integer strings consistently across scalar, object, and list access. [Issue #152](https://github.com/cyAquarius/just-test/issues/152).
-- **1.2.14** (upcoming) — JUnit assumption aborts stay skipped, and `@BeforeCase` preserves assertion failures. Central upload has connection and total timeouts, fails on HTTP errors, and passes its Bearer header via stdin. [Issue #154](https://github.com/cyAquarius/just-test/issues/154).
+- **1.2.14** — Thread-scoped spies and real-bean intercepts keep Spring lifecycle callbacks on the real singleton’s own lifecycle. ThreadScope supports nested bean creation. [Issue #156](https://github.com/cyAquarius/just-test/issues/156).
+- **1.2.14** — Context caching distinguishes generic spy fields and preserves named and aliased thread-scoped bindings. Mock and spy definitions retain factory-method qualifiers. [Issue #157](https://github.com/cyAquarius/just-test/issues/157).
+- **1.2.14** — `@JustTestProject` scans during configuration parsing and excludes other project bootstraps. Scanned MyBatis factories take precedence, MyBatis auto-configuration properties apply, custom scan filters work, and Feign auto-mock requires a directly annotated interface. [Issue #158](https://github.com/cyAquarius/just-test/issues/158).
+- **1.2.14** — Each case supports independent `REQUIRES_NEW` transactions. MySQL schema splitting preserves escapes. SQL compatibility fixes cover nested `DATE_FORMAT`, English month names, double-quoted comparisons, and `FIND_IN_SET('', '')`. [Issue #159](https://github.com/cyAquarius/just-test/issues/159).
+- **1.2.14** — YAML implicitly resolves only decimal integers and `true` / `false` booleans for those types. SQL identifiers are quoted. Response flags, null row selection, ambiguous matches, and exception keys are validated. [Issue #160](https://github.com/cyAquarius/just-test/issues/160).
+- **1.2.14** — Verification hooks preserve case failures. Transaction leaks fail aborted cases, and cleanup checks bound resources without creating lazy beans. Fixed `@BeforeCase` overrides, repeated `@Sql` validation, and parameter conversions. Bare `PER_CLASS` now follows JUnit’s `SAME_THREAD` default under `mode.default=concurrent`. [Issue #161](https://github.com/cyAquarius/just-test/issues/161).
+- **1.2.14** — Publishing verifies staged artifacts in an isolated Maven repository and includes core sources and Javadocs. The publish job requires main or a tag, tag versions must match the POM, and toolchain validation uses Maven’s version matcher. [Issue #162](https://github.com/cyAquarius/just-test/issues/162).
+- **1.2.14** — Case directory names with spaces or Chinese characters load their stages on a file classpath. Discovered cases with no loadable stage files fail with the case path. [Issue #148](https://github.com/cyAquarius/just-test/issues/148).
+- **1.2.14** — Prepare and expect require a list of mappings for each table and report the stage file, table, and invalid row index where applicable. [Issue #149](https://github.com/cyAquarius/just-test/issues/149).
+- **1.2.14** — Request YAML loads per case, so malformed input fails only that invocation. YAML parse errors include the classpath path. [Issue #151](https://github.com/cyAquarius/just-test/issues/151) [Issue #153](https://github.com/cyAquarius/just-test/issues/153).
+- **1.2.14** — Integer and long parameter accessors reject fractions and overflow and support integer strings consistently across scalar, object, and list access. [Issue #152](https://github.com/cyAquarius/just-test/issues/152).
+- **1.2.14** — JUnit assumption aborts stay skipped, and `@BeforeCase` preserves assertion failures. Central upload has connection and total timeouts, fails on HTTP errors, and passes its Bearer header via stdin. [Issue #154](https://github.com/cyAquarius/just-test/issues/154).
 
 - **1.2.13** — MySQL DDL cleanup keeps the backslash in single-quoted `\%` and `\_`, matching MySQL outside pattern matching. Other unknown escapes such as `\x` still drop the backslash, so H2 stores `\%`, `\_`, and `x`. [Issue #145](https://github.com/cyAquarius/just-test/issues/145).
 
