@@ -265,7 +265,7 @@ src/test/java/com/example/justtest/order/
 
 ### `@JustTest`
 
-- 配置 Spring Test、H2、`JdbcTemplate` 与事务管理器，被测服务可以按正常事务行为执行。
+- 配置 Spring Test、H2、`JdbcTemplate` 与事务管理器。普通事务和 `REQUIRES_NEW` 各用独立连接，内层和外层提交或回滚互不影响。
 - 不存在 `refresh` scope 时注册一个替代实现，使 `@RefreshScope` 或 `@Scope("refresh")` 的 Bean 无需 Spring Cloud refresh 基础设施即可加载。
 - 测试不提供真实的 refresh 语义。
 - 类级执行契约见[生命周期](#lifecycle)。
@@ -276,13 +276,13 @@ src/test/java/com/example/justtest/order/
 
 推荐的消费方启动注解。空类即可。
 
-- `@JustTestProject` 元注解组合 `@SpringBootConfiguration` 与 `@EnableAutoConfiguration`。
+- `@JustTestProject` 组合 `@SpringBootConfiguration`、`@EnableAutoConfiguration` 和 `@ComponentScan`。
 
 **框架拥有**
 
 - H2、事务管理器、`JdbcTemplate`。
 - 默认组件扫描 denylist。**不**排除 `FeignAutoConfiguration` / `FeignContext`。
-- 声明了 `mapperPackages` 时：MyBatis `SqlSessionFactory`、`SqlSessionTemplate`、MapperScan，绑定 JustTest 的 DataSource。
+- 声明 `mapperPackages` 时注册 MapperScan。已有的 `SqlSessionFactory` 优先。有 MyBatis 或 MyBatis-Plus 自动配置时，由自动配置使用主 `justTestDataSource` 并绑定属性（如 `mybatis.*`）。无自动配置时，JustTest 补齐缺少的工厂和模板。
 - 框架不选择 Feign HTTP 客户端。
 - 框架不自动 mock Redis、对象存储、SDK 或其他非 Feign Bean。
 
@@ -301,7 +301,7 @@ src/test/java/com/example/justtest/order/
 
 **扫描排除**
 
-- `basePackages` 下的其他 `@SpringBootApplication` / `@SpringBootConfiguration`。
+- `basePackages` 下的其他 `@SpringBootApplication` / `@SpringBootConfiguration`，包括其他 `@JustTestProject` 启动类。
 - 注解存在时的 `@Controller`、`@RestController`、`@ControllerAdvice`。
 - classpath 上有 OpenFeign 时的 `@FeignClient`。
 - 能在不引入硬依赖的前提下探测到的 Job / 调度刻板类型。
@@ -504,7 +504,7 @@ public TaskCenterClient taskCenterClient() {
 - H2 按 JustTest `ApplicationContext` 与活动 case 隔离。
 - 清理后的 DDL 会缓存。默认从模板数据库克隆 schema。用 `justtest.schema.clone=false` 关闭克隆。
 - case 结束时释放对应数据库。schema 初始化失败会重试。
-- 对于 MySQL 的 `schema.sql` dump，清理器会剥离常见的 `SHOW CREATE TABLE` 附加语法：表级 `ROW_FORMAT`、`UNSIGNED`、`ON UPDATE CURRENT_TIMESTAMP`、列级 `CHARACTER SET`、`DEFAULT b'0'`。字符串、注释和反引号标识符里的文本保持原样。
+- 对于 MySQL 的 `schema.sql` dump，清理器会剥离常见的 `SHOW CREATE TABLE` 附加语法：表级 `ROW_FORMAT`、`UNSIGNED`、`ON UPDATE CURRENT_TIMESTAMP`、列级 `CHARACTER SET`、`DEFAULT b'0'`。脚本先按 MySQL 引号和转义规则拆分，再去除注释（包括 `#` 行注释）并清洗各条语句。
 - 不覆盖全部 MySQL 方言。
 - `@JustTest` 拥有 H2 时，框架 `JdbcTemplate` 或 `JustTestRoutingDataSource` 缺失是配置错误，会 fail-fast，而不会跳过 prepare / verify。见[边界](#boundaries)。
 
@@ -513,7 +513,7 @@ public TaskCenterClient taskCenterClient() {
 ### MySQL 到 H2 的改写
 
 - MyBatis 测试 SQL 只做窄改写：`IF(...)` 改为 `CASEWHEN(...)`，`DATE_FORMAT(...)` 改为 `FORMATDATETIME(...)`。
-- `DATE_FORMAT` 改写走 MyBatis `StatementHandler` 拦截器，与 `IF(...)` 到 `CASEWHEN(...)` 同一条路径。
+- `DATE_FORMAT` 改写走 MyBatis `StatementHandler` 拦截器。格式参数必须是字符串字面量，`%M` 输出英文月份名。
 - 纯 `JdbcTemplate` SQL 若不经过该拦截器，则不会改写。
 - 历史双引号字符串只在已知字符串函数参数，以及比较运算符右值中兼容。
 - 新 SQL 应使用标准单引号。该限制同时写在[边界](#boundaries)。
@@ -526,7 +526,13 @@ public TaskCenterClient taskCenterClient() {
 - `prepare.yaml`：case 执行前插入的行。
 - `response.yaml`：预期返回值。只与 `CaseContext.setResult` 写入的对象比较，不读取测试方法的 Java 返回值。
 - `expect.yaml`：预期数据库行。
-- `expect_exception.yaml`：预期异常类型及可选消息。文件存在但为空，或没有 `type`，是配置错误，不会把任意异常当成预期异常。
+- `expect_exception.yaml`：预期异常类型及可选消息。空文件、缺少 `type` 或存在额外字段都是配置错误。
+
+不加引号时，仅 `true` / `false`（不区分大小写）会解析为布尔值，普通十进制整数字面量会解析为整数。前导零代码 `0123`、`10:30` 和 `NO` 保持为字符串。加引号的值保持为字符串。
+
+`prepare.yaml` 和 `expect.yaml` 的表名和列名限字母、数字与下划线。JustTest 为生成的 SQL 加标识符引号，因此可以使用 `order` 和 `value` 等关键字。
+
+`response.yaml` 顶层可用独立的 `[A]`、`[R]`、`[D]` / `[D60]` 或 `[J]` 断言整个返回值。独立 `[N]` 只能作为顶层唯一的键，用于跳过整个返回值。嵌套对象必须将 Flag 写为字段后缀。
 
 字段后缀 Flag 按阶段生效：
 
@@ -550,7 +556,7 @@ public TaskCenterClient taskCenterClient() {
 
 Flag 区分大小写。未知 Flag（如 `[cn]`、`[CC]`）或用在不适用阶段的 Flag 会立即失败。错误信息包含字段名、case 路径，以及该阶段允许的 Flag。
 
-数据库断言建议显式提供 `[C]` 字段，避免行定位含义不明确。`[C]` 命中多行时失败，需要收紧条件直到只命中一行。`[J]` 比较 JSON 结构；数值按 BigDecimal 比较，所以 `1` 与 `1.0` 相等，无法解析的 JSON 会报错。
+数据库断言建议显式提供 `[C]` 字段，避免行定位含义不明确。`[C]` 和无 `[C]` 时的普通字段定位都必须只命中一行。无 `[C]` 时，期望为 null 的字段使用 `IS NULL` 定位。无序 List 中的 `[C]` 也必须唯一定位元素。`[J]` 比较 JSON 结构；数值按 BigDecimal 比较，所以 `1` 与 `1.0` 相等，无法解析的 JSON 会报错。
 
 精确比较在数据库和返回值两条路径上都会去掉 `java.sql.Timestamp` 尾部的 `.0`，因此 YAML 的 `2026-11-13 10:00:00` 与 `2026-11-13 10:00:00.0` 相等。`[D]` 解析实际时间字符串时，先尝试 ISO instant、带偏移的日期时间和本地日期时间，再接受 `yyyy-MM-dd HH:mm:ss`；本地日期时间按系统默认时区换算。
 
@@ -707,6 +713,13 @@ junit.jupiter.execution.parallel.mode.classes.default=concurrent
 
 当前 Maven Central 发布版本是 `1.2.13`。上面的规则对应该版本，以及变更记录里待发布的 1.2.14。
 
+- **1.2.14**（待发布）— 线程级 spy 与真实 Bean 拦截不再把 Spring 初始化和销毁回调转给真实单例。ThreadScope 支持嵌套获取不同 Bean。 [Issue #156](https://github.com/cyAquarius/just-test/issues/156)。
+- **1.2.14**（待发布）— 修复泛型 spy、命名及别名 mock 的 Context 缓存绑定。Bean 替换与包装保留工厂方法 qualifier。 [Issue #157](https://github.com/cyAquarius/just-test/issues/157)。
+- **1.2.14**（待发布）— `@JustTestProject` 在配置类解析期间扫描并排除其他项目启动类。保留扫描到的 MyBatis 工厂，支持 MyBatis 自动配置属性与自定义过滤器，Feign 自动 mock 仅匹配带注解的接口。 [Issue #158](https://github.com/cyAquarius/just-test/issues/158)。
+- **1.2.14**（待发布）— 每个 case 的 `REQUIRES_NEW` 使用独立连接。修复 MySQL DDL 拆分和转义、嵌套 `DATE_FORMAT`、英文月份名、双引号比较及 `FIND_IN_SET('', '')`。 [Issue #159](https://github.com/cyAquarius/just-test/issues/159)。
+- **1.2.14**（待发布）— YAML 只隐式识别十进制整数和 `true` / `false` 布尔值。表名和列名自动加引号。修复顶层 Flag、空值行定位、重复匹配及异常字段校验。 [Issue #160](https://github.com/cyAquarius/just-test/issues/160)。
+- **1.2.14**（待发布）— 校验钩子保留用例原异常。假设中止时若有事务泄漏则判失败。事务清理只检查已绑定资源。修复 `@BeforeCase` 覆写、重复 `@Sql` 和参数转换。 [Issue #161](https://github.com/cyAquarius/just-test/issues/161)。
+- **1.2.14**（待发布）— 发布前用隔离 Maven 仓库验证暂存制品，发布包附带 core 源码和 Javadoc。发布限定 main 或 tag，tag 必须与 POM 版本一致，Java 工具链门禁与 Maven 版本匹配规则一致。 [Issue #162](https://github.com/cyAquarius/just-test/issues/162)。
 - **1.2.14**（待发布）— 文件 classpath 上含空格或中文的 case 目录可以加载阶段文件。已发现的 case 若无可加载阶段文件，立即报错并显示路径。 [Issue #148](https://github.com/cyAquarius/just-test/issues/148)。
 - **1.2.14**（待发布）— prepare 和 expect 中每张表都必须是映射列表。格式错误会显示阶段文件、表名，以及适用时的行下标。 [Issue #149](https://github.com/cyAquarius/just-test/issues/149)。
 - **1.2.14**（待发布）— request YAML 按 case 加载，格式错误只影响该次调用。YAML 解析错误会显示 classpath 路径。 [Issue #151](https://github.com/cyAquarius/just-test/issues/151) [Issue #153](https://github.com/cyAquarius/just-test/issues/153)。
@@ -738,7 +751,7 @@ junit.jupiter.execution.parallel.mode.classes.default=concurrent
 - **1.2.10** — MySQL DDL 清洗不再改写字符串、注释和反引号标识符里的文本。注释里的转义引号（`\'` 或 `''`）会随 `COMMENT` 一起去掉，不再残留片段导致 H2 建表失败。`COLLATE` 仍会去掉列级 `COLLATE name` 和表级 `COLLATE=name`，不会再删掉 `collate_flag` 这类标识符。[Issue #102](https://github.com/cyAquarius/just-test/issues/102)。
 - **1.2.10** — 历史双引号字符串的兼容范围加上 `CONCAT`。`CONCAT("a","b")` 会改成 `CONCAT('a','b')`。新 SQL 仍应使用单引号。[Issue #107](https://github.com/cyAquarius/just-test/issues/107)。
 - **1.2.10** — `DATE_FORMAT` 的字面文本会为 H2 `FORMATDATETIME` 加上引号，因此 `Date: %Y`、`Day %d` 这类英文不会再被当成模式符。`%M` 映射为月份名，`%T` 映射为 `HH:mm:ss`，`%%` 映射为一个 `%`。未知说明符会 fail-fast，错误信息包含原始格式串。`%Y-%m-%d %H:%i:%s` 这类纯数字格式和中文 literal 的结果保持不变。[Issue #101](https://github.com/cyAquarius/just-test/issues/101)。
-- **1.2.10** — YAML 加载和断言的静默通过改为 fail-fast。重复 key 会被拒绝。存在但为空或缺少 `type` 的 `expect_exception.yaml` 是配置错误，不会吞掉异常。`expect.yaml` 的 `[C]` 命中多行时失败，直到收紧到唯一一行。`[J]` 把数值按 BigDecimal 比较（`1` 等于 `1.0`），JSON 解析失败会报错，不再退回字符串比较。对象内部单独的 `[N]:` 只跳过该键。[Issue #113](https://github.com/cyAquarius/just-test/issues/113)。
+- **1.2.10** — YAML 加载和断言的静默通过改为 fail-fast。重复 key 会被拒绝。存在但为空或缺少 `type` 的 `expect_exception.yaml` 是配置错误，不会吞掉异常。`expect.yaml` 的 `[C]` 命中多行时失败，直到收紧到唯一一行。`[J]` 把数值按 BigDecimal 比较（`1` 等于 `1.0`），JSON 解析失败会报错，不再退回字符串比较。嵌套独立 Flag 的规则在 1.2.14 更新。[Issue #113](https://github.com/cyAquarius/just-test/issues/113)。
 - **1.2.10** — 未知或大小写错误的 YAML flag（如 `[cn]`、`[CC]`）立即失败，不再降级为精确匹配。错误信息包含字段名、case 路径和该阶段合法 flag。[Issue #108](https://github.com/cyAquarius/just-test/issues/108)。
 - **1.2.10** — 加载发现阶段已经接受的 `.yml` 用例文件。只含 `.yml` 夹具的目录会执行预置和断言。同一阶段同时存在 `.yaml` 与 `.yml` 时 fail-fast。[Issue #100](https://github.com/cyAquarius/just-test/issues/100)。
 

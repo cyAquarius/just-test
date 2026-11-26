@@ -41,6 +41,7 @@ import java.util.Collections;
 import java.util.Comparator;
 import java.util.Iterator;
 import java.util.List;
+import java.util.function.BooleanSupplier;
 
 /**
  * 单个 JustTest case invocation 的完整生命周期。
@@ -129,6 +130,10 @@ public final class JustTestExtension implements BeforeEachCallback, AfterEachCal
             warnFailure(extensionContext, failure);
             Throwable cleanupFailure = cleanupCaseResources();
             if (cleanupFailure != null) {
+                if (failure instanceof TestAbortedException) {
+                    cleanupFailure.addSuppressed(failure);
+                    throw asException(cleanupFailure);
+                }
                 failure.addSuppressed(cleanupFailure);
             }
             throw asException(failure);
@@ -182,14 +187,16 @@ public final class JustTestExtension implements BeforeEachCallback, AfterEachCal
 
     @Override
     public void afterEach(ExtensionContext extensionContext) throws Exception {
-        extensionContext.getExecutionException()
-                .ifPresent(failure -> warnFailure(extensionContext, failure));
+        Throwable executionFailure = extensionContext.getExecutionException().orElse(null);
+        if (executionFailure != null) {
+            warnFailure(extensionContext, executionFailure);
+        }
         Throwable cleanupFailure = cleanupCaseResources();
         if (cleanupFailure == null) {
             return;
         }
-        if (extensionContext.getExecutionException().isPresent()) {
-            extensionContext.getExecutionException().get().addSuppressed(cleanupFailure);
+        if (executionFailure != null && !(executionFailure instanceof TestAbortedException)) {
+            executionFailure.addSuppressed(cleanupFailure);
             return;
         }
         throw asException(cleanupFailure);
@@ -208,7 +215,7 @@ public final class JustTestExtension implements BeforeEachCallback, AfterEachCal
         List<String> failures = new ArrayList<>();
         String casePath = caseContext.getCasePath();
 
-        boolean exceptionHandled = lifecycle.verifyException(caseContext);
+        boolean exceptionHandled = verifyHook(() -> lifecycle.verifyException(caseContext));
         if (!exceptionHandled) {
             if (caseContext.getException() != null) {
                 failures.addAll(ExceptionVerifier.verify(caseContext.getException(), casePath));
@@ -216,10 +223,10 @@ public final class JustTestExtension implements BeforeEachCallback, AfterEachCal
                 failures.add("[exception]: expected exception but none was thrown");
             }
         }
-        if (!lifecycle.verifyResult(caseContext)) {
+        if (!verifyHook(() -> lifecycle.verifyResult(caseContext))) {
             failures.addAll(ResultVerifier.verify(caseContext.getResult(), casePath));
         }
-        if (!lifecycle.verifyDatabase(caseContext, jdbcTemplate)) {
+        if (!verifyHook(() -> lifecycle.verifyDatabase(caseContext, jdbcTemplate))) {
             failures.addAll(DataSetVerifier.verify(jdbcTemplate, casePath));
         }
 
@@ -242,6 +249,18 @@ public final class JustTestExtension implements BeforeEachCallback, AfterEachCal
             throw caseContext.getException();
         }
         log.debug("[JustTest] Verification passed for case: {}", caseContext.getCaseName());
+    }
+
+    private boolean verifyHook(BooleanSupplier hook) throws Throwable {
+        try {
+            return hook.getAsBoolean();
+        } catch (Throwable failure) {
+            Throwable original = caseContext.getException();
+            if (original != null && original != failure) {
+                failure.addSuppressed(original);
+            }
+            throw failure;
+        }
     }
 
     private Throwable cleanupCaseResources() {
@@ -406,18 +425,18 @@ public final class JustTestExtension implements BeforeEachCallback, AfterEachCal
             Method[] methods = type.getDeclaredMethods();
             Arrays.sort(methods, Comparator.comparing(Method::getName));
             for (Method method : methods) {
-                BeforeCase annotation = method.getAnnotation(BeforeCase.class);
-                if (annotation == null || !annotation.value().equals(caseName)) {
-                    continue;
-                }
                 if (isOverridableInstance(method)) {
                     dropOverridden(selected, method);
                 }
-                selected.add(method);
+                if (method.isAnnotationPresent(BeforeCase.class) && !method.isBridge()) {
+                    selected.add(method);
+                }
             }
         }
         for (Method method : selected) {
-            invokeBeforeCaseMethod(testInstance, method, caseName);
+            if (method.getAnnotation(BeforeCase.class).value().equals(caseName)) {
+                invokeBeforeCaseMethod(testInstance, method, caseName);
+            }
         }
     }
 

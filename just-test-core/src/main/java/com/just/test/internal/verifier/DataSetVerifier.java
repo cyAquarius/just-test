@@ -98,10 +98,10 @@ public class DataSetVerifier {
 
         List<Map<String, Object>> actualRows;
         if (where.length() == 0) {
-            actualRows = jdbcTemplate.queryForList("SELECT * FROM " + tableName);
+            actualRows = jdbcTemplate.queryForList("SELECT * FROM " + DataSetLoader.quoteIdentifier(tableName));
         } else {
             actualRows = jdbcTemplate.queryForList(
-                    "SELECT * FROM " + tableName + " WHERE " + where, params.toArray());
+                    "SELECT * FROM " + DataSetLoader.quoteIdentifier(tableName) + " WHERE " + where, params.toArray());
         }
 
         // CN — 断言行不存在
@@ -122,15 +122,11 @@ public class DataSetVerifier {
 
         boolean conditioned = fields.stream()
                 .anyMatch(f -> BuiltInMatchers.FLAG_C.equals(f.flag));
-        if (actualRows.size() > 1 && conditioned) {
-            failures.add(String.format(
-                    "[%s] row[%d]: [C] matched %d rows; tighten [C] so it matches exactly one row",
-                    tableName, rowIndex, actualRows.size()));
-            return;
-        }
         if (actualRows.size() > 1) {
-            log.warn("[{}] row[{}]: WHERE matched {} rows, only verifying the first one. " +
-                    "Consider adding [C] flag to narrow down.", tableName, rowIndex, actualRows.size());
+            failures.add(String.format("[%s] row[%d]: %s matched %d rows; %s",
+                    tableName, rowIndex, conditioned ? "[C]" : "WHERE", actualRows.size(),
+                    conditioned ? "tighten [C] so it matches exactly one row" : "expected exactly one row"));
+            return;
         }
         Map<String, Object> actualRow = actualRows.get(0);
 
@@ -145,7 +141,11 @@ public class DataSetVerifier {
                 continue;
             }
 
-            Object actualValue = getColumnValue(actualRow, field.fieldName);
+            if (!actualRow.containsKey(field.fieldName)) {
+                failures.add(String.format("[%s] row[%d]: missing column %s", tableName, rowIndex, field.fieldName));
+                continue;
+            }
+            Object actualValue = actualRow.get(field.fieldName);
 
             // A/R/D/J — 统一 matcher flag 分发
             String fieldPath = tableName + " row[" + rowIndex + "]." + field.fieldName;
@@ -188,7 +188,7 @@ public class DataSetVerifier {
         log.warn("[JustTest] No [C] flag found in expect row, falling back to all-field WHERE. " +
                 "Consider adding [C] flag for explicit row targeting.");
         for (ParsedField f : fields) {
-            if (f.flag == null && f.value != null) {
+            if (f.flag == null) {
                 appendCondition(where, params, f.fieldName, f.value);
             }
         }
@@ -201,9 +201,9 @@ public class DataSetVerifier {
             where.append(" AND ");
         }
         if (value == null) {
-            where.append(fieldName).append(" IS NULL");
+            where.append(DataSetLoader.quoteIdentifier(fieldName)).append(" IS NULL");
         } else {
-            where.append(fieldName).append(" = ?");
+            where.append(DataSetLoader.quoteIdentifier(fieldName)).append(" = ?");
             params.add(value);
         }
     }
@@ -217,17 +217,6 @@ public class DataSetVerifier {
             result.add(new ParsedField(fieldName, flag, entry.getValue()));
         }
         return result;
-    }
-
-    private static Object getColumnValue(Map<String, Object> row, String columnName) {
-        Object value = row.get(columnName);
-        if (value == null) {
-            value = row.get(columnName.toUpperCase());
-        }
-        if (value == null) {
-            value = row.get(columnName.toLowerCase());
-        }
-        return value;
     }
 
     static class ParsedField {
@@ -248,7 +237,7 @@ public class DataSetVerifier {
     private static void dumpTable(JdbcTemplate jdbcTemplate, String tableName, List<String> failures) {
         try {
             List<Map<String, Object>> allRows = jdbcTemplate.queryForList(
-                    "SELECT * FROM " + tableName + " LIMIT 10");
+                    "SELECT * FROM " + DataSetLoader.quoteIdentifier(tableName) + " LIMIT 10");
             if (allRows.isEmpty()) {
                 failures.add(String.format("  [snapshot] %s is EMPTY", tableName));
             } else {

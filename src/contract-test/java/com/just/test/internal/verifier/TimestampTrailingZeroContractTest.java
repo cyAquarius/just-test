@@ -31,7 +31,7 @@ class TimestampTrailingZeroContractTest {
         assertEquals("2026-11-13 10:00:00.0", onSecond.toString());
 
         SingleConnectionDataSource dataSource = new SingleConnectionDataSource(
-                "jdbc:h2:mem:verifier_timestamp_zero;MODE=MySQL;DB_CLOSE_DELAY=-1", "sa", "", true);
+                "jdbc:h2:mem:verifier_timestamp_zero;MODE=MySQL;CASE_INSENSITIVE_IDENTIFIERS=TRUE;DB_CLOSE_DELAY=-1", "sa", "", true);
         try {
             JdbcTemplate jdbcTemplate = new JdbcTemplate(dataSource);
             jdbcTemplate.execute("CREATE TABLE event(id INT, created_at TIMESTAMP)");

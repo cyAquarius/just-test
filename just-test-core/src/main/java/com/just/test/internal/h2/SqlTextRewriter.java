@@ -168,7 +168,7 @@ final class SqlTextRewriter {
             result.append(" AS TIMESTAMP)");
             result.append(sql, firstArgumentEnd, comma);
         } else {
-            result.append(sql, openParenthesis + 1, comma);
+            result.append(rewriteDateFormatFunctions(sql.substring(openParenthesis + 1, comma)));
         }
         result.append(sql, comma, formatStart);
         if (isSingleQuotedLiteral(sql, formatStart, formatEnd)) {
@@ -178,7 +178,8 @@ final class SqlTextRewriter {
             appendRewrittenDateFormatPattern(result,
                     unescapeQuotedLiteral(sql, formatStart, formatEnd, '"'));
         } else {
-            result.append(sql, formatStart, formatEnd);
+            throw new IllegalArgumentException("[JustTest] DATE_FORMAT requires a literal format argument: "
+                    + sql.substring(formatStart, formatEnd));
         }
         result.append(sql, formatEnd, closeParenthesis + 1);
         return closeParenthesis + 1;
@@ -351,8 +352,15 @@ final class SqlTextRewriter {
 
     private static void appendRewrittenDateFormatPattern(StringBuilder result, String pattern) {
         result.append('\'');
-        appendSqlStringLiteral(result, rewriteDateFormatPattern(pattern));
+        String rewritten = rewriteDateFormatPattern(pattern);
+        appendSqlStringLiteral(result, rewritten);
         result.append('\'');
+        for (int index = 0; index + 1 < pattern.length(); index++) {
+            if (pattern.charAt(index) == '%' && pattern.charAt(++index) == 'M') {
+                result.append(", 'en'");
+                break;
+            }
+        }
     }
 
     /**
@@ -490,8 +498,8 @@ final class SqlTextRewriter {
         if (current == '=') {
             return true;
         }
-        return (current == '!' || current == '<' || current == '>')
-                && index + 1 < quoteIndex;
+        return current == '!' || current == '<'
+                || (current == '>' && (index == 0 || sql.charAt(index - 1) != '-'));
     }
 
     private static int appendQuoted(String sql, int index, char quote,
@@ -524,7 +532,7 @@ final class SqlTextRewriter {
     }
 
     private static boolean startsLineComment(String sql, int index) {
-        return sql.charAt(index) == '#'
+        return (sql.charAt(index) == '#' && (index + 1 >= sql.length() || sql.charAt(index + 1) != '{'))
                 || (sql.charAt(index) == '-' && index + 1 < sql.length() && sql.charAt(index + 1) == '-');
     }
 

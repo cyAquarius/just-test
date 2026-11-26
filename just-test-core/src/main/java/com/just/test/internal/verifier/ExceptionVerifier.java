@@ -166,6 +166,13 @@ public class ExceptionVerifier {
         }
         BuiltInMatchers.requireKnownFlags(
                 expectData, BuiltInMatchers.FlagStage.EXCEPTION, resourcePath);
+        for (String key : expectData.keySet()) {
+            String field = BuiltInMatchers.extractFieldName(key);
+            if (!"type".equals(key) && !"message".equals(field)) {
+                throw new IllegalArgumentException("[JustTest] Unknown expect_exception key '" + key
+                        + "' in " + resourcePath);
+            }
+        }
         if (!hasExceptionType(expectData)) {
             throw incompleteExpectException(resourcePath);
         }

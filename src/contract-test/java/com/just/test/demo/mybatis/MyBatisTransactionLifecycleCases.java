@@ -35,8 +35,8 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 
 @JustTest
 @Execution(ExecutionMode.SAME_THREAD)
-@ContextConfiguration(classes = MyBatisTransactionLifecycleJustTest.TestConfiguration.class)
-class MyBatisTransactionLifecycleJustTest implements JustTestLifecycle {
+@ContextConfiguration(classes = MyBatisTransactionLifecycleCases.TestConfiguration.class)
+class MyBatisTransactionLifecycleCases implements JustTestLifecycle {
 
     private static final AtomicInteger EXECUTED_CASES = new AtomicInteger();
     private static final Set<String> EXECUTION_THREADS = ConcurrentHashMap.newKeySet();

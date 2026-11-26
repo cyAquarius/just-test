@@ -13,6 +13,34 @@ class SchemaInitializerTest {
             + "DATABASE_TO_LOWER=TRUE;CASE_INSENSITIVE_IDENTIFIERS=TRUE";
 
     @Test
+    void splitsOriginalSqlBeforeNormalizingBackslashesAndReportsTheResource() {
+        JustTestRoutingDataSource dataSource = new JustTestRoutingDataSource(URL);
+        try {
+            CaseExecutionContext.bind(new CaseContext("split-schema", "test/split-schema"));
+            JdbcTemplate jdbc = new JdbcTemplate(dataSource);
+            SchemaInitializer.initialize(jdbc, "classpath:sql/schema-split-before-clean.sql");
+            assertEquals("\\", jdbc.queryForObject("SELECT path FROM escaped_boundary", String.class));
+            assertEquals("a; -- # b", jdbc.queryForObject("SELECT note FROM escaped_boundary", String.class));
+            assertEquals(3, jdbc.queryForObject("SELECT unsigned_qty FROM escaped_boundary", Integer.class));
+        } finally {
+            CaseExecutionContext.clear();
+            dataSource.destroy();
+        }
+        org.springframework.jdbc.datasource.SingleConnectionDataSource external =
+                new org.springframework.jdbc.datasource.SingleConnectionDataSource(
+                        "jdbc:h2:mem:schema_invalid_review", "sa", "", true);
+        try {
+            RuntimeException failure = org.junit.jupiter.api.Assertions.assertThrows(RuntimeException.class,
+                    () -> SchemaInitializer.initialize(new JdbcTemplate(external),
+                            "classpath:sql/schema-invalid-review.sql"));
+            org.junit.jupiter.api.Assertions.assertTrue(
+                    failure.getCause().getMessage().contains("schema-invalid-review.sql"));
+        } finally {
+            external.destroy();
+        }
+    }
+
+    @Test
     void removesEscapedCommentQuotesCompletely() {
         assertEquals("col VARCHAR(32) NOT NULL", SchemaInitializer.cleanMySqlSyntax(
                 "col VARCHAR(32) NOT NULL COMMENT 'it\\'s a flag'"));
@@ -55,7 +83,7 @@ class SchemaInitializerTest {
                 ") COLLATE = utf8mb4_bin"));
         assertEquals("", SchemaInitializer.cleanMySqlSyntax(
                 "DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci").trim());
-        assertEquals("DEFAULT", SchemaInitializer.cleanMySqlSyntax(
+        assertEquals("", SchemaInitializer.cleanMySqlSyntax(
                 "DEFAULT COLLATE utf8mb4_bin").trim());
     }
 

@@ -5,11 +5,13 @@ import org.junit.jupiter.api.Test;
 
 import java.math.BigDecimal;
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -17,6 +19,41 @@ class ResultVerifierTest {
 
     private static final String CASE_PATH = "com/just/test/verifier/result/flags";
     private static final String RESPONSE_FLAGS = "C, N, R, A, D, D<digits>, J";
+
+    @Test
+    void bareMatchersAssertTheWholeResponse() {
+        String root = "com/just/test/verifier/result/";
+        assertTrue(ResultVerifier.verify(java.sql.Timestamp.valueOf("2026-11-13 10:00:00"),
+                root + "bare-regex").isEmpty());
+        assertFalse(ResultVerifier.verify("wrong", root + "bare-regex").isEmpty());
+        assertTrue(ResultVerifier.verify("{\"ok\":true}", root + "bare-json").isEmpty());
+        assertFalse(ResultVerifier.verify("{\"ok\":false}", root + "bare-json").isEmpty());
+        assertTrue(ResultVerifier.verify(java.time.Instant.now(), root + "bare-date").isEmpty());
+        assertFalse(ResultVerifier.verify(java.time.Instant.EPOCH, root + "bare-date").isEmpty());
+        assertTrue(ResultVerifier.verify(null, root + "bare-n").isEmpty());
+        assertThrows(IllegalArgumentException.class, () -> ResultVerifier.verify(null, root + "bare-n-sibling"));
+
+        List<String> failures = ResultVerifier.verify(Collections.singletonList("ok"), root + "wrong-type");
+        assertTrue(failures.get(0).contains("expected a mapping"));
+        assertTrue(failures.get(0).contains("SingletonList"));
+    }
+
+    @Test
+    void unorderedDecimalKeysMatchByValueAndMustBeUnique() {
+        String path = "com/just/test/verifier/result/list-decimal-key";
+        Map<String, Object> paid = new LinkedHashMap<>();
+        paid.put("amount", new java.math.BigDecimal("100.00"));
+        paid.put("state", "paid");
+        Map<String, Object> pending = new LinkedHashMap<>();
+        pending.put("amount", new java.math.BigDecimal("200.00"));
+        pending.put("state", "pending");
+        assertTrue(ResultVerifier.verify(Arrays.asList(pending, paid), path).isEmpty());
+
+        pending.put("amount", new java.math.BigDecimal("100.0"));
+        for (List<?> order : Arrays.asList(Arrays.asList(paid, pending), Arrays.asList(pending, paid))) {
+            assertTrue(ResultVerifier.verify(order, path).get(0).contains("ambiguous [C]"));
+        }
+    }
 
     @Test
     void verifiesNestedFlagsAndUnorderedList() {
@@ -68,7 +105,7 @@ class ResultVerifierTest {
     }
 
     @Test
-    void flagOnlyNDoesNotSkipLaterFields() {
+    void rejectsNestedBareFlagInEitherOrder() {
         Map<String, Object> actual = new LinkedHashMap<>();
         Map<String, Object> nested = new LinkedHashMap<>();
         nested.put("status", "wrong");
@@ -77,9 +114,9 @@ class ResultVerifierTest {
         for (String casePath : Arrays.asList(
                 "com/just/test/verifier/result/flag-n-first",
                 "com/just/test/verifier/result/flag-n-last")) {
-            List<String> failures = ResultVerifier.verify(actual, casePath);
-            assertTrue(failures.stream().anyMatch(failure -> failure.contains("result.nested.status")),
-                    casePath + " " + failures);
+            IllegalArgumentException failure = org.junit.jupiter.api.Assertions.assertThrows(
+                    IllegalArgumentException.class, () -> ResultVerifier.verify(actual, casePath));
+            assertTrue(failure.getMessage().contains("nested bare flag [N]"));
         }
     }
 

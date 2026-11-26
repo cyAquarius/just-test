@@ -1,20 +1,27 @@
 package com.just.test.internal.mock;
 
 import com.just.test.internal.project.JustTestProjectFeignAutoMock;
-import org.mockito.AdditionalAnswers;
 import org.mockito.MockSettings;
 import org.mockito.Mockito;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.aop.framework.AopInfrastructureBean;
 import org.springframework.aop.scope.ScopedProxyUtils;
+import org.springframework.beans.factory.annotation.AnnotatedBeanDefinition;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.config.BeanDefinition;
 import org.springframework.beans.factory.config.BeanDefinitionHolder;
 import org.springframework.beans.factory.config.ConfigurableListableBeanFactory;
 import org.springframework.beans.factory.support.AbstractBeanDefinition;
+import org.springframework.beans.factory.support.AutowireCandidateQualifier;
 import org.springframework.beans.factory.support.BeanDefinitionBuilder;
 import org.springframework.beans.factory.support.BeanDefinitionRegistry;
+import org.springframework.beans.factory.support.RootBeanDefinition;
+import org.springframework.core.annotation.MergedAnnotations;
+import org.springframework.core.type.MethodMetadata;
+import org.springframework.util.ReflectionUtils;
 
+import java.lang.reflect.Method;
 import java.util.Collections;
 import java.util.LinkedHashSet;
 import java.util.Map;
@@ -297,7 +304,7 @@ class MockRegistrar {
                     + mockType.getName() + "; cannot delegate unstubbed calls to it.");
         }
         return Mockito.mock(mockType, threadScopedMockSettings()
-                .defaultAnswer(AdditionalAnswers.delegatesTo(realBean)));
+                .defaultAnswer(LifecycleSafeDelegate.to(realBean)));
     }
 
     void markMockSource(BeanDefinitionRegistry registry, String beanName,
@@ -339,14 +346,48 @@ class MockRegistrar {
         if (logicalDefinition != null) {
             target.setPrimary(logicalDefinition.isPrimary());
             target.setAutowireCandidate(logicalDefinition.isAutowireCandidate());
+            copyCandidateFlag(target, logicalDefinition, "Fallback");
+            copyCandidateFlag(target, logicalDefinition, "DefaultCandidate");
             copyQualifiers(target, logicalDefinition);
         }
         copyQualifiers(target, scopedTargetDefinition);
+    }
+
+    private void copyCandidateFlag(AbstractBeanDefinition target, BeanDefinition source, String flag) {
+        Method getter = ReflectionUtils.findMethod(source.getClass(), "is" + flag);
+        Method setter = ReflectionUtils.findMethod(AbstractBeanDefinition.class, "set" + flag, boolean.class);
+        if (getter != null && setter != null) {
+            ReflectionUtils.makeAccessible(getter);
+            ReflectionUtils.invokeMethod(setter, target, ReflectionUtils.invokeMethod(getter, source));
+        }
     }
 
     private void copyQualifiers(AbstractBeanDefinition target, BeanDefinition source) {
         if (source instanceof AbstractBeanDefinition) {
             target.copyQualifiersFrom((AbstractBeanDefinition) source);
         }
+        if (source instanceof AnnotatedBeanDefinition) {
+            MethodMetadata method = ((AnnotatedBeanDefinition) source).getFactoryMethodMetadata();
+            if (method != null) {
+                copyFactoryQualifiers(target, method.getAnnotations());
+                return;
+            }
+        }
+        if (source instanceof RootBeanDefinition) {
+            Method method = ((RootBeanDefinition) source).getResolvedFactoryMethod();
+            if (method != null) {
+                copyFactoryQualifiers(target, MergedAnnotations.from(method));
+            }
+        }
+    }
+
+    private void copyFactoryQualifiers(AbstractBeanDefinition target, MergedAnnotations annotations) {
+        annotations.stream().filter(annotation -> Qualifier.class.equals(annotation.getType())
+                        || MergedAnnotations.from(annotation.getType()).isPresent(Qualifier.class))
+                .forEach(annotation -> {
+                    AutowireCandidateQualifier qualifier = new AutowireCandidateQualifier(annotation.getType());
+                    annotation.asMap().forEach(qualifier::setAttribute);
+                    target.addQualifier(qualifier);
+                });
     }
 }

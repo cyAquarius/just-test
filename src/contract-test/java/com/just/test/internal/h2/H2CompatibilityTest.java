@@ -8,9 +8,6 @@ import com.just.test.internal.loader.DataSetLoader;
 import org.junit.jupiter.api.Test;
 import org.springframework.jdbc.core.JdbcTemplate;
 
-import java.time.LocalDateTime;
-import java.time.format.DateTimeFormatter;
-
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
 class H2CompatibilityTest {
@@ -112,9 +109,7 @@ class H2CompatibilityTest {
             assertEquals("2024}", dateFormat(jdbcTemplate, "'%Y}'"));
             assertEquals("It's 2024", dateFormat(jdbcTemplate, "'It''s %Y'"));
             assertEquals("2024-03-05 \"UTC\"", dateFormat(jdbcTemplate, "\"%Y-%m-%d \"\"UTC\"\"\""));
-            assertEquals(DateTimeFormatter.ofPattern("MMMM").format(
-                            LocalDateTime.of(2024, 3, 5, 12, 30, 45)),
-                    dateFormat(jdbcTemplate, "'%M'"));
+            assertEquals("March", dateFormat(jdbcTemplate, "'%M'"));
         } finally {
             CaseExecutionContext.clear();
             dataSource.destroy();

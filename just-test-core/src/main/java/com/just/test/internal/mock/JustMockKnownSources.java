@@ -475,17 +475,25 @@ final class JustMockKnownSources {
 
         private void scanComponents() {
             ClassPathScanningCandidateComponentProvider scanner =
-                    new ClassPathScanningCandidateComponentProvider(true);
+                    new ClassPathScanningCandidateComponentProvider(true, environment);
             scanner.setResourceLoader(new PathMatchingResourcePatternResolver(classLoader));
             if (!projectRoots.isEmpty()) {
                 Class<?>[] excludes = componentExcludes.toArray(new Class<?>[componentExcludes.size()]);
                 scanner.addExcludeFilter(new JustTestProjectTypeExcludeFilter(
                         projectRoots.get(0).getName(), excludes, classLoader));
+            } else {
+                scanner.addExcludeFilter((reader, factory) -> reader.getAnnotationMetadata()
+                        .isAnnotated("org.springframework.boot.test.context.TestComponent"));
             }
             for (String basePackage : scanPackages) {
                 Set<BeanDefinition> candidates = scanner.findCandidateComponents(basePackage);
                 for (BeanDefinition candidate : candidates) {
                     Class<?> type = loadClass(candidate.getBeanClassName(), classLoader);
+                    if (type == null) {
+                        continue;
+                    }
+                    beans.add(new BeanCandidate(type, candidate.getBeanClassName(),
+                            Collections.emptyList(), false, false));
                     visitClass(type);
                 }
             }

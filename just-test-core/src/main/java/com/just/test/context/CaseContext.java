@@ -161,11 +161,17 @@ public class CaseContext {
         if (type == BigDecimal.class) {
             return (T) new BigDecimal(item.toString());
         }
-        if (type == Double.class && item instanceof Number) {
-            return (T) Double.valueOf(((Number) item).doubleValue());
+        if (type == Double.class && (item instanceof Number || item instanceof String)) {
+            return (T) (item instanceof Number
+                    ? Double.valueOf(((Number) item).doubleValue())
+                    : Double.valueOf((String) item));
         }
         if (type == Boolean.class) {
-            return (T) Boolean.valueOf(item.toString());
+            if (item instanceof String
+                    && ("true".equalsIgnoreCase((String) item) || "false".equalsIgnoreCase((String) item))) {
+                return (T) Boolean.valueOf((String) item);
+            }
+            throw new IllegalArgumentException("Expected a Boolean or a true/false string: " + item);
         }
         if (type == String.class) {
             return (T) item.toString();

@@ -15,6 +15,7 @@
     <description>JustTest adapter for Java 8 and Spring Boot 2.</description>
 
     <properties>
+        <mybatis.autoconfigure.fixture.version>2.3.2</mybatis.autoconfigure.fixture.version>
         <maven.compiler.source>8</maven.compiler.source>
         <maven.compiler.target>8</maven.compiler.target>
         <just-test.central.split.executor>true</just-test.central.split.executor>
@@ -72,6 +73,10 @@
         <plugins>
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-dependency-plugin</artifactId>
+            </plugin>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-surefire-plugin</artifactId>
                 <configuration>
                     <failIfNoTests>true</failIfNoTests>
@@ -125,6 +130,16 @@
                 <plugins>
                     <plugin>
                         <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-javadoc-plugin</artifactId>
+                        <configuration>
+                            <includeDependencySources>true</includeDependencySources>
+                            <dependencySourceIncludes>
+                                <dependencySourceInclude>io.github.cyaquarius:just-test-core</dependencySourceInclude>
+                            </dependencySourceIncludes>
+                        </configuration>
+                    </plugin>
+                    <plugin>
+                        <groupId>org.apache.maven.plugins</groupId>
                         <artifactId>maven-shade-plugin</artifactId>
                         <version>3.6.0</version>
                         <executions>
@@ -136,6 +151,7 @@
                                 </goals>
                                 <configuration>
                                     <createDependencyReducedPom>true</createDependencyReducedPom>
+                                    <createSourcesJar>true</createSourcesJar>
                                     <promoteTransitiveDependencies>false</promoteTransitiveDependencies>
                                     <artifactSet>
                                         <includes>
@@ -178,6 +194,9 @@
         </profile>
         <profile>
             <id>dual-jdk-release</id>
+            <properties>
+                <just-test.jdk.range>[1.8,1.9),[8,9)</just-test.jdk.range>
+            </properties>
             <build>
                 <plugins>
                     <plugin>
@@ -185,7 +204,7 @@
                         <artifactId>maven-compiler-plugin</artifactId>
                         <configuration>
                             <jdkToolchain>
-                                <version>8</version>
+                                <version>${just-test.jdk.range}</version>
                             </jdkToolchain>
                         </configuration>
                     </plugin>
@@ -194,7 +213,7 @@
                         <artifactId>maven-surefire-plugin</artifactId>
                         <configuration>
                             <jdkToolchain>
-                                <version>8</version>
+                                <version>${just-test.jdk.range}</version>
                             </jdkToolchain>
                         </configuration>
                     </plugin>
@@ -212,7 +231,8 @@
                                     <executable>bash</executable>
                                     <arguments>
                                         <argument>${project.basedir}/../scripts/require-jdk-toolchain.sh</argument>
-                                        <argument>8</argument>
+                                        <argument>${just-test.jdk.range}</argument>
+                                        <argument>${maven.home}</argument>
                                     </arguments>
                                 </configuration>
                             </execution>

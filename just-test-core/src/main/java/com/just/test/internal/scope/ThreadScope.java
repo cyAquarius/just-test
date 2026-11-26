@@ -52,7 +52,14 @@ public class ThreadScope implements Scope {
             throw new IllegalStateException("[JustTest] Thread-scoped mock access requires an active JustTest case. "
                     + "Asynchronous work does not inherit this context; do not access JustTest mocks from it.");
         }
-        return SCOPE_MAP.get().computeIfAbsent(qualifiedName(name), k -> objectFactory.getObject());
+        Map<String, Object> objects = SCOPE_MAP.get();
+        String key = qualifiedName(name);
+        Object object = objects.get(key);
+        if (object == null) {
+            object = objectFactory.getObject();
+            objects.put(key, object);
+        }
+        return object;
     }
 
     @Override

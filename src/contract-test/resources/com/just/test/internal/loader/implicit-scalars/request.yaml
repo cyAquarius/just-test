@@ -1,0 +1,9 @@
+time: 10:30
+code: 0123
+NO: no
+on: ON
+active: TrUe
+valid: FALSE
+decimal: -12_345
+quotedInt: "123"
+quotedBoolean: "true"

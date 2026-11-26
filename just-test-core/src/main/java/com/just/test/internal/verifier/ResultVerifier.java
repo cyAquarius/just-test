@@ -12,6 +12,7 @@ import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 
 /**
@@ -55,63 +56,34 @@ public class ResultVerifier {
             return verifyList(actual, (List<Object>) expectRaw, "result");
         }
 
-        // 顶层 Map — 提取纯 flag key（如 [A]:、[N]:），剩余字段做正常比对
         if (expectRaw instanceof Map) {
             Map<String, Object> expectMap = (Map<String, Object>) expectRaw;
-            List<String> topFlags = new ArrayList<>();
-            Map<String, Object> cleanedMap = extractTopLevelFlags(expectMap, topFlags);
-
-            if (!topFlags.isEmpty()) {
-                List<String> failures = new ArrayList<>();
-                for (String flag : topFlags) {
-                    if (BuiltInMatchers.FLAG_N.equals(flag)) {
-                        return failures; // 跳过整个 response 验证
-                    }
-                    if (BuiltInMatchers.FLAG_A.equals(flag) && actual == null) {
-                        failures.add("[result]: expected not null but got null");
-                        return failures;
-                    }
-                }
-                if (cleanedMap.isEmpty()) {
+            Map<String, Object> fields = new LinkedHashMap<>();
+            List<String> failures = new ArrayList<>();
+            for (Map.Entry<String, Object> entry : expectMap.entrySet()) {
+                String key = entry.getKey();
+                String flag = BuiltInMatchers.extractFlag(key);
+                if (flag == null || !BuiltInMatchers.extractFieldName(key).isEmpty()) {
+                    fields.put(key, entry.getValue());
+                } else if (BuiltInMatchers.FLAG_N.equals(flag)) {
                     return failures;
+                } else {
+                    String failure = BuiltInMatchers.assertMatcherFlag(flag, entry.getValue(), actual, "result");
+                    if (!failure.isEmpty()) {
+                        failures.add(failure);
+                    }
                 }
-                return verifyFromMap(actual, cleanedMap);
             }
-            return verifyFromMap(actual, expectMap);
+            if (failures.isEmpty() || actual != null) {
+                failures.addAll(verifyFromMap(actual, fields));
+            }
+            return failures;
         }
 
         // 简单类型 — 直接比较
         List<String> failures = new ArrayList<>();
         compareSimple(expectRaw, actual, "result", failures);
         return failures;
-    }
-
-    /**
-     * 从顶层 Map 中提取纯 flag key（如 {@code [A]}、{@code [N]}），返回去除 flag key 后的字段 Map。
-     *
-     * <p>纯 flag key 定义：{@code extractFieldName} 为空且 {@code extractFlag} 非空。
-     * 这种 key 出现在 response.yaml 中作为整体断言修饰符（如 {@code [A]:} 表示返回值非空），
-     * 与具体字段同级存在。</p>
-     *
-     * @param expectMap 原始 expect Map
-     * @param flags     输出参数，收集提取到的 flag 字符串
-     * @return 去除纯 flag key 后的 Map；如果没有纯 flag key，返回原 Map（同引用）
-     */
-    private static Map<String, Object> extractTopLevelFlags(Map<String, Object> expectMap, List<String> flags) {
-        Map<String, Object> cleaned = null;
-        for (Map.Entry<String, Object> entry : expectMap.entrySet()) {
-            String rawKey = entry.getKey();
-            String flag = BuiltInMatchers.extractFlag(rawKey);
-            String fieldName = BuiltInMatchers.extractFieldName(rawKey);
-            if (flag != null && fieldName.isEmpty()) {
-                flags.add(flag);
-                if (cleaned == null) {
-                    cleaned = new LinkedHashMap<>(expectMap);
-                }
-                cleaned.remove(rawKey);
-            }
-        }
-        return cleaned != null ? cleaned : expectMap;
     }
 
     /**
@@ -175,21 +147,23 @@ public class ResultVerifier {
 
         for (int ei = 0; ei < expectList.size(); ei++) {
             Map<String, Object> expectMap = (Map<String, Object>) expectList.get(ei);
-            Map<String, String> keyFields = extractKeyFields(expectMap);
+            Map<String, Object> keyFields = extractKeyFields(expectMap);
 
             int matchedIdx = -1;
             for (int ai = 0; ai < actualList.size(); ai++) {
-                if (matchedIndexes.contains(ai)) {
-                    continue;
-                }
                 Map<String, Object> actualMap = toMap(actualList.get(ai));
                 if (actualMap != null && matchesKeyFields(actualMap, keyFields)) {
+                    if (matchedIdx >= 0) {
+                        matchedIdx = -2;
+                        break;
+                    }
                     matchedIdx = ai;
-                    break;
                 }
             }
 
-            if (matchedIdx == -1) {
+            if (matchedIdx == -2 || matchedIndexes.contains(matchedIdx)) {
+                failures.add(String.format("[%s]: ambiguous [C] key %s", path, keyFields));
+            } else if (matchedIdx == -1) {
                 failures.add(String.format("[%s]: no matching element found for key %s", path, keyFields));
             } else {
                 matchedIndexes.add(matchedIdx);
@@ -242,14 +216,14 @@ public class ResultVerifier {
     /**
      * 从 expect Map 中提取 [C] flag 字段作为定位键。
      */
-    private static Map<String, String> extractKeyFields(Map<String, Object> expectMap) {
-        Map<String, String> keys = new java.util.LinkedHashMap<>();
+    private static Map<String, Object> extractKeyFields(Map<String, Object> expectMap) {
+        Map<String, Object> keys = new LinkedHashMap<>();
         for (Map.Entry<String, Object> entry : expectMap.entrySet()) {
             String flag = BuiltInMatchers.extractFlag(entry.getKey());
             if (BuiltInMatchers.FLAG_C.equals(flag)) {
                 String fieldName = BuiltInMatchers.extractFieldName(entry.getKey());
                 if (!fieldName.isEmpty()) {
-                    keys.put(fieldName, entry.getValue() == null ? null : entry.getValue().toString());
+                    keys.put(fieldName, entry.getValue());
                 }
             }
         }
@@ -259,11 +233,13 @@ public class ResultVerifier {
     /**
      * 判断 actual Map 是否匹配所有 key 字段。
      */
-    private static boolean matchesKeyFields(Map<String, Object> actualMap, Map<String, String> keyFields) {
-        for (Map.Entry<String, String> kf : keyFields.entrySet()) {
+    private static boolean matchesKeyFields(Map<String, Object> actualMap, Map<String, Object> keyFields) {
+        for (Map.Entry<String, Object> kf : keyFields.entrySet()) {
             Object actualVal = actualMap.get(kf.getKey());
-            String actualStr = actualVal == null ? null : actualVal.toString();
-            if (kf.getValue() == null ? actualStr != null : !kf.getValue().equals(actualStr)) {
+            String actualStr = actualVal == null ? null : ExactComparison.normalizeActual(actualVal);
+            Object expected = kf.getValue();
+            if (!actualMap.containsKey(kf.getKey()) || (!ExactComparison.decimalScalesMatch(expected, actualVal)
+                    && !Objects.equals(expected == null ? null : expected.toString(), actualStr))) {
                 return false;
             }
         }
@@ -297,7 +273,10 @@ public class ResultVerifier {
 
         Map<String, Object> actualMap = toMap(actual);
         if (actualMap == null) {
-            failures.add("[response]: actual is null but expected non-null result");
+            failures.add(actual == null
+                    ? "[response]: actual is null but expected non-null result"
+                    : "[response]: expected a mapping but could not convert actual "
+                            + actual.getClass().getName() + " to a mapping");
             return failures;
         }
 
@@ -317,12 +296,6 @@ public class ResultVerifier {
 
             String flag = BuiltInMatchers.extractFlag(rawKey);
             String fieldName = BuiltInMatchers.extractFieldName(rawKey);
-
-            // flag-only key（如 [A]:、[N]:）没有字段名。
-            // [N] 只跳过这个键；不能 return，否则 YAML 键序靠前时会静默跳过后续字段。
-            if (flag != null && fieldName.isEmpty()) {
-                continue;
-            }
 
             String fieldPath = path + "." + fieldName;
 

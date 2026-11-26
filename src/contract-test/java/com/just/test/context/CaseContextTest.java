@@ -16,6 +16,23 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 class CaseContextTest {
 
     @Test
+    void readsBooleanAndDoubleStringsWithoutSilentlyCoercingInvalidValues() {
+        Map<String, Object> values = new LinkedHashMap<>();
+        values.put("truth", "TrUe");
+        values.put("falsehood", "FALSE");
+        values.put("invalid", Arrays.asList("Y", "ture", 1));
+        values.put("amounts", Arrays.asList("1.25", 2));
+        values.put("badNumber", "garbage");
+        CaseContext context = new CaseContext("conversion", "test/conversion", values);
+
+        assertEquals(Boolean.TRUE, context.getObject("truth", Boolean.class));
+        assertEquals(Boolean.FALSE, context.getObject("falsehood", Boolean.class));
+        assertEquals(Arrays.asList(1.25, 2.0), context.getList("amounts", Double.class));
+        assertThrows(IllegalArgumentException.class, () -> context.getList("invalid", Boolean.class));
+        assertThrows(IllegalArgumentException.class, () -> context.getObject("badNumber", Double.class));
+    }
+
+    @Test
     void conversionErrorsIncludeKeyAndCase() {
         Map<String, Object> params = new LinkedHashMap<>();
         params.put("ok", Integer.valueOf(4));

@@ -42,6 +42,9 @@ public final class MySqlCompatFunctions {
         if (str == null || strList == null) {
             return null;
         }
+        if (strList.isEmpty()) {
+            return 0;
+        }
         String[] parts = strList.split(",", -1);
         for (int i = 0; i < parts.length; i++) {
             if (parts[i].equalsIgnoreCase(str)) {

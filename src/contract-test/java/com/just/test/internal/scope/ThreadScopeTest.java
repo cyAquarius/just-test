@@ -31,6 +31,18 @@ class ThreadScopeTest {
     }
 
     @Test
+    void nestedGetCanCreateAnotherBean() {
+        ThreadScope scope = new ThreadScope();
+        Object nested = new Object();
+
+        Object outer = scope.get("outer", () -> scope.get("inner", () -> nested));
+
+        org.junit.jupiter.api.Assertions.assertSame(nested, outer);
+        org.junit.jupiter.api.Assertions.assertSame(nested, scope.get("inner", Object::new));
+        org.junit.jupiter.api.Assertions.assertSame(outer, scope.get("outer", Object::new));
+    }
+
+    @Test
     void resetDestroysAndRemovesCurrentThreadBeans() {
         ThreadScope scope = new ThreadScope();
         AtomicBoolean destroyed = new AtomicBoolean();

@@ -1,9 +1,12 @@
 package com.just.test.internal.mock;
 
 import com.just.test.internal.project.JustTestProjectFeignAutoMock;
+import org.springframework.core.AliasRegistry;
 
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 
 /**
@@ -15,6 +18,7 @@ import java.util.Map;
 public class JustMockBindings {
 
     private final Map<JustMockDefinition, String> beanNames;
+    private final Map<String, List<String>> aliases = new LinkedHashMap<>();
     private final JustMockInterceptPlan interceptPlan;
 
     JustMockBindings(Map<JustMockDefinition, String> beanNames) {
@@ -22,6 +26,14 @@ public class JustMockBindings {
     }
 
     JustMockBindings(Map<JustMockDefinition, String> beanNames, JustMockInterceptPlan interceptPlan) {
+        this(beanNames, interceptPlan, null);
+    }
+
+    JustMockBindings(Map<JustMockDefinition, String> beanNames, JustMockInterceptPlan interceptPlan,
+                     AliasRegistry registry) {
+        if (registry != null) {
+            beanNames.values().forEach(name -> aliases.put(name, Arrays.asList(registry.getAliases(name))));
+        }
         this.beanNames = Collections.unmodifiableMap(new LinkedHashMap<JustMockDefinition, String>(beanNames));
         this.interceptPlan = interceptPlan == null ? JustMockInterceptPlan.none() : interceptPlan;
     }
@@ -69,7 +81,8 @@ public class JustMockBindings {
             String beanName = entry.getValue();
             if (explicit != null && !explicit.isEmpty()
                     && !explicit.equals(beanName)
-                    && !explicit.equals(source.getExplicitBeanName())) {
+                    && !explicit.equals(source.getExplicitBeanName())
+                    && !aliases.getOrDefault(beanName, Collections.emptyList()).contains(explicit)) {
                 continue;
             }
             if (matched != null && !matched.equals(beanName)) {

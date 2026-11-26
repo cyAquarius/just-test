@@ -1,6 +1,5 @@
 package com.just.test.internal.mock;
 
-import org.mockito.AdditionalAnswers;
 import org.mockito.Mockito;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -438,6 +437,6 @@ class InterceptInstaller {
         }
         return Mockito.mock(mockType, MockRegistrar.threadScopedMockSettings().defaultAnswer(
                 new JustMockInterceptActivation.AnswerSwitch(
-                        publicName, AdditionalAnswers.delegatesTo(realBean))));
+                        publicName, LifecycleSafeDelegate.to(realBean))));
     }
 }

@@ -9,11 +9,13 @@ import org.springframework.core.io.support.EncodedResource;
 import org.springframework.core.io.support.PathMatchingResourcePatternResolver;
 import org.springframework.jdbc.core.ConnectionCallback;
 import org.springframework.jdbc.core.JdbcTemplate;
-import org.springframework.jdbc.datasource.init.ScriptUtils;
+import org.springframework.jdbc.datasource.init.ScriptStatementFailedException;
 
 import java.io.BufferedReader;
 import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
+import java.sql.SQLException;
+import java.sql.Statement;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
@@ -36,7 +38,7 @@ import java.util.concurrent.ConcurrentMap;
 public class SchemaInitializer {
 
     private static final Logger log = LoggerFactory.getLogger(SchemaInitializer.class);
-    private static final ConcurrentMap<SchemaCacheKey, List<String>> CLEANED_SCHEMA_CACHE =
+    private static final ConcurrentMap<SchemaCacheKey, List<SchemaStatement>> CLEANED_SCHEMA_CACHE =
             new ConcurrentHashMap<>();
     // MySQL 特有语法的清理正则
     private static final Pattern ENGINE_PATTERN = Pattern.compile("\\s*ENGINE\\s*=\\s*\\w+", Pattern.CASE_INSENSITIVE);
@@ -44,15 +46,15 @@ public class SchemaInitializer {
     private static final Pattern CHARSET_PATTERN = Pattern.compile("\\s*(DEFAULT\\s+)?CHARSET\\s*=\\s*\\w+", Pattern.CASE_INSENSITIVE);
     // 列级是 COLLATE name；表级 SHOW CREATE 是 COLLATE=name。词边界避免把 collate_flag 当成排序规则。
     private static final Pattern COLLATE_COLUMN_PATTERN = Pattern.compile(
-            "\\s*\\bCOLLATE\\b\\s+\\w+", Pattern.CASE_INSENSITIVE);
+            "\\s*(?:\\bDEFAULT\\s+)?\\bCOLLATE\\b\\s+\\w+", Pattern.CASE_INSENSITIVE);
     private static final Pattern COLLATE_TABLE_PATTERN = Pattern.compile(
-            "\\s*\\bCOLLATE\\b\\s*=\\s*\\w+", Pattern.CASE_INSENSITIVE);
+            "\\s*(?:\\bDEFAULT\\s+)?\\bCOLLATE\\b\\s*=\\s*\\w+", Pattern.CASE_INSENSITIVE);
     private static final Pattern COMMENT_TABLE_PATTERN = Pattern.compile("\\s*COMMENT\\s*=\\s*'[^']*'", Pattern.CASE_INSENSITIVE);
     private static final Pattern COMMENT_COLUMN_PATTERN = Pattern.compile("\\s+COMMENT\\s+'[^']*'", Pattern.CASE_INSENSITIVE);
     private static final Pattern ROW_FORMAT_PATTERN = Pattern.compile("\\s*ROW_FORMAT\\s*=\\s*\\w+", Pattern.CASE_INSENSITIVE);
-    private static final Pattern UNSIGNED_PATTERN = Pattern.compile("\\s+UNSIGNED", Pattern.CASE_INSENSITIVE);
+    private static final Pattern UNSIGNED_PATTERN = Pattern.compile("\\s+UNSIGNED\\b", Pattern.CASE_INSENSITIVE);
     private static final Pattern ON_UPDATE_PATTERN = Pattern.compile("\\s+ON\\s+UPDATE\\s+CURRENT_TIMESTAMP(\\(\\d*\\))?", Pattern.CASE_INSENSITIVE);
-    private static final Pattern CHARACTER_SET_PATTERN = Pattern.compile("\\s+CHARACTER\\s+SET\\s+\\w+", Pattern.CASE_INSENSITIVE);
+    private static final Pattern CHARACTER_SET_PATTERN = Pattern.compile("\\s+(?:DEFAULT\\s+)?CHARACTER\\s+SET\\s+\\w+", Pattern.CASE_INSENSITIVE);
     private static final Pattern DEFAULT_BIT_PATTERN = Pattern.compile("DEFAULT\\s+b'([01]+)'", Pattern.CASE_INSENSITIVE);
     private static final char SEGMENT_MARK = '\uE000';
     private static final char SEGMENT_MARK_END = '\uE001';
@@ -73,7 +75,7 @@ public class SchemaInitializer {
         log.debug("[JustTest] Initializing schema for database [{}]", dbKey);
 
         try {
-            List<String> cleanedDdls = getCachedSchema(schemaLocations);
+            List<SchemaStatement> cleanedDdls = getCachedSchema(schemaLocations);
             if (routingDataSource == null) {
                 executeCachedDdl(jdbcTemplate, cleanedDdls);
                 H2FunctionRegistrar.register(jdbcTemplate);
@@ -84,13 +86,13 @@ public class SchemaInitializer {
             if (routingDataSource != null) {
                 routingDataSource.schemaInitializationFailed();
             }
-            throw new RuntimeException("[JustTest] Failed to initialize schema", e);
+            throw new RuntimeException("[JustTest] Failed to initialize schema " + Arrays.toString(schemaLocations), e);
         }
     }
 
-    private static List<String> getCachedSchema(String... schemaLocations) {
+    private static List<SchemaStatement> getCachedSchema(String... schemaLocations) {
         SchemaCacheKey cacheKey = new SchemaCacheKey(schemaLocations);
-        List<String> cached = CLEANED_SCHEMA_CACHE.get(cacheKey);
+        List<SchemaStatement> cached = CLEANED_SCHEMA_CACHE.get(cacheKey);
         if (cached != null) {
             log.debug("[JustTest] Using cached cleaned schema for {}", cacheKey.locations);
             return cached;
@@ -98,10 +100,10 @@ public class SchemaInitializer {
         return CLEANED_SCHEMA_CACHE.computeIfAbsent(cacheKey, SchemaInitializer::loadAndCleanSchema);
     }
 
-    private static List<String> loadAndCleanSchema(SchemaCacheKey cacheKey) {
+    private static List<SchemaStatement> loadAndCleanSchema(SchemaCacheKey cacheKey) {
         try {
             PathMatchingResourcePatternResolver resolver = new PathMatchingResourcePatternResolver();
-            List<String> cleanedDdls = new ArrayList<>();
+            List<SchemaStatement> cleanedDdls = new ArrayList<>();
             for (String location : cacheKey.locations) {
                 Resource[] resources = resolver.getResources(location);
                 if (resources.length == 0) {
@@ -109,8 +111,7 @@ public class SchemaInitializer {
                 }
                 for (Resource resource : resources) {
                     String ddl = readResource(resource);
-                    String cleaned = cleanMySqlSyntax(ddl);
-                    cleanedDdls.add(cleaned);
+                    splitSchema(ddl, resource.getDescription(), cleanedDdls);
                     log.debug("[JustTest] Schema loaded and cleaned: {}", resource.getFilename());
                 }
             }
@@ -389,18 +390,66 @@ public class SchemaInitializer {
         return cursor;
     }
 
-    static void executeCachedDdl(JdbcTemplate jdbcTemplate, List<String> cleanedDdls) {
-        for (String cleanedDdl : cleanedDdls) {
-            executeDdl(jdbcTemplate, cleanedDdl);
+    private static void splitSchema(String ddl, String description, List<SchemaStatement> statements) {
+        StringBuilder statement = new StringBuilder();
+        for (int index = 0; index < ddl.length();) {
+            char current = ddl.charAt(index);
+            if (current == ';') {
+                addStatement(statement, description, statements);
+                statement.setLength(0);
+                index++;
+            } else if (startsLineComment(ddl, index) || startsBlockComment(ddl, index)) {
+                index = startsLineComment(ddl, index)
+                        ? endOfLineComment(ddl, index) : endOfBlockComment(ddl, index);
+                statement.append(' ');
+            } else if (current == '\'' || current == '"' || current == '`') {
+                int end = endOfQuoted(ddl, index, current, current != '`');
+                end = end < 0 ? ddl.length() : end;
+                statement.append(ddl, index, end);
+                index = end;
+            } else {
+                statement.append(current);
+                index++;
+            }
+        }
+        addStatement(statement, description, statements);
+    }
+
+    private static void addStatement(StringBuilder statement, String description,
+                                     List<SchemaStatement> statements) {
+        String sql = cleanMySqlSyntax(statement.toString()).trim();
+        if (!sql.isEmpty()) {
+            statements.add(new SchemaStatement(sql, description));
         }
     }
 
-    private static void executeDdl(JdbcTemplate jdbcTemplate, String ddl) {
-        ByteArrayResource resource = new ByteArrayResource(ddl.getBytes(StandardCharsets.UTF_8));
+    static void executeCachedDdl(JdbcTemplate jdbcTemplate, List<SchemaStatement> cleanedDdls) {
         jdbcTemplate.execute((ConnectionCallback<Void>) connection -> {
-            ScriptUtils.executeSqlScript(connection, new EncodedResource(resource, StandardCharsets.UTF_8));
+            try (Statement statement = connection.createStatement()) {
+                int index = 0;
+                for (SchemaStatement ddl : cleanedDdls) {
+                    index++;
+                    try {
+                        statement.execute(ddl.sql);
+                    } catch (SQLException failure) {
+                        EncodedResource resource = new EncodedResource(
+                                new ByteArrayResource(ddl.sql.getBytes(StandardCharsets.UTF_8), ddl.description));
+                        throw new ScriptStatementFailedException(ddl.sql, index, resource, failure);
+                    }
+                }
+            }
             return null;
         });
+    }
+
+    static final class SchemaStatement {
+        private final String sql;
+        private final String description;
+
+        SchemaStatement(String sql, String description) {
+            this.sql = sql;
+            this.description = description;
+        }
     }
 
     private static JustTestRoutingDataSource resolveRoutingDataSource(JdbcTemplate jdbcTemplate) {

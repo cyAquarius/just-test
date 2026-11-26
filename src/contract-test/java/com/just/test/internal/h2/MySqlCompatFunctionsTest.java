@@ -23,7 +23,7 @@ class MySqlCompatFunctionsTest {
         assertEquals(0, MySqlCompatFunctions.findInSet("a ", "a"));
         assertEquals(0, MySqlCompatFunctions.findInSet("a,b", "a,b,c"));
         assertEquals(0, MySqlCompatFunctions.findInSet("z", "a,b"));
-        assertEquals(1, MySqlCompatFunctions.findInSet("", ""));
+        assertEquals(0, MySqlCompatFunctions.findInSet("", ""));
         assertEquals(2, MySqlCompatFunctions.findInSet("", "a,,b"));
         assertNull(MySqlCompatFunctions.findInSet(null, "a"));
         assertNull(MySqlCompatFunctions.findInSet("a", null));

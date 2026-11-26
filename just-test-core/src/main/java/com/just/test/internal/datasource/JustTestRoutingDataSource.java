@@ -9,13 +9,16 @@ import org.springframework.jdbc.core.ConnectionCallback;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.datasource.AbstractDataSource;
 import org.springframework.jdbc.datasource.SingleConnectionDataSource;
+import org.springframework.jdbc.support.JdbcUtils;
 
 import java.sql.Connection;
+import java.sql.DriverManager;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Statement;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.Iterator;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -53,7 +56,7 @@ public class JustTestRoutingDataSource extends AbstractDataSource implements Dis
 
     private final String urlTemplate;
     private final String instanceKey = "justtest_" + INSTANCE_SEQUENCE.incrementAndGet();
-    private final ConcurrentHashMap<String, SingleConnectionDataSource> dataSources = new ConcurrentHashMap<>();
+    private final ConcurrentHashMap<String, CaseDataSource> dataSources = new ConcurrentHashMap<>();
     private final Set<String> initializedSchemas = ConcurrentHashMap.newKeySet();
     private final AtomicBoolean destroyed = new AtomicBoolean();
     private final ReentrantReadWriteLock lifecycleLock = new ReentrantReadWriteLock();
@@ -70,7 +73,7 @@ public class JustTestRoutingDataSource extends AbstractDataSource implements Dis
     private final AtomicLong fallbackCount = new AtomicLong();
     private final AtomicLong scriptCaptureCount = new AtomicLong();
     private SingleConnectionDataSource templateDataSource;
-    private List<String> templateSchema;
+    private List<SchemaInitializer.SchemaStatement> templateSchema;
     private List<String> cachedCloneScript;
 
     /**
@@ -96,15 +99,20 @@ public class JustTestRoutingDataSource extends AbstractDataSource implements Dis
 
     @Override
     public Connection getConnection() throws SQLException {
-        return resolve().getConnection();
+        return getConnection("sa", "");
     }
 
     @Override
     public Connection getConnection(String username, String password) throws SQLException {
-        return resolve().getConnection(username, password);
+        lifecycleLock.readLock().lock();
+        try {
+            return resolve().open(username, password);
+        } finally {
+            lifecycleLock.readLock().unlock();
+        }
     }
 
-    private SingleConnectionDataSource resolve() {
+    private CaseDataSource resolve() {
         lifecycleLock.readLock().lock();
         try {
             String key = currentDbKey();
@@ -120,7 +128,7 @@ public class JustTestRoutingDataSource extends AbstractDataSource implements Dis
                         log.debug("[JustTest] Failed to destroy unusable H2 database for case [{}]", k, e);
                     }
                 }
-                return createDataSource(k);
+                return new CaseDataSource(urlTemplate.replace("{key}", k));
             });
         } finally {
             lifecycleLock.readLock().unlock();
@@ -152,7 +160,7 @@ public class JustTestRoutingDataSource extends AbstractDataSource implements Dis
         return initializedSchemas.add(currentDbKey());
     }
 
-    void initializeCaseSchema(JdbcTemplate jdbcTemplate, List<String> cleanedDdls) {
+    void initializeCaseSchema(JdbcTemplate jdbcTemplate, List<SchemaInitializer.SchemaStatement> cleanedDdls) {
         lifecycleLock.readLock().lock();
         try {
             assertNotDestroyed();
@@ -188,7 +196,7 @@ public class JustTestRoutingDataSource extends AbstractDataSource implements Dis
         try {
             String key = currentDbKey();
             initializedSchemas.remove(key);
-            SingleConnectionDataSource dataSource = dataSources.remove(key);
+            CaseDataSource dataSource = dataSources.remove(key);
             if (dataSource != null) {
                 dataSource.destroy();
             }
@@ -204,7 +212,7 @@ public class JustTestRoutingDataSource extends AbstractDataSource implements Dis
         }
         try {
             String key = currentDbKey();
-            SingleConnectionDataSource dataSource = dataSources.remove(key);
+            CaseDataSource dataSource = dataSources.remove(key);
             initializedSchemas.remove(key);
             if (dataSource != null) {
                 dataSource.destroy();
@@ -254,7 +262,7 @@ public class JustTestRoutingDataSource extends AbstractDataSource implements Dis
             if (!destroyed.compareAndSet(false, true)) {
                 return;
             }
-            dataSources.values().forEach(SingleConnectionDataSource::destroy);
+            dataSources.values().forEach(CaseDataSource::destroy);
             dataSources.clear();
             initializedSchemas.clear();
             synchronized (templateLock) {
@@ -298,8 +306,33 @@ public class JustTestRoutingDataSource extends AbstractDataSource implements Dis
         }
     }
 
-    private SingleConnectionDataSource createDataSource(String key) {
-        return createDataSource(key, urlTemplate.replace("{key}", key));
+    private static final class CaseDataSource extends SingleConnectionDataSource {
+        private final List<Connection> connections = new ArrayList<>();
+
+        CaseDataSource(String url) {
+            super(url, "sa", "", true);
+        }
+
+        synchronized Connection open(String username, String password) throws SQLException {
+            getConnection(); // 保活连接只由框架持有。
+            for (Iterator<Connection> iterator = connections.iterator(); iterator.hasNext();) {
+                if (iterator.next().isClosed()) {
+                    iterator.remove();
+                }
+            }
+            Connection connection = DriverManager.getConnection(getUrl(), username, password);
+            connections.add(connection);
+            return connection;
+        }
+
+        @Override
+        public synchronized void destroy() {
+            for (Connection connection : connections) {
+                JdbcUtils.closeConnection(connection);
+            }
+            connections.clear();
+            super.destroy();
+        }
     }
 
     private SingleConnectionDataSource createDataSource(String key, String url) {
@@ -313,7 +346,7 @@ public class JustTestRoutingDataSource extends AbstractDataSource implements Dis
         return dataSource;
     }
 
-    private void ensureTemplate(List<String> cleanedDdls) {
+    private void ensureTemplate(List<SchemaInitializer.SchemaStatement> cleanedDdls) {
         if (templateDataSource != null
                 && templateSchema.equals(cleanedDdls)
                 && isUsable(templateDataSource)) {
@@ -396,7 +429,7 @@ public class JustTestRoutingDataSource extends AbstractDataSource implements Dis
 
     private void recreateCurrentCaseDataSource() {
         String key = currentDbKey();
-        SingleConnectionDataSource dataSource = dataSources.remove(key);
+        CaseDataSource dataSource = dataSources.remove(key);
         if (dataSource != null) {
             dataSource.destroy();
         }

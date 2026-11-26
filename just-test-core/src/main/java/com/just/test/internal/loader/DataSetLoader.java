@@ -93,7 +93,6 @@ public class DataSetLoader {
                  ResultSet resultSet = query.executeQuery(ALL_TABLES_SQL)) {
                 while (resultSet.next()) {
                     String table = resultSet.getString(1);
-                    validateTableName(table);
                     tables.add(table);
                 }
             }
@@ -102,7 +101,7 @@ public class DataSetLoader {
                 try {
                     for (String table : tables) {
                         // H2 的 TRUNCATE 会自动恢复该 identity 列在 DDL 中声明的初始值。
-                        cleanup.addBatch("TRUNCATE TABLE " + table);
+                        cleanup.addBatch("TRUNCATE TABLE " + quoteIdentifier(table));
                     }
                     cleanup.executeBatch();
                 } finally {
@@ -347,6 +346,13 @@ public class DataSetLoader {
         return String.valueOf(key);
     }
 
+    public static String quoteIdentifier(String name) {
+        if (name == null || !SAFE_SQL_IDENTIFIER.matcher(name).matches()) {
+            throw new IllegalArgumentException("[JustTest] Invalid SQL identifier: " + name);
+        }
+        return "\"" + name + "\"";
+    }
+
     private static void insertRows(JdbcTemplate jdbcTemplate, String tableName, List<Map<String, Object>> rows) {
         int insertedCount = 0;
         for (Map<String, Object> row : rows) {
@@ -368,7 +374,7 @@ public class DataSetLoader {
                 }
 
                 validateColumnName(fieldName);
-                columns.add(fieldName);
+                columns.add(quoteIdentifier(fieldName));
 
                 // F flag — DB 函数，直接拼入 SQL（如 NOW()）
                 if (BuiltInMatchers.FLAG_F.equals(flag)) {
@@ -384,7 +390,7 @@ public class DataSetLoader {
             }
 
             String sql = String.format("INSERT INTO %s (%s) VALUES (%s)",
-                    tableName, columns, placeholders);
+                    quoteIdentifier(tableName), columns, placeholders);
 
             try {
                 jdbcTemplate.update(sql, values.toArray());
@@ -405,8 +411,8 @@ public class DataSetLoader {
     private static final class StringTimestampResolver extends Resolver {
         @Override
         protected void addImplicitResolvers() {
-            addImplicitResolver(Tag.BOOL, BOOL, "yYnNtTfFoO");
-            addImplicitResolver(Tag.INT, INT, "-+0123456789");
+            addImplicitResolver(Tag.BOOL, Pattern.compile("true|false", Pattern.CASE_INSENSITIVE), "tTfF");
+            addImplicitResolver(Tag.INT, Pattern.compile("[-+]?(0|[1-9][0-9_]*)"), "-+0123456789");
             addImplicitResolver(Tag.FLOAT, FLOAT, "-+0123456789.");
             addImplicitResolver(Tag.MERGE, MERGE, "<");
             addImplicitResolver(Tag.NULL, NULL, "~nN\0");

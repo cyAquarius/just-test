@@ -203,7 +203,7 @@ class JustMockPostProcessor implements BeanFactoryPostProcessor {
                                       Map<JustMockDefinition, String> bindings) {
         BeanDefinition definition = BeanDefinitionBuilder
                 .genericBeanDefinition(JustMockBindings.class,
-                        () -> new JustMockBindings(bindings, interceptPlan))
+                        () -> new JustMockBindings(bindings, interceptPlan, registry))
                 .getBeanDefinition();
         registry.registerBeanDefinition("justMockBindings", definition);
     }

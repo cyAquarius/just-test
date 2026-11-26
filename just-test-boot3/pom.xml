@@ -15,6 +15,7 @@
     <description>JustTest adapter for Java 17 and Spring Boot 3.</description>
 
     <properties>
+        <mybatis.autoconfigure.fixture.version>3.0.4</mybatis.autoconfigure.fixture.version>
         <maven.compiler.release>17</maven.compiler.release>
         <just-test.central.split.executor>false</just-test.central.split.executor>
         <just-test.publish.skip>false</just-test.publish.skip>
@@ -62,6 +63,10 @@
             </testResource>
         </testResources>
         <plugins>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-dependency-plugin</artifactId>
+            </plugin>
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-surefire-plugin</artifactId>
@@ -117,6 +122,16 @@
                 <plugins>
                     <plugin>
                         <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-javadoc-plugin</artifactId>
+                        <configuration>
+                            <includeDependencySources>true</includeDependencySources>
+                            <dependencySourceIncludes>
+                                <dependencySourceInclude>io.github.cyaquarius:just-test-core</dependencySourceInclude>
+                            </dependencySourceIncludes>
+                        </configuration>
+                    </plugin>
+                    <plugin>
+                        <groupId>org.apache.maven.plugins</groupId>
                         <artifactId>maven-shade-plugin</artifactId>
                         <version>3.6.0</version>
                         <executions>
@@ -128,6 +143,7 @@
                                 </goals>
                                 <configuration>
                                     <createDependencyReducedPom>true</createDependencyReducedPom>
+                                    <createSourcesJar>true</createSourcesJar>
                                     <promoteTransitiveDependencies>false</promoteTransitiveDependencies>
                                     <artifactSet>
                                         <includes>
@@ -170,6 +186,9 @@
         </profile>
         <profile>
             <id>dual-jdk-release</id>
+            <properties>
+                <just-test.jdk.range>[17,18)</just-test.jdk.range>
+            </properties>
             <build>
                 <plugins>
                     <plugin>
@@ -177,7 +196,7 @@
                         <artifactId>maven-compiler-plugin</artifactId>
                         <configuration>
                             <jdkToolchain>
-                                <version>17</version>
+                                <version>${just-test.jdk.range}</version>
                             </jdkToolchain>
                         </configuration>
                     </plugin>
@@ -186,7 +205,7 @@
                         <artifactId>maven-surefire-plugin</artifactId>
                         <configuration>
                             <jdkToolchain>
-                                <version>17</version>
+                                <version>${just-test.jdk.range}</version>
                             </jdkToolchain>
                         </configuration>
                     </plugin>
@@ -204,7 +223,8 @@
                                     <executable>bash</executable>
                                     <arguments>
                                         <argument>${project.basedir}/../scripts/require-jdk-toolchain.sh</argument>
-                                        <argument>17</argument>
+                                        <argument>${just-test.jdk.range}</argument>
+                                        <argument>${maven.home}</argument>
                                     </arguments>
                                 </configuration>
                             </execution>

@@ -83,7 +83,36 @@
 
     <profiles>
         <profile>
+            <id>central-publish</id>
+            <build>
+                <plugins>
+                    <plugin>
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-source-plugin</artifactId>
+                        <configuration>
+                            <skipSource>false</skipSource>
+                        </configuration>
+                    </plugin>
+                    <plugin>
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-javadoc-plugin</artifactId>
+                        <executions>
+                            <execution>
+                                <id>prepare-core-javadocs</id>
+                                <phase>prepare-package</phase>
+                                <goals><goal>javadoc</goal></goals>
+                                <configuration><skip>false</skip></configuration>
+                            </execution>
+                        </executions>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
+        <profile>
             <id>dual-jdk-release</id>
+            <properties>
+                <just-test.jdk.range>[1.8,1.9),[8,9)</just-test.jdk.range>
+            </properties>
             <build>
                 <plugins>
                     <plugin>
@@ -91,7 +120,7 @@
                         <artifactId>maven-compiler-plugin</artifactId>
                         <configuration>
                             <jdkToolchain>
-                                <version>8</version>
+                                <version>${just-test.jdk.range}</version>
                             </jdkToolchain>
                         </configuration>
                     </plugin>
@@ -109,7 +138,8 @@
                                     <executable>bash</executable>
                                     <arguments>
                                         <argument>${project.basedir}/../scripts/require-jdk-toolchain.sh</argument>
-                                        <argument>8</argument>
+                                        <argument>${just-test.jdk.range}</argument>
+                                        <argument>${maven.home}</argument>
                                     </arguments>
                                 </configuration>
                             </execution>
