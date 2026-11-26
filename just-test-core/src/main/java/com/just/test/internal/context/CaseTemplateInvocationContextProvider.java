@@ -20,6 +20,8 @@ import org.springframework.core.type.classreading.CachingMetadataReaderFactory;
 import org.springframework.core.type.classreading.MetadataReader;
 import org.springframework.core.type.classreading.MetadataReaderFactory;
 
+import java.net.URL;
+import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
@@ -175,8 +177,12 @@ public class CaseTemplateInvocationContextProvider implements TestTemplateInvoca
             // 默认包没有包路径。lastIndexOf("") 会截到字符串末尾，相对路径变成空串，case 永远发现不到。
             String marker = caseRoot.isEmpty() ? null : caseRoot + "/";
             for (Resource resource : resources) {
-                String location = resource.getURL().toExternalForm();
-                String relative = relativeCasePath(location, marker);
+                URL url = resource.getURL();
+                if ("file".equals(url.getProtocol())) {
+                    caseNames.add(Paths.get(url.toURI()).getParent().getFileName().toString());
+                    continue;
+                }
+                String relative = relativeCasePath(url.toExternalForm(), marker);
                 if (relative == null) {
                     continue;
                 }
@@ -232,10 +238,8 @@ public class CaseTemplateInvocationContextProvider implements TestTemplateInvoca
 
     private CaseContext toCaseContext(String caseName, String caseRoot) {
         String casePath = joinPath(caseRoot, caseName);
-        Map<String, Object> data = DataSetLoader.parseYamlByPath(casePath, "request.yaml");
-        Map<String, Object> params = data != null ? data : Collections.emptyMap();
         log.debug("[JustTest] Discovered case: {} (path: {})", caseName, casePath);
-        return new CaseContext(caseName, casePath, params);
+        return new DiscoveredCaseContext(caseName, casePath);
     }
 
     private String joinPath(String parent, String child) {
@@ -249,6 +253,26 @@ public class CaseTemplateInvocationContextProvider implements TestTemplateInvoca
         private PackageJustTestScan(List<String> abstractClassNames, List<String> concreteClassNames) {
             this.abstractClassNames = abstractClassNames;
             this.concreteClassNames = concreteClassNames;
+        }
+    }
+
+    private static final class DiscoveredCaseContext extends CaseContext {
+
+        private Map<String, Object> params;
+
+        private DiscoveredCaseContext(String caseName, String casePath) {
+            super(caseName, casePath);
+        }
+
+        @Override
+        public synchronized Map<String, Object> getParams() {
+            if (params == null) {
+                String casePath = getCasePath();
+                DataSetLoader.requireStageResource(casePath);
+                Map<String, Object> data = DataSetLoader.parseYamlByPath(casePath, "request.yaml");
+                params = data != null ? data : Collections.emptyMap();
+            }
+            return params;
         }
     }
 

@@ -59,56 +59,27 @@ public class CaseContext {
     // ---- 类型安全的参数取值 ----
 
     public String getString(String key) {
-        Object value = params.get(key);
+        Object value = getParams().get(key);
         return value == null ? null : value.toString();
     }
 
     public Long getLong(String key) {
-        Object value = params.get(key);
-        if (value == null) {
-            return null;
-        }
-        try {
-            if (value instanceof Long) {
-                return (Long) value;
-            }
-            if (value instanceof Number) {
-                return ((Number) value).longValue();
-            }
-            return Long.valueOf(value.toString());
-        } catch (RuntimeException e) {
-            throw conversionFailure(key, "Long", e);
-        }
+        return getObject(key, Long.class);
     }
 
     public Integer getInt(String key) {
-        Object value = params.get(key);
-        if (value == null) {
-            return null;
-        }
-        try {
-            if (value instanceof Integer) {
-                return (Integer) value;
-            }
-            if (value instanceof Number) {
-                return ((Number) value).intValue();
-            }
-            return Integer.valueOf(value.toString());
-        } catch (RuntimeException e) {
-            throw conversionFailure(key, "Integer", e);
-        }
+        return getObject(key, Integer.class);
     }
 
-    @SuppressWarnings("unchecked")
     public <T> T getObject(String key, Class<T> type) {
-        Object value = params.get(key);
+        Object value = getParams().get(key);
         if (value == null) {
             return null;
         }
         try {
             return convertElement(value, type);
         } catch (RuntimeException e) {
-            throw conversionFailure(key, type.getName(), e);
+            throw conversionFailure(key, type.getSimpleName(), e);
         }
     }
 
@@ -129,7 +100,7 @@ public class CaseContext {
      */
     @SuppressWarnings("unchecked")
     public <T> List<T> getList(String key, Class<T> elementType) {
-        Object value = params.get(key);
+        Object value = getParams().get(key);
         if (value == null) {
             return Collections.emptyList();
         }
@@ -161,7 +132,7 @@ public class CaseContext {
      */
     @SuppressWarnings("unchecked")
     public Map<String, Object> getMap(String key) {
-        Object value = params.get(key);
+        Object value = getParams().get(key);
         if (value instanceof Map) {
             return (Map<String, Object>) value;
         }
@@ -177,11 +148,15 @@ public class CaseContext {
             return type.cast(item);
         }
         // 数值类型转换
-        if (type == Long.class && item instanceof Number) {
-            return (T) Long.valueOf(((Number) item).longValue());
+        if (type == Long.class) {
+            return (T) (item instanceof Number
+                    ? Long.valueOf(exactDecimal((Number) item).longValueExact())
+                    : Long.valueOf(item.toString()));
         }
-        if (type == Integer.class && item instanceof Number) {
-            return (T) Integer.valueOf(((Number) item).intValue());
+        if (type == Integer.class) {
+            return (T) (item instanceof Number
+                    ? Integer.valueOf(exactDecimal((Number) item).intValueExact())
+                    : Integer.valueOf(item.toString()));
         }
         if (type == BigDecimal.class) {
             return (T) new BigDecimal(item.toString());
@@ -206,6 +181,13 @@ public class CaseContext {
             }
         }
         return type.cast(item);
+    }
+
+    private static BigDecimal exactDecimal(Number number) {
+        if (number instanceof Double || number instanceof Float) {
+            return new BigDecimal(number.doubleValue());
+        }
+        return number instanceof BigDecimal ? (BigDecimal) number : new BigDecimal(number.toString());
     }
 
     private IllegalArgumentException conversionFailure(String key, String target, RuntimeException cause) {

@@ -117,27 +117,58 @@ public class DataSetLoader {
     /**
      * 从已解析的 YAML Map 加载数据到数据库。
      */
-    @SuppressWarnings("unchecked")
     static void loadFromMap(JdbcTemplate jdbcTemplate, Map<String, Object> yamlData, String source) {
         if (yamlData == null || yamlData.isEmpty()) {
             log.debug("[JustTest] No prepare data from: {}", source);
             return;
         }
+        Map<String, List<Map<String, Object>>> tables = requireTableRows(yamlData, source);
         BuiltInMatchers.requireKnownFlags(yamlData, BuiltInMatchers.FlagStage.PREPARE, source);
 
-        for (Map.Entry<String, Object> entry : yamlData.entrySet()) {
+        for (Map.Entry<String, List<Map<String, Object>>> entry : tables.entrySet()) {
             String tableName = entry.getKey();
             validateTableName(tableName);
-            Object value = entry.getValue();
-            if (!(value instanceof List)) {
-                continue;
-            }
-            List<Map<String, Object>> rows = (List<Map<String, Object>>) value;
+            List<Map<String, Object>> rows = entry.getValue();
             if (rows.isEmpty()) {
                 continue;
             }
             insertRows(jdbcTemplate, tableName, rows);
         }
+    }
+
+    @SuppressWarnings("unchecked")
+    public static Map<String, List<Map<String, Object>>> requireTableRows(Map<String, Object> data, String source) {
+        for (Map.Entry<String, Object> entry : data.entrySet()) {
+            String location = source + ", table '" + entry.getKey() + "'";
+            Object value = entry.getValue();
+            if (!(value instanceof List)) {
+                throw new IllegalArgumentException(
+                        "[JustTest] Expected a list in " + location + ", got " + yamlType(value));
+            }
+            int index = 0;
+            for (Object row : (List<?>) value) {
+                if (!(row instanceof Map)) {
+                    throw new IllegalArgumentException("[JustTest] Expected a mapping in " + location
+                            + ", row[" + index + "], got " + yamlType(row));
+                }
+                index++;
+            }
+        }
+        return (Map<String, List<Map<String, Object>>>) (Map<?, ?>) data;
+    }
+
+    private static String yamlType(Object value) {
+        return value == null ? "null" : value.getClass().getSimpleName();
+    }
+
+    public static void requireStageResource(String casePath) {
+        for (String stage : new String[]{"request", "prepare", "expect", "response", "expect_exception"}) {
+            if (resourceExists(casePath + "/" + stage + ".yaml")
+                    || resourceExists(casePath + "/" + stage + ".yml")) {
+                return;
+            }
+        }
+        throw new IllegalStateException("[JustTest] No loadable stage files for case: " + casePath);
     }
 
     /**
@@ -243,10 +274,8 @@ public class DataSetLoader {
             constructor.setAllowDuplicateKeys(false);
             Object raw = yaml.load(new InputStreamReader(is, StandardCharsets.UTF_8));
             return normalizeYamlKeys(raw);
-        } catch (RuntimeException e) {
-            throw e;
         } catch (Exception e) {
-            throw new RuntimeException("[JustTest] Failed to parse YAML: " + resourcePath, e);
+            throw new RuntimeException("[JustTest] Failed to parse YAML: " + resourcePath + ": " + e.getMessage(), e);
         }
     }
 
@@ -321,7 +350,7 @@ public class DataSetLoader {
     private static void insertRows(JdbcTemplate jdbcTemplate, String tableName, List<Map<String, Object>> rows) {
         int insertedCount = 0;
         for (Map<String, Object> row : rows) {
-            if (row == null || row.isEmpty()) {
+            if (row.isEmpty()) {
                 continue;
             }
             StringJoiner columns = new StringJoiner(", ");

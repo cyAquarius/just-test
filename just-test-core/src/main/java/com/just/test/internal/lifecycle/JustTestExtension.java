@@ -22,6 +22,7 @@ import org.junit.jupiter.api.extension.InvocationInterceptor;
 import org.junit.jupiter.api.extension.ParameterContext;
 import org.junit.jupiter.api.extension.ParameterResolver;
 import org.junit.jupiter.api.extension.ReflectiveInvocationContext;
+import org.opentest4j.TestAbortedException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.aop.framework.Advised;
@@ -31,6 +32,7 @@ import org.springframework.context.ApplicationContext;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.junit.jupiter.SpringExtension;
 
+import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.lang.reflect.Modifier;
 import java.util.ArrayList;
@@ -92,6 +94,7 @@ public final class JustTestExtension implements BeforeEachCallback, AfterEachCal
 
     @Override
     public void beforeEach(ExtensionContext extensionContext) throws Exception {
+        caseContext.getParams();
         Object testInstance = extensionContext.getRequiredTestInstance();
         if (!(testInstance instanceof JustTestLifecycle)) {
             throw new IllegalStateException(String.format(
@@ -140,9 +143,12 @@ public final class JustTestExtension implements BeforeEachCallback, AfterEachCal
             invokeBeforeCaseMethods(extensionContext, caseContext.getCaseName());
             lifecycle.beforeExecute(caseContext);
 
+            TestAbortedException aborted = null;
             try {
                 // JUnit test-template 方法是 void；结果必须由测试调用 CaseContext#setResult。
                 invocation.proceed();
+            } catch (TestAbortedException failure) {
+                aborted = failure;
             } catch (Throwable failure) {
                 caseContext.setException(failure);
                 log.debug("[JustTest] Exception captured for case [{}]: {}",
@@ -152,11 +158,20 @@ public final class JustTestExtension implements BeforeEachCallback, AfterEachCal
             try {
                 lifecycle.afterExecute(caseContext);
             } catch (Throwable afterExecuteFailure) {
+                if (aborted != null) {
+                    if (aborted != afterExecuteFailure) {
+                        aborted.addSuppressed(afterExecuteFailure);
+                    }
+                    throw aborted;
+                }
                 if (caseContext.getException() != null
                         && caseContext.getException() != afterExecuteFailure) {
                     afterExecuteFailure.addSuppressed(caseContext.getException());
                 }
                 throw afterExecuteFailure;
+            }
+            if (aborted != null) {
+                throw aborted;
             }
             verifyCase();
         } catch (Throwable failure) {
@@ -187,6 +202,9 @@ public final class JustTestExtension implements BeforeEachCallback, AfterEachCal
     }
 
     private void verifyCase() throws Throwable {
+        if (caseContext.getException() instanceof TestAbortedException) {
+            throw caseContext.getException();
+        }
         List<String> failures = new ArrayList<>();
         String casePath = caseContext.getCasePath();
 
@@ -461,7 +479,13 @@ public final class JustTestExtension implements BeforeEachCallback, AfterEachCal
             method.invoke(testInstance);
             log.debug("[JustTest] Invoked @BeforeCase(\"{}\") -> {}", caseName, method.getName());
         } catch (Exception e) {
-            Throwable cause = e.getCause() != null ? e.getCause() : e;
+            Throwable cause = e instanceof InvocationTargetException ? e.getCause() : e;
+            if (cause instanceof Error) {
+                throw (Error) cause;
+            }
+            if (cause instanceof TestAbortedException) {
+                throw (TestAbortedException) cause;
+            }
             throw new RuntimeException(String.format(
                     "[JustTest] @BeforeCase(\"%s\") method %s failed: %s",
                     caseName, method.getName(), cause.getMessage()), cause);

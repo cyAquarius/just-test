@@ -2,6 +2,7 @@ package com.just.test.internal.verifier;
 
 import com.just.test.internal.loader.DataSetLoader;
 import com.just.test.internal.matcher.BuiltInMatchers;
+import org.opentest4j.TestAbortedException;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -46,6 +47,9 @@ public class ExceptionVerifier {
      * @return 验证失败的详细信息列表，空列表表示全部通过
      */
     public static List<String> verify(Throwable actual, String casePath) {
+        if (actual instanceof TestAbortedException) {
+            throw (TestAbortedException) actual;
+        }
         List<String> failures = new ArrayList<>();
 
         Map<String, Object> expectData = loadExpectException(casePath);

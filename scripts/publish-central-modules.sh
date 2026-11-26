@@ -91,10 +91,10 @@ upload_and_wait() {
   local name="$2"
   local response deployment_id state i
 
-  response="$(curl -sS -X POST \
-    -H "${auth_header}" \
+  response="$(curl -sS --fail --connect-timeout 15 --max-time 300 -X POST \
+    -H @- \
     -F "bundle=@${zip};type=application/octet-stream" \
-    "${api}/upload?name=${name}&publishingType=AUTOMATIC")"
+    "${api}/upload?name=${name}&publishingType=AUTOMATIC" <<< "${auth_header}")"
   echo "Central upload response: ${response}"
 
   deployment_id="$(printf '%s' "${response}" | tr -d '\r' | tr -d '"' | tr -d '\n')"
@@ -118,8 +118,8 @@ upload_and_wait() {
       --connect-timeout 15 \
       --max-time 60 \
       -X POST \
-      -H "${auth_header}" \
-      "${api}/status?id=${deployment_id}")"
+      -H @- \
+      "${api}/status?id=${deployment_id}" <<< "${auth_header}")"
     echo "status[${i}]: ${state}"
     if printf '%s' "${state}" | grep -Eq '"deploymentState"[[:space:]]*:[[:space:]]*"PUBLISHED"'; then
       echo "Published ${name}"

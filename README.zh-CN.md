@@ -22,7 +22,7 @@ Maven Central 的 group 为 `io.github.cyaquarius`。当前已发布版本为 `1
 | Java / Spring Boot | 8 / 2.7.18 | 17 / 3.5.16 |
 | Java 包名 | `com.just.test` | `com.just.test` |
 | 已发布版本 | `1.2.13` | `1.2.13` |
-| 本地安装 | `1.2.13` | `1.2.13` |
+| 待发布 / 本地安装 | `1.2.14` | `1.2.14` |
 
 Java 8 / Boot 2：
 
@@ -40,7 +40,7 @@ Java 8 / Boot 2：
 - Central **只发布** `just-test-boot2` 与 `just-test-boot3`。
 - 公司私服已代理 Central 时，只需上面的依赖声明。
 - 环境访问不了 Central 时，可代理 Central，或把 boot2 / boot3 制品上传到私服 release 仓库，并保持 group 为 `io.github.cyaquarius`。
-- 基于本仓库开发仍用本地 `mvn install`，装到的是已发布的 `1.2.13`。版本记录见[变更记录](#changelog)。依赖基线见[兼容性](#compatibility)。
+- 基于本仓库开发仍用本地 `mvn install`，装到的是待发布的 `1.2.14`。版本记录见[变更记录](#changelog)。依赖基线见[兼容性](#compatibility)。
 
 <a id="capabilities"></a>
 
@@ -705,7 +705,13 @@ junit.jupiter.execution.parallel.mode.classes.default=concurrent
 
 ## 变更记录
 
-当前 Maven Central 发布版本是 `1.2.13`。上面的规则对应该版本。
+当前 Maven Central 发布版本是 `1.2.13`。上面的规则对应该版本，以及变更记录里待发布的 1.2.14。
+
+- **1.2.14**（待发布）— 文件 classpath 上含空格或中文的 case 目录可以加载阶段文件。已发现的 case 若无可加载阶段文件，立即报错并显示路径。 [Issue #148](https://github.com/cyAquarius/just-test/issues/148)。
+- **1.2.14**（待发布）— prepare 和 expect 中每张表都必须是映射列表。格式错误会显示阶段文件、表名，以及适用时的行下标。 [Issue #149](https://github.com/cyAquarius/just-test/issues/149)。
+- **1.2.14**（待发布）— request YAML 按 case 加载，格式错误只影响该次调用。YAML 解析错误会显示 classpath 路径。 [Issue #151](https://github.com/cyAquarius/just-test/issues/151) [Issue #153](https://github.com/cyAquarius/just-test/issues/153)。
+- **1.2.14**（待发布）— 整数参数转换拒绝小数截断和溢出，标量、对象、列表对整数字符串使用相同规则。 [Issue #152](https://github.com/cyAquarius/just-test/issues/152)。
+- **1.2.14**（待发布）— JUnit 假设中止保持跳过状态，`@BeforeCase` 保留断言失败。Central 上传设置连接及总超时，在 HTTP 错误时失败，并通过标准输入传递 Bearer 请求头。 [Issue #154](https://github.com/cyAquarius/just-test/issues/154)。
 
 - **1.2.13** — MySQL DDL 清洗在单引号字面量里保留 `\%` 和 `\_` 的反斜杠，与模式匹配以外的 MySQL 语义一致。其余未知转义（如 `\x`）仍丢掉反斜杠，因此 H2 存下 `\%`、`\_` 和 `x`。[Issue #145](https://github.com/cyAquarius/just-test/issues/145)。
 
