@@ -581,7 +581,7 @@ sequenceDiagram
 
 - `@JustTest` 是测试类级执行契约：测试类必须实现 `JustTestLifecycle`，类内所有可执行测试方法都必须使用 `@CaseSource`。
 - 类未实现该接口，或类中存在 `@Test`、`@RepeatedTest`、`@ParameterizedTest`、`@TestFactory` 或其他普通 JUnit 测试方法时，JustTest 在 `BeforeAll` 失败并提示修正。
-- `@TestInstance(PER_CLASS)` 与类内并发 case 组合（仅当 `junit.jupiter.execution.parallel.enabled=true`）也会在 `BeforeAll` 失败。见[并行](#parallel)。
+- 当 `junit.jupiter.execution.parallel.enabled=true` 时，若 `@TestInstance(PER_CLASS)` 的 case 方法显式声明或从类继承 `@Execution(CONCURRENT)`，校验会在 `BeforeAll` 失败。见[并行](#parallel)。
 - 渐进迁移时保留原有 JUnit 测试类，把新 case 放入独立的 `@JustTest` 类。未标注 `@JustTest` 的旧测试类不受影响。
 - `@CaseSource` 本身就是测试注解。不要再与其他 JUnit 测试注解组合。
 
@@ -648,9 +648,11 @@ flowchart TD
   on["classes.default = concurrent"] --> ask{"static 状态、共享资源<br>和异步线程都安全?"}
   ask -->|否| seq["保持 mode.default = same_thread"]
   ask -->|是| conc["把 mode.default 设为 concurrent"]
-  conc --> per{"PER_CLASS，且并行已启用，<br>case 将并发?"}
-  per -->|是| fail["BeforeAll 失败"]
-  per -->|否| go["类内 case 可以一起跑<br>使用 PER_METHOD"]
+  conc --> per{"PER_CLASS?"}
+  per -->|是| explicit{"是否有 case 使用方法或类上<br>显式声明的 CONCURRENT?"}
+  explicit -->|是| fail["BeforeAll 失败"]
+  explicit -->|否| same["case 保持 SAME_THREAD"]
+  per -->|否| go["PER_METHOD 的 case 可以并发"]
 ```
 
 先让测试类并行，同一类中的 case 保持串行：
@@ -662,10 +664,10 @@ junit.jupiter.execution.parallel.mode.default=same_thread
 junit.jupiter.execution.parallel.mode.classes.default=concurrent
 ```
 
-- 业务 static 状态、外部共享资源和异步线程都确认安全后，把 `mode.default` 改为 `concurrent`，允许同一测试类中的 case 并行。
+- 业务 static 状态、外部共享资源和异步线程都确认安全后，把 `mode.default` 改为 `concurrent`，允许同一测试类中的 `PER_METHOD` case 并行。
 - 正常测试类不需要声明 `@Execution`。只有个别类无法满足并发边界时，用 `@Execution(ExecutionMode.SAME_THREAD)` 局部降级。
-- `@TestInstance(PER_CLASS)` 不能与类内并发 case 组合：仅当 JUnit 并行已启用（`junit.jupiter.execution.parallel.enabled=true`），且 case 会并发执行（`@Execution(CONCURRENT)` 或 `mode.default=concurrent`）。
-- 这些 case 会共享一个测试实例，并可能竞态 `@JustMock` 字段注入。
+- JUnit 默认以 `SAME_THREAD` 执行 `PER_CLASS` 的子节点。即使 `mode.default=concurrent`，JustTest 也接受未声明 `@Execution` 的 `PER_CLASS` 类。启用 JUnit 并行后（`junit.jupiter.execution.parallel.enabled=true`），如果 `PER_CLASS` 的 case 方法显式声明或从类继承 `@Execution(CONCURRENT)`，JustTest 会拒绝该配置。方法上的 `@Execution(SAME_THREAD)` 可以覆盖类上的 `CONCURRENT`。
+- 并发执行的 `PER_CLASS` case 会共享一个测试实例，并可能竞态 `@JustMock` 字段注入。
 - 若并行未启用，残留的 `@Execution` 或 `mode.default=concurrent` 不触发该检查。
 - 并发 case 使用 JUnit 默认的 `PER_METHOD`；需要 `PER_CLASS` 时保持 `SAME_THREAD`。
 - 类间并行（`mode.classes.default`）不等于类内 case 并发。
@@ -718,7 +720,7 @@ junit.jupiter.execution.parallel.mode.classes.default=concurrent
 - **1.2.14**（待发布）— `@JustTestProject` 在配置类解析期间扫描并排除其他项目启动类。保留扫描到的 MyBatis 工厂，支持 MyBatis 自动配置属性与自定义过滤器，Feign 自动 mock 仅匹配带注解的接口。 [Issue #158](https://github.com/cyAquarius/just-test/issues/158)。
 - **1.2.14**（待发布）— 每个 case 的 `REQUIRES_NEW` 使用独立连接。修复 MySQL DDL 拆分和转义、嵌套 `DATE_FORMAT`、英文月份名、双引号比较及 `FIND_IN_SET('', '')`。 [Issue #159](https://github.com/cyAquarius/just-test/issues/159)。
 - **1.2.14**（待发布）— YAML 只隐式识别十进制整数和 `true` / `false` 布尔值。表名和列名自动加引号。修复顶层 Flag、空值行定位、重复匹配及异常字段校验。 [Issue #160](https://github.com/cyAquarius/just-test/issues/160)。
-- **1.2.14**（待发布）— 校验钩子保留用例原异常。假设中止时若有事务泄漏则判失败。事务清理只检查已绑定资源。修复 `@BeforeCase` 覆写、重复 `@Sql` 和参数转换。 [Issue #161](https://github.com/cyAquarius/just-test/issues/161)。
+- **1.2.14**（待发布）— 校验钩子保留用例原异常。假设中止时若有事务泄漏则判失败。事务清理只检查已绑定资源。修复 `@BeforeCase` 覆写、重复 `@Sql` 和参数转换。未声明 `@Execution` 的 `PER_CLASS` 在 `mode.default=concurrent` 时遵循 JUnit 的 `SAME_THREAD` 默认行为。 [Issue #161](https://github.com/cyAquarius/just-test/issues/161)。
 - **1.2.14**（待发布）— 发布前用隔离 Maven 仓库验证暂存制品，发布包附带 core 源码和 Javadoc。发布限定 main 或 tag，tag 必须与 POM 版本一致，Java 工具链门禁与 Maven 版本匹配规则一致。 [Issue #162](https://github.com/cyAquarius/just-test/issues/162)。
 - **1.2.14**（待发布）— 文件 classpath 上含空格或中文的 case 目录可以加载阶段文件。已发现的 case 若无可加载阶段文件，立即报错并显示路径。 [Issue #148](https://github.com/cyAquarius/just-test/issues/148)。
 - **1.2.14**（待发布）— prepare 和 expect 中每张表都必须是映射列表。格式错误会显示阶段文件、表名，以及适用时的行下标。 [Issue #149](https://github.com/cyAquarius/just-test/issues/149)。

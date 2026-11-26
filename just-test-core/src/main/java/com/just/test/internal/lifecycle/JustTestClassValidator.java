@@ -216,7 +216,8 @@ public final class JustTestClassValidator {
      * {@code enabled=false} 加上残留的 {@code mode.default=concurrent} 不算并发。</p>
      *
      * <p>没有 context 时无法读取平台配置，显式 {@code @Execution(CONCURRENT)} 视为会并发。
-     * 方法上的 {@code @Execution} 优先，否则继承类上的 {@code @Execution}，再否则使用
+     * 方法上的 {@code @Execution} 优先，否则继承类上的 {@code @Execution}。两者都未声明时，
+     * JUnit 的 {@code PER_CLASS} case 使用 {@code SAME_THREAD}，其余使用
      * {@code mode.default}（缺省 {@code SAME_THREAD}）。不读取
      * {@code ExtensionContext#getExecutionMode()}，以免把类间并行误判为类内并发。</p>
      */
@@ -251,6 +252,9 @@ public final class JustTestClassValidator {
         Optional<Execution> classExecution = AnnotationSupport.findAnnotation(testClass, Execution.class);
         if (classExecution.isPresent()) {
             return classExecution.get().value();
+        }
+        if (resolveLifecycle(testClass, context) == TestInstance.Lifecycle.PER_CLASS) {
+            return ExecutionMode.SAME_THREAD;
         }
         if (context != null) {
             return configurationParameter(context, PARALLEL_MODE_DEFAULT_PROPERTY)

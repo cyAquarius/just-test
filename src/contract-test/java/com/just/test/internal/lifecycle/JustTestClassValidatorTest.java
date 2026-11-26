@@ -99,7 +99,7 @@ class JustTestClassValidatorTest {
     }
 
     @Test
-    void rejectsPerClassWhenConfigurationDefaultIsConcurrent() {
+    void acceptsPerClassWhenConfigurationDefaultIsConcurrent() {
         ExtensionContext context = mock(ExtensionContext.class);
         when(context.getTestInstanceLifecycle())
                 .thenReturn(Optional.of(TestInstance.Lifecycle.PER_CLASS));
@@ -108,10 +108,7 @@ class JustTestClassValidatorTest {
         when(context.getConfigurationParameter(JustTestClassValidator.PARALLEL_MODE_DEFAULT_PROPERTY))
                 .thenReturn(Optional.of("concurrent"));
 
-        ExtensionConfigurationException failure = assertThrows(ExtensionConfigurationException.class,
-                () -> JustTestClassValidator.validate(PerClassNoExecution.class, context));
-
-        assertTrue(failure.getMessage().contains("@TestInstance(PER_CLASS)"));
+        assertDoesNotThrow(() -> JustTestClassValidator.validate(PerClassNoExecution.class, context));
         verify(context, never()).getExecutionMode();
     }
 

@@ -222,7 +222,7 @@ junit.jupiter.execution.parallel.mode.classes.default=concurrent
 - 不要用 `ReflectionTestUtils` 把 raw Mockito mock 写入业务 Bean，覆盖 `@JustMock` 的 `ThreadScope` proxy。
 - 不要给 case H2 URL 加 `DB_CLOSE_DELAY=-1` 来掩盖 `already closed`。
 - 静态 Mock 只作用于当前 case 线程，不会传播到业务自行创建的异步线程。
-- `@TestInstance(PER_CLASS)` 不能与类内并发 case 组合。
+- 启用 JUnit 并行时，`@TestInstance(PER_CLASS)` 的 case 不能通过方法或类上显式声明的 `@Execution(CONCURRENT)` 并发执行。未声明 `@Execution` 的 `PER_CLASS` 类即使在 `mode.default=concurrent` 时也默认以 `SAME_THREAD` 执行 case。
 
 ## 写出前核对
 
