@@ -18,9 +18,11 @@ GitHub 的 `[skip ci]` / `[ci skip]` 会跳过本仓库的验证与发布工作�
 
 发布时：
 
-1. `main` 上验证通过，不要使用 `[skip ci]`；
-2. 打 `v*` tag 并 push。CI 用去掉前缀 `v` 后的 tag 设置版本、签名并上传 Central；
-3. 仓库需已配置 Secrets：`CENTRAL_USERNAME`、`CENTRAL_PASSWORD`、`GPG_PRIVATE_KEY`、`GPG_PASSPHRASE`。
+1. `main` 上验证通过，不要使用 `[skip ci]`；父 POM 版本必须已经是要发布的 `X.Y.Z`；
+2. 打与 POM 完全一致的 `vX.Y.Z` tag 并 push。CI 校验 tag（去掉前缀 `v`）等于 `project.version`，不再用 tag 改写 POM；
+3. 发布 job 只在 `main` 或 tag 上运行。`workflow_dispatch` 仍可用于重试，但必须从 `main` 或该 tag 触发；
+4. 上传前会把暂存的 shaded JAR 与 flattened POM 装进隔离本地仓库，做静态检查（POM 不含 core / parent，JAR / sources / javadoc 含 core 公开 API）并跑消费烟测；
+5. 仓库需已配置 Secrets：`CENTRAL_USERNAME`、`CENTRAL_PASSWORD`、`GPG_PRIVATE_KEY`、`GPG_PASSPHRASE`。
 
 ## 如何构建双产品线
 

@@ -50,7 +50,8 @@ public class JustTestApplication {
 
 - 放入独立测试包。所有 `@JustTest` 类放在该包或其子包。
 - 框架拥有默认扫描 denylist，**不**排除 `FeignAutoConfiguration` / `FeignContext`。
-- 可选 MyBatis 装配仍由 `mapperPackages` 声明。
+- 可选 MyBatis 装配仍由 `mapperPackages` 声明。声明后若 classpath 上有 MyBatis / MyBatis-Plus 自动配置，`mybatis.*` 等属性会生效；应用自己的 `SqlSessionFactory` 优先。
+- `basePackages` 下其他 `@JustTestProject` 启动类与普通 `@SpringBootConfiguration` 一样会被排除。
 - 项目只声明 `basePackages`、差异过滤器、需要兼容的数据源 / 事务别名，以及是否打开 `autoMockFeignClients`。
 - 手写 `@SpringBootConfiguration` 启动类仍可用。
 - 三层职责（框架拥有 / 默认可覆盖 / 项目必须声明）见 README「编写测试」。
@@ -69,9 +70,9 @@ public class JustTestApplication {
 **Feign 与显式 mock**
 
 - Redis / OSS / SDK / 自定义 Client 的 mock 放在 Support 的 `@JustMock`（或 `@ThreadScopedMock`）上。
-- 只有打开 `autoMockFeignClients` 时，才按 `@FeignClient` 注解存在自动 mock 接口。不按 `*Client` 名字推断。
+- 只有打开 `autoMockFeignClients` 时，才按直接标注的 `@FeignClient` 接口自动 mock。不按 `*Client` 名字推断，也不 mock 未再标注的子接口。
 - 显式 `@JustMock` / `@JustSpy` / `@ThreadScopedMock` 优先于自动 Feign mock。
-- `@JustSpy` 不会把该类型再自动 mock 成纯 mock，并且仍然进入缓存 key。
+- `@JustSpy` 不会把该类型再自动 mock 成纯 mock，并且仍然进入缓存 key。Spring init / destroy（含 `AutoCloseable.close`）不会转发给隐藏的真实单例；不要指望在 spy / 拦截 mock 上调用 `close()` 来关闭真实 Bean。
 
 **已是线程级 mock 时的 `@JustMock`**
 
@@ -168,7 +169,7 @@ YAML 与测试类放在同一棵 `src/test/java` 树时，消费工程 POM 增�
 </testResources>
 ```
 
-- `src/test/resources` 留给 `schema.sql` / `application-test.yml`。
+- `src/test/resources` 留给 `schema.sql` / `application-test.yml`。 MySQL dump 会先按 MySQL 引号和转义规则切分（含 `#` 行注释）再清理；`DATE_FORMAT` 的格式参数必须是字符串字面量，`%M` 为英文月份名。 每个 case 的 `REQUIRES_NEW` 使用独立连接。
 - YAML 也可以按同一包路径放在 `src/test/resources`。发现路径不变。
 - 每个 case 子目录按需要放 yaml，不必五个文件都写。
 
@@ -242,11 +243,13 @@ class CreateJustTest extends OrderJustTestSupport {
 | `[J]` | JSON 结构比较 |
 | `[F]` | 仅 `prepare.yaml`：原始库函数，如 `NOW()` |
 
+- 未加引号的 `true` / `false`（忽略大小写）是布尔值；只有普通十进制整数字面量会变成整数。`0123`、`10:30`、`NO` 保持字符串，需要原样时请加引号。
+- `prepare.yaml` / `expect.yaml` 的表名和列名只用字母、数字和下划线。框架会在生成的 SQL 里加引号，因此 `order`、`value` 这类关键字也可以用。
+- `response.yaml` 根上单独的 `[A]`、`[R]`、`[D]` / `[D60]`、`[J]` 对整个结果断言。根上单独的 `[N]` 跳过整个结果，且必须是唯一的根键。嵌套对象里 Flag 必须写在字段名后缀上；单独的 `[N]:` 之类是配置错误。
 - `[C]` 一旦用在 List 上，每个预期元素都必须是对象，且至少有一个 `[C]` 字段。
-- 库表断言优先写明确的 `[C]`。`[C]` 命中多行时失败，收紧到唯一一行。
+- 库表断言优先写明确的 `[C]`。`[C]` 和无 `[C]` 的兜底定位都必须只命中一行；兜底会把 null 字段写成 `IS NULL`。缺列即使期望为 null 也会失败。
 - `[J]` 比较 JSON 结构。数值按 BigDecimal 比较，`1` 与 `1.0` 相等。解析失败会报错，不会退回字符串比较。
-- 对象里单独的 `[N]:` 只跳过这个键，不会按键序跳过后面的字段。
-- YAML 重复 key 在解析时失败。`expect_exception.yaml` 存在但为空或没有 `type` 是配置错误，不会吞掉任意异常。
+- YAML 重复 key 在解析时失败。`expect_exception.yaml` 存在但为空、没有 `type`，或出现 `type` / `message` 以外的键，都是配置错误，不会吞掉任意异常。
 - Flag 区分大小写。未知、拼错或用错阶段（如 `[cn]`、`[CC]`）会立即失败，错误里有字段名、case 路径和该阶段合法 Flag。
 
 ## 反模式
@@ -263,7 +266,7 @@ class CreateJustTest extends OrderJustTestSupport {
 
 - [ ] 只依赖 `just-test-boot2` 或 `just-test-boot3` 之一，已发布版本 `1.2.13`，`scope` 为 `test`，没有 `just-test-core`。
 - [ ] 同一个真实 Bean 的接口 `@JustMock` 与实现类 `@JustMock` 可以并存。`1.2.8` 按 Bean 名只拦截一次。不要为了这种混用去改声明；不能安全合并时期望启动期 fail-fast。
-- [ ] 有 `src/test/resources/sql/schema.sql`，且启动类不加载生产 DataSource / 事务管理器。
+- [ ] 有 `src/test/resources/sql/schema.sql`，且启动类不加载生产 DataSource / 事务管理器。不要假设全部 MySQL 方言都能直接跑在 H2 上；新 SQL 用单引号。
 - [ ] `@JustTestProject` 在独立测试包，`@JustTest` 类在该包或子包。
 - [ ] 没有默认关闭 OkHttp。`autoMockFeignClients` 仅在需要时打开，且只覆盖 `@FeignClient`。
 - [ ] 非 Feign 外部依赖有显式 `@JustMock` 或 `@ThreadScopedMock`。
