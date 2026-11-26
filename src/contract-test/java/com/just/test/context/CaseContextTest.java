@@ -3,7 +3,9 @@ package com.just.test.context;
 import org.junit.jupiter.api.Test;
 
 import java.math.BigDecimal;
+import java.math.BigInteger;
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.Map;
 
@@ -35,6 +37,43 @@ class CaseContextTest {
                 () -> context.getObject("amount", BigDecimal.class)), "amount", "BigDecimal");
         assertConversion(assertThrows(IllegalArgumentException.class,
                 () -> context.getList("ids", Integer.class)), "ids", "List");
+    }
+
+    @Test
+    void integerConversionsRejectOverflowAndFractions() {
+        Map<String, Object> params = new LinkedHashMap<>();
+        params.put("wide", 3000000000L);
+        params.put("fraction", 1.9);
+        params.put("oversized", BigInteger.valueOf(Long.MAX_VALUE).add(BigInteger.ONE));
+        params.put("values", Arrays.asList(1, new BigDecimal("2.01")));
+        params.put("nearLimit", Math.nextDown(0x1.0p63));
+        CaseContext context = new CaseContext("overflow-case", "com/example/overflow-case", params);
+
+        assertConversion(assertThrows(IllegalArgumentException.class, () -> context.getInt("wide")),
+                "wide", "Integer");
+        assertConversion(assertThrows(IllegalArgumentException.class, () -> context.getLong("fraction")),
+                "fraction", "Long");
+        assertConversion(assertThrows(IllegalArgumentException.class,
+                () -> context.getObject("oversized", Long.class)), "oversized", "Long");
+        assertConversion(assertThrows(IllegalArgumentException.class,
+                () -> context.getList("values", Integer.class)), "values", "Integer");
+        assertEquals(Long.valueOf(9223372036854774784L), context.getLong("nearLimit"));
+    }
+
+    @Test
+    void integerStringsConvertConsistentlyAcrossAccessors() {
+        Map<String, Object> params = new LinkedHashMap<>();
+        params.put("id", "101");
+        params.put("ids", Arrays.asList("101", "-102"));
+        CaseContext context = new CaseContext("ids", "com/example/ids", params);
+
+        assertEquals(Long.valueOf(101L), context.getLong("id"));
+        assertEquals(Integer.valueOf(101), context.getInt("id"));
+        assertEquals(context.getLong("id"), context.getObject("id", Long.class));
+        assertEquals(context.getInt("id"), context.getObject("id", Integer.class));
+        assertEquals(Collections.singletonList(context.getLong("id")), context.getList("id", Long.class));
+        assertEquals(Arrays.asList(101L, -102L), context.getList("ids", Long.class));
+        assertEquals(Arrays.asList(101, -102), context.getList("ids", Integer.class));
     }
 
     private static void assertConversion(IllegalArgumentException error, String key, String type) {

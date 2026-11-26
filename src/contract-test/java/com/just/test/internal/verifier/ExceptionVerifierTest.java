@@ -1,10 +1,12 @@
 package com.just.test.internal.verifier;
 
 import org.junit.jupiter.api.Test;
+import org.opentest4j.TestAbortedException;
 
 import java.util.Arrays;
 import java.util.List;
 
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -13,6 +15,14 @@ class ExceptionVerifierTest {
 
     private static final String CASE_PATH = "com/just/test/verifier/exception/expected";
     private static final String EXCEPTION_FLAGS = "N, R, A, D, D<digits>, J";
+
+    @Test
+    void propagatesAbortEvenWhenExpectingAnotherException() {
+        TestAbortedException abort = new TestAbortedException("aborted");
+        String casePath = "com/just/test/internal/loader/casestages/body-abort";
+        assertSame(abort, assertThrows(TestAbortedException.class,
+                () -> ExceptionVerifier.verify(abort, casePath)));
+    }
 
     @Test
     void matchesExpectedCauseTypeAndRegexMessage() {

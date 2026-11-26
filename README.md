@@ -22,7 +22,7 @@ Maven Central group is `io.github.cyaquarius`. The current released version is `
 | Java / Spring Boot | 8 / 2.7.18 | 17 / 3.5.16 |
 | Java package | `com.just.test` | `com.just.test` |
 | Released version | `1.2.13` | `1.2.13` |
-| Local install | `1.2.13` | `1.2.13` |
+| Upcoming / local install | `1.2.14` | `1.2.14` |
 
 Java 8 / Boot 2:
 
@@ -40,7 +40,7 @@ Java 8 / Boot 2:
 - Central publishes only `just-test-boot2` and `just-test-boot3`.
 - A repository that already proxies Central only needs the dependency above.
 - Without Central access, proxy Central, or upload the boot2 / boot3 artifacts to a private release repository and keep group `io.github.cyaquarius`.
-- `mvn install` from this repository is for local development and installs `1.2.13`, the same version now published on Maven Central. Release history: [changelog](#changelog). Library baseline: [compatibility](#compatibility).
+- `mvn install` from this repository is for local development and installs upcoming `1.2.14`. Release history: [changelog](#changelog). Library baseline: [compatibility](#compatibility).
 
 <a id="capabilities"></a>
 
@@ -705,7 +705,13 @@ A parallel failure is not automatically a JustTest isolation failure; first insp
 
 ## Changelog
 
-The current Maven Central release is `1.2.13`. The rules above match that release.
+The current Maven Central release is `1.2.13`. The rules above match that release, plus the upcoming 1.2.14 items in the changelog.
+
+- **1.2.14** (upcoming) — Case directory names with spaces or Chinese characters load their stages on a file classpath. Discovered cases with no loadable stage files fail with the case path. [Issue #148](https://github.com/cyAquarius/just-test/issues/148).
+- **1.2.14** (upcoming) — Prepare and expect require a list of mappings for each table and report the stage file, table, and invalid row index where applicable. [Issue #149](https://github.com/cyAquarius/just-test/issues/149).
+- **1.2.14** (upcoming) — Request YAML loads per case, so malformed input fails only that invocation. YAML parse errors include the classpath path. [Issue #151](https://github.com/cyAquarius/just-test/issues/151) [Issue #153](https://github.com/cyAquarius/just-test/issues/153).
+- **1.2.14** (upcoming) — Integer and long parameter accessors reject fractions and overflow and support integer strings consistently across scalar, object, and list access. [Issue #152](https://github.com/cyAquarius/just-test/issues/152).
+- **1.2.14** (upcoming) — JUnit assumption aborts stay skipped, and `@BeforeCase` preserves assertion failures. Central upload has connection and total timeouts, fails on HTTP errors, and passes its Bearer header via stdin. [Issue #154](https://github.com/cyAquarius/just-test/issues/154).
 
 - **1.2.13** — MySQL DDL cleanup keeps the backslash in single-quoted `\%` and `\_`, matching MySQL outside pattern matching. Other unknown escapes such as `\x` still drop the backslash, so H2 stores `\%`, `\_`, and `x`. [Issue #145](https://github.com/cyAquarius/just-test/issues/145).
 

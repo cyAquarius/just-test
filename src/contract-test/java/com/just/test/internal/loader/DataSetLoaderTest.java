@@ -90,10 +90,14 @@ class DataSetLoaderTest {
             String message = error.getMessage();
             assertTrue(message.toLowerCase().contains("duplicate"), message);
             assertTrue(message.contains("name"), message);
+            assertTrue(message.contains(casePath + "/" + fileName), message);
+            assertNotNull(error.getCause());
 
             RuntimeException asMap = assertThrows(RuntimeException.class,
                     () -> DataSetLoader.parseYamlByPath(casePath, fileName));
             assertTrue(asMap.getMessage().toLowerCase().contains("duplicate"), asMap.getMessage());
+            assertTrue(asMap.getMessage().contains(casePath + "/" + fileName), asMap.getMessage());
+            assertNotNull(asMap.getCause());
         }
     }
 

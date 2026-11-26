@@ -56,27 +56,19 @@ public class DataSetVerifier {
      *
      * @param caseLocation case 路径，写入未知 flag 的错误信息；没有路径时传 null
      */
-    @SuppressWarnings("unchecked")
     static List<String> verifyFromMap(JdbcTemplate jdbcTemplate, Map<String, Object> yamlData, String caseLocation) {
-        BuiltInMatchers.requireKnownFlags(yamlData, BuiltInMatchers.FlagStage.EXPECT, caseLocation);
         List<String> failures = new ArrayList<>();
 
         if (yamlData == null || yamlData.isEmpty()) {
             return failures;
         }
 
-        for (Map.Entry<String, Object> entry : yamlData.entrySet()) {
+        Map<String, List<Map<String, Object>>> tables = DataSetLoader.requireTableRows(yamlData, caseLocation);
+        BuiltInMatchers.requireKnownFlags(yamlData, BuiltInMatchers.FlagStage.EXPECT, caseLocation);
+        for (Map.Entry<String, List<Map<String, Object>>> entry : tables.entrySet()) {
             String tableName = entry.getKey();
             DataSetLoader.validateTableName(tableName);
-            Object value = entry.getValue();
-            if (!(value instanceof List)) {
-                continue;
-            }
-            List<Map<String, Object>> expectedRows = (List<Map<String, Object>>) value;
-            if (expectedRows.isEmpty()) {
-                continue;
-            }
-            verifyTable(jdbcTemplate, tableName, expectedRows, failures);
+            verifyTable(jdbcTemplate, tableName, entry.getValue(), failures);
         }
 
         return failures;
@@ -86,7 +78,7 @@ public class DataSetVerifier {
                                     List<Map<String, Object>> expectedRows, List<String> failures) {
         for (int i = 0; i < expectedRows.size(); i++) {
             Map<String, Object> expectedRow = expectedRows.get(i);
-            if (expectedRow == null || expectedRow.isEmpty()) {
+            if (expectedRow.isEmpty()) {
                 continue;
             }
             verifyRow(jdbcTemplate, tableName, expectedRow, i, failures);

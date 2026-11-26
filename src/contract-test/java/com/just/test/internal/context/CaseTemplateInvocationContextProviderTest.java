@@ -16,11 +16,20 @@ import com.just.test.internal.loader.DataSetLoader;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtensionConfigurationException;
 import org.junit.jupiter.api.extension.ExtensionContext;
+import org.junit.jupiter.api.io.TempDir;
 
 import java.lang.reflect.Method;
+import java.net.URL;
+import java.net.URLClassLoader;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.jar.JarEntry;
+import java.util.jar.JarOutputStream;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -55,6 +64,32 @@ class CaseTemplateInvocationContextProviderTest {
         Map<String, Object> request = DataSetLoader.parseYamlByPath(
                 "just-test-default-package-case", "request.yaml");
         assertEquals(3, ((Number) request.get("value")).intValue());
+    }
+
+    @Test
+    void discoversCaseAndLoadsRequestFromJar(@TempDir Path tempDir) throws Exception {
+        String caseRoot = "jar-case-root";
+        String caseName = "中文 + space %20";
+        String casePath = caseRoot + "/" + caseName;
+        Path jar = tempDir.resolve("cases.jar");
+        try (JarOutputStream entries = new JarOutputStream(Files.newOutputStream(jar))) {
+            entries.putNextEntry(new JarEntry(caseRoot + "/"));
+            entries.closeEntry();
+            entries.putNextEntry(new JarEntry(casePath + "/request.yaml"));
+            entries.write("value: 12".getBytes(StandardCharsets.UTF_8));
+            entries.closeEntry();
+        }
+
+        Thread thread = Thread.currentThread();
+        ClassLoader original = thread.getContextClassLoader();
+        try (URLClassLoader loader = new URLClassLoader(new URL[]{jar.toUri().toURL()}, original)) {
+            thread.setContextClassLoader(loader);
+            assertEquals(Collections.singleton(caseName),
+                    new CaseTemplateInvocationContextProvider().findCaseNames(caseRoot));
+            assertEquals(12, DataSetLoader.parseYamlByPath(casePath, "request.yaml").get("value"));
+        } finally {
+            thread.setContextClassLoader(original);
+        }
     }
 
     @Test
