@@ -17,6 +17,14 @@ class ExceptionVerifierTest {
     private static final String EXCEPTION_FLAGS = "N, R, A, D, D<digits>, J";
 
     @Test
+    void rejectsUnknownExceptionKeys() {
+        IllegalArgumentException failure = assertThrows(IllegalArgumentException.class, () ->
+                ExceptionVerifier.verify(new IllegalArgumentException("wrong"),
+                        "com/just/test/verifier/exception/unknown-key"));
+        assertTrue(failure.getMessage().contains("Unknown expect_exception key 'code'"));
+    }
+
+    @Test
     void propagatesAbortEvenWhenExpectingAnotherException() {
         TestAbortedException abort = new TestAbortedException("aborted");
         String casePath = "com/just/test/internal/loader/casestages/body-abort";

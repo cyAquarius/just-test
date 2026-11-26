@@ -17,6 +17,7 @@ import java.nio.file.Path;
 import java.sql.Connection;
 import java.sql.SQLException;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
@@ -47,6 +48,52 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 class JustTestRoutingDataSourceTest {
 
     private static final String URL = "jdbc:h2:mem:{key};MODE=MySQL";
+
+    @Test
+    void requiresNewCommitAndRollbackAreIndependentOfOuterTransaction() {
+        JustTestRoutingDataSource dataSource = new JustTestRoutingDataSource(URL);
+        bindCase("requires-new");
+        try {
+            JdbcTemplate jdbc = new JdbcTemplate(dataSource);
+            jdbc.execute("CREATE TABLE tx_sample(id INT PRIMARY KEY)");
+            org.springframework.jdbc.datasource.DataSourceTransactionManager manager =
+                    new org.springframework.jdbc.datasource.DataSourceTransactionManager(dataSource);
+            org.springframework.transaction.support.TransactionTemplate outer =
+                    new org.springframework.transaction.support.TransactionTemplate(manager);
+            org.springframework.transaction.support.TransactionTemplate inner =
+                    new org.springframework.transaction.support.TransactionTemplate(manager);
+            inner.setPropagationBehavior(org.springframework.transaction.TransactionDefinition.PROPAGATION_REQUIRES_NEW);
+            outer.execute(status -> {
+                jdbc.update("INSERT INTO tx_sample VALUES (1)");
+                inner.execute(nested -> {
+                    jdbc.update("INSERT INTO tx_sample VALUES (2)");
+                    nested.setRollbackOnly();
+                    return null;
+                });
+                assertEquals(Collections.singletonList(1),
+                        jdbc.queryForList("SELECT id FROM tx_sample", Integer.class));
+                return null;
+            });
+            outer.execute(status -> {
+                jdbc.update("INSERT INTO tx_sample VALUES (3)");
+                inner.execute(nested -> jdbc.update("INSERT INTO tx_sample VALUES (4)"));
+                status.setRollbackOnly();
+                return null;
+            });
+            assertEquals(java.util.Arrays.asList(1, 4),
+                    jdbc.queryForList("SELECT id FROM tx_sample ORDER BY id", Integer.class));
+
+            java.sql.Connection leftover = dataSource.getConnection();
+            assertFalse(leftover.isClosed());
+            dataSource.releaseCurrentCase();
+            assertTrue(leftover.isClosed());
+        } catch (java.sql.SQLException failure) {
+            throw new AssertionError(failure);
+        } finally {
+            CaseExecutionContext.clear();
+            dataSource.destroy();
+        }
+    }
 
     @Test
     void isolatesDatabasesAcrossApplicationContexts() {

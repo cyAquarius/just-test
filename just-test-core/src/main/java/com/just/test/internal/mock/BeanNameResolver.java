@@ -197,11 +197,6 @@ class BeanNameResolver {
                                              JustMockDefinition definition,
                                              DependencyDescriptor descriptor,
                                              Set<String> logicalCandidates) {
-        if (!definition.getExplicitBeanName().isEmpty()) {
-            return requireCandidate(beanFactory, definition, logicalCandidates,
-                    definition.getExplicitBeanName());
-        }
-
         LinkedHashSet<String> injectableCandidates = new LinkedHashSet<>();
         for (String candidate : logicalCandidates) {
             if (beanFactory.isAutowireCandidate(candidate, descriptor)) {

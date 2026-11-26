@@ -31,6 +31,8 @@ class JustTestProjectFeignAutoMockTest {
         assertEquals("", discovered.get(DemoFeignClient.class));
         assertFalse(discovered.containsKey(ExcludedFeignClient.class));
         assertFalse(discovered.containsKey(DemoLocalClient.class));
+        assertFalse(discovered.containsKey(
+                com.just.test.demo.project.fixtures.feign.DemoFeignClientExtension.class));
     }
 
     @Test

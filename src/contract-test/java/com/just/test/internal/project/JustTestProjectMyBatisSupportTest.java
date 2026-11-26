@@ -13,7 +13,7 @@ class JustTestProjectMyBatisSupportTest {
     @Test
     void secondRegistrationKeepsTheFirstDefinitions() {
         DefaultListableBeanFactory registry = new DefaultListableBeanFactory();
-        JustTestProjectMyBatisSupport.register(registry, new String[] {"com.first.mapper"});
+        registerAndRunPostProcessor(registry, "com.first.mapper");
         BeanDefinition factory = registry.getBeanDefinition(
                 JustTestProjectMyBatisSupport.SQL_SESSION_FACTORY_BEAN_NAME);
         BeanDefinition template = registry.getBeanDefinition(
@@ -21,7 +21,7 @@ class JustTestProjectMyBatisSupportTest {
         BeanDefinition scanner = registry.getBeanDefinition(
                 JustTestProjectMyBatisSupport.MAPPER_SCANNER_BEAN_NAME);
 
-        JustTestProjectMyBatisSupport.register(registry, new String[] {"com.second.mapper"});
+        registerAndRunPostProcessor(registry, "com.second.mapper");
 
         assertSame(factory, registry.getBeanDefinition(
                 JustTestProjectMyBatisSupport.SQL_SESSION_FACTORY_BEAN_NAME));
@@ -39,11 +39,19 @@ class JustTestProjectMyBatisSupportTest {
         registry.registerBeanDefinition(
                 JustTestProjectMyBatisSupport.SQL_SESSION_FACTORY_BEAN_NAME, existing);
 
-        JustTestProjectMyBatisSupport.register(registry, new String[] {"com.example.mapper"});
+        registerAndRunPostProcessor(registry, "com.example.mapper");
 
         assertSame(existing, registry.getBeanDefinition(
                 JustTestProjectMyBatisSupport.SQL_SESSION_FACTORY_BEAN_NAME));
         assertEquals("com.example.mapper", registry.getBeanDefinition(
                 JustTestProjectMyBatisSupport.MAPPER_SCANNER_BEAN_NAME).getPropertyValues().get("basePackage"));
+    }
+
+    private static void registerAndRunPostProcessor(DefaultListableBeanFactory registry, String mapperPackage) {
+        JustTestProjectMyBatisSupport.register(registry, new String[] {mapperPackage},
+                JustTestProjectMyBatisSupportTest.class.getClassLoader());
+        registry.getBean(JustTestProjectMyBatisSupport.FACTORY_REGISTRAR_BEAN_NAME,
+                        JustTestProjectMyBatisSupport.class)
+                .postProcessBeanDefinitionRegistry(registry);
     }
 }

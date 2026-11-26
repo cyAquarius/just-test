@@ -106,7 +106,7 @@ public final class JustTestProjectFeignAutoMock {
                 continue;
             }
             Class<?> type = resolveRegisteredFeignType(beanFactory, beanName, classLoader, feignClient);
-            if (type == null || !accept(type)) {
+            if (type == null || !accept(type, feignClient)) {
                 continue;
             }
             String existing = discovered.get(type);
@@ -132,7 +132,7 @@ public final class JustTestProjectFeignAutoMock {
             Set<BeanDefinition> candidates = scanner.findCandidateComponents(basePackage.trim());
             for (BeanDefinition candidate : candidates) {
                 Class<?> type = loadClass(candidate.getBeanClassName(), classLoader);
-                if (type == null || !accept(type) || discovered.containsKey(type)) {
+                if (type == null || !accept(type, feignClient) || discovered.containsKey(type)) {
                     continue;
                 }
                 discovered.put(type, "");
@@ -140,9 +140,8 @@ public final class JustTestProjectFeignAutoMock {
         }
     }
 
-    private boolean accept(Class<?> type) {
-        return type.isInterface()
-                && !type.isAnnotation()
+    private boolean accept(Class<?> type, Class<? extends Annotation> feignClient) {
+        return isFeignClient(type, feignClient)
                 && !excludeClassNames.contains(type.getName());
     }
 
@@ -157,7 +156,7 @@ public final class JustTestProjectFeignAutoMock {
                     }
                 };
         scanner.setResourceLoader(new PathMatchingResourcePatternResolver(classLoader));
-        scanner.addIncludeFilter(new AnnotationTypeFilter(feignClient, false, true));
+        scanner.addIncludeFilter(new AnnotationTypeFilter(feignClient, false, false));
         return scanner;
     }
 

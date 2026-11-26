@@ -1,4 +1,5 @@
 package com.just.test.internal.verifier;
+import com.just.test.internal.loader.DataSetLoader;
 
 import org.junit.jupiter.api.Test;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -22,9 +23,33 @@ class DataSetVerifierTest {
     private static final String EXPECT_FLAGS = "C, CN, N, R, A, D, D<digits>, J";
 
     @Test
+    void quotesKeywordIdentifiersAndChecksFallbackNullAndUniqueness() {
+        SingleConnectionDataSource dataSource = new SingleConnectionDataSource(
+                "jdbc:h2:mem:review_keywords;MODE=MySQL;DATABASE_TO_LOWER=TRUE;CASE_INSENSITIVE_IDENTIFIERS=TRUE",
+                "sa", "", true);
+        try {
+            JdbcTemplate jdbc = new JdbcTemplate(dataSource);
+            jdbc.execute("CREATE TABLE \"order\" (\"key\" INT, \"value\" VARCHAR(20), \"year\" INT)");
+            DataSetLoader.load(jdbc, "com/just/test/verifier/database/keyword-columns");
+            assertTrue(DataSetVerifier.verify(jdbc, "com/just/test/verifier/database/keyword-columns").isEmpty());
+            assertTrue(DataSetVerifier.verify(jdbc, "com/just/test/verifier/database/missing-null-column")
+                    .get(0).contains("missing column deleted_at"));
+
+            jdbc.execute("INSERT INTO \"order\" VALUES (3, 'present', NULL)");
+            assertTrue(DataSetVerifier.verify(jdbc, "com/just/test/verifier/database/keyword-columns")
+                    .get(0).contains("WHERE matched 2 rows"));
+
+            DataSetLoader.cleanTables(jdbc);
+            assertEquals(0, jdbc.queryForObject("SELECT COUNT(*) FROM \"order\"", Integer.class));
+        } finally {
+            dataSource.destroy();
+        }
+    }
+
+    @Test
     void supportsNullConditionValues() {
         SingleConnectionDataSource dataSource = new SingleConnectionDataSource(
-                "jdbc:h2:mem:verifier_null;MODE=MySQL;DB_CLOSE_DELAY=-1", "sa", "", true);
+                "jdbc:h2:mem:verifier_null;MODE=MySQL;CASE_INSENSITIVE_IDENTIFIERS=TRUE;DB_CLOSE_DELAY=-1", "sa", "", true);
         try {
             JdbcTemplate jdbcTemplate = new JdbcTemplate(dataSource);
             jdbcTemplate.execute("CREATE TABLE nullable_sample(id INT, marker VARCHAR(20))");
@@ -47,7 +72,7 @@ class DataSetVerifierTest {
     @Test
     void loadsYamlAndSupportsConditionNotExistAndIgnoredFields() {
         SingleConnectionDataSource dataSource = new SingleConnectionDataSource(
-                "jdbc:h2:mem:verifier_flags;MODE=MySQL;DB_CLOSE_DELAY=-1", "sa", "", true);
+                "jdbc:h2:mem:verifier_flags;MODE=MySQL;CASE_INSENSITIVE_IDENTIFIERS=TRUE;DB_CLOSE_DELAY=-1", "sa", "", true);
         try {
             JdbcTemplate jdbcTemplate = new JdbcTemplate(dataSource);
             jdbcTemplate.execute("CREATE TABLE sample(id INT, status VARCHAR(20), ignored VARCHAR(20))");
@@ -65,7 +90,7 @@ class DataSetVerifierTest {
     @Test
     void rejectsLowercaseCnInsteadOfExactMatch() {
         SingleConnectionDataSource dataSource = new SingleConnectionDataSource(
-                "jdbc:h2:mem:verifier_flag_cn;MODE=MySQL;DB_CLOSE_DELAY=-1", "sa", "", true);
+                "jdbc:h2:mem:verifier_flag_cn;MODE=MySQL;CASE_INSENSITIVE_IDENTIFIERS=TRUE;DB_CLOSE_DELAY=-1", "sa", "", true);
         try {
             JdbcTemplate jdbcTemplate = new JdbcTemplate(dataSource);
             jdbcTemplate.execute("CREATE TABLE sample(id INT, status VARCHAR(20))");
@@ -90,7 +115,7 @@ class DataSetVerifierTest {
     @Test
     void keepsLegalMatcherFlags() {
         SingleConnectionDataSource dataSource = new SingleConnectionDataSource(
-                "jdbc:h2:mem:verifier_legal_flags;MODE=MySQL;DB_CLOSE_DELAY=-1", "sa", "", true);
+                "jdbc:h2:mem:verifier_legal_flags;MODE=MySQL;CASE_INSENSITIVE_IDENTIFIERS=TRUE;DB_CLOSE_DELAY=-1", "sa", "", true);
         try {
             JdbcTemplate jdbcTemplate = new JdbcTemplate(dataSource);
             jdbcTemplate.execute("CREATE TABLE sample("
@@ -119,7 +144,7 @@ class DataSetVerifierTest {
     @Test
     void failsWhenConditionMatchesMoreThanOneRow() {
         SingleConnectionDataSource dataSource = new SingleConnectionDataSource(
-                "jdbc:h2:mem:verifier_multi_c;MODE=MySQL;DB_CLOSE_DELAY=-1", "sa", "", true);
+                "jdbc:h2:mem:verifier_multi_c;MODE=MySQL;CASE_INSENSITIVE_IDENTIFIERS=TRUE;DB_CLOSE_DELAY=-1", "sa", "", true);
         try {
             JdbcTemplate jdbcTemplate = new JdbcTemplate(dataSource);
             jdbcTemplate.execute("CREATE TABLE sample(id INT, status VARCHAR(20))");
@@ -157,7 +182,7 @@ class DataSetVerifierTest {
     @Test
     void matchesYamlIntegerToDecimalScale() {
         SingleConnectionDataSource dataSource = new SingleConnectionDataSource(
-                "jdbc:h2:mem:verifier_decimal_scale;MODE=MySQL;DB_CLOSE_DELAY=-1", "sa", "", true);
+                "jdbc:h2:mem:verifier_decimal_scale;MODE=MySQL;CASE_INSENSITIVE_IDENTIFIERS=TRUE;DB_CLOSE_DELAY=-1", "sa", "", true);
         try {
             JdbcTemplate jdbcTemplate = new JdbcTemplate(dataSource);
             jdbcTemplate.execute("CREATE TABLE money_sample(id INT, amount DECIMAL(10,2))");
@@ -179,7 +204,7 @@ class DataSetVerifierTest {
     @Test
     void rejectsDecimalThatDiffersAfterScaleNormalization() {
         SingleConnectionDataSource dataSource = new SingleConnectionDataSource(
-                "jdbc:h2:mem:verifier_decimal_miss;MODE=MySQL;DB_CLOSE_DELAY=-1", "sa", "", true);
+                "jdbc:h2:mem:verifier_decimal_miss;MODE=MySQL;CASE_INSENSITIVE_IDENTIFIERS=TRUE;DB_CLOSE_DELAY=-1", "sa", "", true);
         try {
             JdbcTemplate jdbcTemplate = new JdbcTemplate(dataSource);
             jdbcTemplate.execute("CREATE TABLE money_sample(id INT, amount DECIMAL(10,2))");

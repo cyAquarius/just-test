@@ -2,13 +2,8 @@ package com.just.test.internal.project;
 
 import org.springframework.beans.factory.BeanClassLoaderAware;
 import org.springframework.beans.factory.support.BeanDefinitionRegistry;
-import org.springframework.context.EnvironmentAware;
-import org.springframework.context.ResourceLoaderAware;
-import org.springframework.context.annotation.ClassPathBeanDefinitionScanner;
 import org.springframework.context.annotation.ImportBeanDefinitionRegistrar;
 import org.springframework.core.annotation.AnnotationAttributes;
-import org.springframework.core.env.Environment;
-import org.springframework.core.io.ResourceLoader;
 import org.springframework.core.type.AnnotationMetadata;
 import org.springframework.util.ClassUtils;
 import org.springframework.util.StringUtils;
@@ -24,24 +19,12 @@ import java.util.List;
  * {@code @Import} 注册，因此必须保持 public。</p>
  */
 public class JustTestProjectRegistrar implements ImportBeanDefinitionRegistrar,
-        EnvironmentAware, ResourceLoaderAware, BeanClassLoaderAware {
+        BeanClassLoaderAware {
 
     static final String ANNOTATION_NAME = "com.just.test.annotation.JustTestProject";
     static final String MYBATIS_SPRING_FACTORY = "org.mybatis.spring.SqlSessionFactoryBean";
 
-    private Environment environment;
-    private ResourceLoader resourceLoader;
     private ClassLoader classLoader = ClassUtils.getDefaultClassLoader();
-
-    @Override
-    public void setEnvironment(Environment environment) {
-        this.environment = environment;
-    }
-
-    @Override
-    public void setResourceLoader(ResourceLoader resourceLoader) {
-        this.resourceLoader = resourceLoader;
-    }
 
     @Override
     public void setBeanClassLoader(ClassLoader classLoader) {
@@ -57,16 +40,8 @@ public class JustTestProjectRegistrar implements ImportBeanDefinitionRegistrar,
         requireMyBatisSpringIfNeeded(mapperPackages, classLoader);
         registerFeignAutoMockIfRequested(registry, attributes, basePackages);
 
-        ClassPathBeanDefinitionScanner scanner = createScanner(registry);
-        scanner.addExcludeFilter(new JustTestProjectTypeExcludeFilter(
-                importingClassMetadata.getClassName(),
-                attributes.getClassArray("excludeClasses"),
-                classLoader));
-        JustTestProjectScanFilters.apply(scanner, attributes, environment, resourceLoader, registry, classLoader);
-        scanner.scan(basePackages);
-
         if (mapperPackages.length > 0) {
-            JustTestProjectMyBatisSupport.register(registry, mapperPackages);
+            JustTestProjectMyBatisSupport.register(registry, mapperPackages, classLoader);
         }
         JustTestProjectDataSourceAliasPostProcessor.register(
                 registry,
@@ -137,13 +112,4 @@ public class JustTestProjectRegistrar implements ImportBeanDefinitionRegistrar,
         return trimmed.toArray(new String[0]);
     }
 
-    private ClassPathBeanDefinitionScanner createScanner(BeanDefinitionRegistry registry) {
-        if (environment != null && resourceLoader != null) {
-            return new ClassPathBeanDefinitionScanner(registry, true, environment, resourceLoader);
-        }
-        if (environment != null) {
-            return new ClassPathBeanDefinitionScanner(registry, true, environment);
-        }
-        return new ClassPathBeanDefinitionScanner(registry, true);
-    }
 }

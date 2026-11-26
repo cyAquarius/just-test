@@ -94,7 +94,7 @@ public final class JustTestClassValidator {
 
     private static void validateClassSpringLifecycleAnnotations(Class<?> testClass) {
         if (AnnotatedElementUtils.hasAnnotation(testClass, Transactional.class)
-                || AnnotatedElementUtils.hasAnnotation(testClass, Sql.class)) {
+                || !AnnotatedElementUtils.findMergedRepeatableAnnotations(testClass, Sql.class).isEmpty()) {
             throw configurationError(testClass,
                     "does not support class-level @Transactional or @Sql because they run before a case is bound");
         }
@@ -117,7 +117,7 @@ public final class JustTestClassValidator {
                         method.getName(), String.join(", ", executableAnnotations)));
             }
             if (AnnotatedElementUtils.hasAnnotation(method, Transactional.class)
-                    || AnnotatedElementUtils.hasAnnotation(method, Sql.class)) {
+                    || !AnnotatedElementUtils.findMergedRepeatableAnnotations(method, Sql.class).isEmpty()) {
                 throw configurationError(testClass, String.format(
                         "@CaseSource method %s must not use @Transactional or @Sql because they run before a case is bound",
                         method.getName()));

@@ -26,6 +26,29 @@ import static org.mockito.Mockito.when;
 class JustTestClassValidatorTest {
 
     @Test
+    void rejectsSqlGroupOnClassAndRepeatedSqlOnCaseMethod() {
+        for (Class<?> type : java.util.Arrays.asList(SqlClass.class, SqlCaseMethod.class)) {
+            ExtensionConfigurationException failure = assertThrows(ExtensionConfigurationException.class,
+                    () -> JustTestClassValidator.validate(type));
+            assertTrue(failure.getMessage().contains("@Sql"));
+        }
+    }
+
+    @org.springframework.test.context.jdbc.SqlGroup({
+            @org.springframework.test.context.jdbc.Sql("one.sql"),
+            @org.springframework.test.context.jdbc.Sql("two.sql")})
+    static class SqlClass implements JustTestLifecycle {
+    }
+
+    static class SqlCaseMethod implements JustTestLifecycle {
+        @CaseSource
+        @org.springframework.test.context.jdbc.Sql("one.sql")
+        @org.springframework.test.context.jdbc.Sql("two.sql")
+        void run(CaseContext context) {
+        }
+    }
+
+    @Test
     void acceptsLifecycleAndCaseSourceOnlyClass() {
         assertDoesNotThrow(() -> JustTestClassValidator.validate(ValidLifecycle.class));
     }

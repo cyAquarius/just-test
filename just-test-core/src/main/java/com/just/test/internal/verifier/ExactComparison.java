@@ -11,7 +11,7 @@ import java.sql.Timestamp;
  * 以及 {@link Timestamp} 尾部 {@code .0} 的字符串归一。
  * 不增加日期或数值的智能比较。</p>
  */
-final class ExactComparison {
+public final class ExactComparison {
 
     private ExactComparison() {
     }
@@ -35,7 +35,7 @@ final class ExactComparison {
      * 使 JDBC 的 {@code 2026-11-13 10:00:00.0} 与 YAML 的 {@code 2026-11-13 10:00:00} 相同。
      * 其它类型保持 {@link Object#toString()}。
      */
-    static String normalizeActual(Object value) {
+    public static String normalizeActual(Object value) {
         if (value instanceof BigDecimal) {
             return ((BigDecimal) value).toPlainString();
         }

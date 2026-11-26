@@ -46,6 +46,7 @@ class DefaultProjectScanJustTest implements JustTestLifecycle {
         assertNotNull(markerService);
         assertNotNull(extraService);
         assertFalse(applicationContext.getBeanNamesForType(DemoWebController.class).length > 0);
+        assertFalse(applicationContext.containsBean("otherProjectMarker"));
         assertFalse(applicationContext.getBeanNamesForType(DemoProductionApplication.class).length > 0);
         assertFalse(applicationContext.getBeanNamesForType(DemoSchedulingConfig.class).length > 0);
         assertFalse(applicationContext.getBeanNamesForType(PlainCollaborator.class).length > 0);

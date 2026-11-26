@@ -10,6 +10,21 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 class SqlTextRewriterTest {
 
     @Test
+    void rewritesNestedDateFormatAndRejectsDynamicPatterns() {
+        assertEquals("SELECT FORMATDATETIME(COALESCE(FORMATDATETIME(created_at, 'yyyy'), updated_at), 'MM')",
+                SqlTextRewriter.rewriteDateFormatFunctions(
+                        "SELECT DATE_FORMAT(COALESCE(DATE_FORMAT(created_at, '%Y'), updated_at), '%m')"));
+        for (String format : java.util.Arrays.asList("#{fmt}", "CONCAT('%', 'Y')")) {
+            IllegalArgumentException failure = org.junit.jupiter.api.Assertions.assertThrows(
+                    IllegalArgumentException.class, () -> SqlTextRewriter.rewriteDateFormatFunctions(
+                            "SELECT DATE_FORMAT(created_at, " + format + ")"));
+            org.junit.jupiter.api.Assertions.assertTrue(failure.getMessage().contains("literal format"));
+        }
+        assertEquals("status<>'DELETED' AND doc->\"field\" = 'x'",
+                SqlTextRewriter.rewriteDoubleQuotedLiterals("status<>\"DELETED\" AND doc->\"field\" = \"x\""));
+    }
+
+    @Test
     void returnsOriginalSqlWhenRewriteTokenIsAbsent() {
         String withoutIf = "SELECT enabled FROM sample";
         String withoutDateFormat = "SELECT create_time FROM sample";
@@ -86,7 +101,7 @@ class SqlTextRewriterTest {
                 + "DATE_FORMAT(created_at, '%%'), DATE_FORMAT(created_at, '%% done') FROM sample";
 
         assertEquals(
-                "SELECT FORMATDATETIME(created_at, 'MMMM'), "
+                "SELECT FORMATDATETIME(created_at, 'MMMM', 'en'), "
                         + "FORMATDATETIME(created_at, 'HH:mm:ss'), "
                         + "FORMATDATETIME(created_at, '''%'''), "
                         + "FORMATDATETIME(created_at, '''% done''') FROM sample",

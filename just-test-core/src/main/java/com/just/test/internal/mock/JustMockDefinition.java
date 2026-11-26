@@ -9,6 +9,7 @@ import org.springframework.core.annotation.AnnotatedElementUtils;
 import java.beans.Introspector;
 import java.lang.annotation.Annotation;
 import java.lang.reflect.Field;
+import java.lang.reflect.Type;
 import java.util.Collections;
 import java.util.LinkedHashSet;
 import java.util.Objects;
@@ -152,6 +153,7 @@ final class JustMockDefinition {
         JustMockDefinition that = (JustMockDefinition) other;
         if (!Objects.equals(type, that.type)
                 || !Objects.equals(explicitBeanName, that.explicitBeanName)
+                || isFieldDeclaration() != that.isFieldDeclaration()
                 || spy != that.spy) {
             return false;
         }
@@ -159,14 +161,19 @@ final class JustMockDefinition {
             return true;
         }
         return Objects.equals(fieldName, that.fieldName)
+                && Objects.equals(genericType(), that.genericType())
                 && Objects.equals(qualifierAnnotations, that.qualifierAnnotations);
     }
 
     @Override
     public int hashCode() {
         if (!explicitBeanName.isEmpty()) {
-            return Objects.hash(type, explicitBeanName, spy);
+            return Objects.hash(type, explicitBeanName, spy, isFieldDeclaration());
         }
-        return Objects.hash(type, fieldName, explicitBeanName, qualifierAnnotations, spy);
+        return Objects.hash(type, fieldName, explicitBeanName, qualifierAnnotations, spy, genericType());
+    }
+
+    private Type genericType() {
+        return field == null ? null : field.getGenericType();
     }
 }

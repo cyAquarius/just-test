@@ -119,16 +119,33 @@
                         <skip>true</skip>
                     </configuration>
                 </plugin>
-                <!-- publish.yml 与 publish-central-modules.sh 用 CLI 调用这两个插件。 -->
                 <plugin>
                     <groupId>org.apache.maven.plugins</groupId>
                     <artifactId>maven-help-plugin</artifactId>
                     <version>3.5.2</version>
                 </plugin>
                 <plugin>
-                    <groupId>org.codehaus.mojo</groupId>
-                    <artifactId>versions-maven-plugin</artifactId>
-                    <version>2.23.0</version>
+                    <groupId>org.apache.maven.plugins</groupId>
+                    <artifactId>maven-dependency-plugin</artifactId>
+                    <version>3.9.0</version>
+                    <executions>
+                        <execution>
+                            <id>copy-mybatis-auto-configuration-fixture</id>
+                            <phase>generate-test-resources</phase>
+                            <goals><goal>copy</goal></goals>
+                            <configuration>
+                                <artifactItems>
+                                    <artifactItem>
+                                        <groupId>org.mybatis.spring.boot</groupId>
+                                        <artifactId>mybatis-spring-boot-autoconfigure</artifactId>
+                                        <version>${mybatis.autoconfigure.fixture.version}</version>
+                                        <outputDirectory>${project.build.directory}/test-fixtures</outputDirectory>
+                                        <destFileName>mybatis-autoconfigure.jar</destFileName>
+                                    </artifactItem>
+                                </artifactItems>
+                            </configuration>
+                        </execution>
+                    </executions>
                 </plugin>
                 <plugin>
                     <groupId>org.codehaus.mojo</groupId>
@@ -329,25 +346,6 @@
                 <!-- Nested module deploys set -Djust-test.central.split.executor=true to avoid recursion. -->
                 <just-test.central.split.executor>true</just-test.central.split.executor>
             </properties>
-        </profile>
-        <profile>
-            <id>central-upload</id>
-            <build>
-                <plugins>
-                    <plugin>
-                        <groupId>org.sonatype.central</groupId>
-                        <artifactId>central-publishing-maven-plugin</artifactId>
-                        <version>0.11.0</version>
-                        <extensions>true</extensions>
-                        <configuration>
-                            <publishingServerId>central</publishingServerId>
-                            <autoPublish>true</autoPublish>
-                            <waitUntil>published</waitUntil>
-                            <skipPublishing>${just-test.publish.skip}</skipPublishing>
-                        </configuration>
-                    </plugin>
-                </plugins>
-            </build>
         </profile>
     </profiles>
 </project>

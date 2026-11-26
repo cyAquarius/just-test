@@ -8,6 +8,8 @@ tmp="$(mktemp -d)"
 trap 'rm -rf "${tmp}"' EXIT
 
 failed=0
+jdk8_range='[1.8,1.9),[8,9)'
+jdk17_range='[17,18)'
 
 write_xml() {
   local name="$1"
@@ -189,31 +191,43 @@ XML
 
 printf '<toolchains>\r\n<toolchain>\r\n<type>jdk</type>\r\n<provides>\r\n<version>17</version>\r\n</provides>\r\n</toolchain>\r\n</toolchains>\r\n' > "${tmp}/crlf.xml"
 
-expect_status "pretty jdk 1.8 matches request 8" 0 8 "${tmp}/pretty.xml"
-expect_status "pretty jdk 17 matches request 17" 0 17 "${tmp}/pretty.xml"
-expect_found "pretty has no jdk 21" 21 "${tmp}/pretty.xml" "8 17 "
+write_xml patch17.xml << 'XML'
+<toolchains><toolchain><type>jdk</type><provides><version>17.0.13</version></provides></toolchain></toolchains>
+XML
+write_xml legacy17.xml << 'XML'
+<toolchains><toolchain><type>jdk</type><provides><version>1.17</version></provides></toolchain></toolchains>
+XML
+
+expect_status "old exact request 8 misses jdk 1.8" 1 8 "${tmp}/pretty.xml"
+expect_status "old exact request 17 misses jdk 17.0.13" 1 17 "${tmp}/patch17.xml"
+expect_status "Java 17 range matches jdk 17.0.13" 0 "${jdk17_range}" "${tmp}/patch17.xml"
+expect_status "legacy 1.17 cannot satisfy the Java 17 range" 1 "${jdk17_range}" "${tmp}/legacy17.xml"
+
+expect_status "pretty jdk 1.8 matches Java 8 range" 0 "${jdk8_range}" "${tmp}/pretty.xml"
+expect_status "pretty jdk 17 matches request 17" 0 "${jdk17_range}" "${tmp}/pretty.xml"
+expect_found "pretty has no jdk 21" 21 "${tmp}/pretty.xml" " 1.8 17"
 
 expect_found "non-jdk version is not a jdk toolchain" 17 "${tmp}/netbeans-only.xml" " none"
-expect_status "jdk 8 still matches beside a netbeans 17" 0 8 "${tmp}/jdk8-and-netbeans17.xml"
-expect_found "netbeans 17 does not satisfy jdk 17" 17 "${tmp}/jdk8-and-netbeans17.xml" "8 "
+expect_status "jdk 8 still matches beside a netbeans 17" 0 "${jdk8_range}" "${tmp}/jdk8-and-netbeans17.xml"
+expect_found "netbeans 17 does not satisfy jdk 17" 17 "${tmp}/jdk8-and-netbeans17.xml" " 8"
 
-expect_status "multiline version element matches" 0 17 "${tmp}/multiline-version.xml"
+expect_status "multiline version element matches" 0 "${jdk17_range}" "${tmp}/multiline-version.xml"
 expect_status "multiline type element matches" 0 11 "${tmp}/multiline-type.xml"
 
-expect_status "compact line keeps the first jdk" 0 8 "${tmp}/compact-two-jdks.xml"
-expect_status "compact line keeps the second jdk" 0 17 "${tmp}/compact-two-jdks.xml"
-expect_status "compact mixed line keeps jdk 8" 0 8 "${tmp}/compact-mixed.xml"
-expect_found "compact netbeans 17 is not jdk 17" 17 "${tmp}/compact-mixed.xml" "8 "
+expect_status "compact line keeps the first jdk" 0 "${jdk8_range}" "${tmp}/compact-two-jdks.xml"
+expect_status "compact line keeps the second jdk" 0 "${jdk17_range}" "${tmp}/compact-two-jdks.xml"
+expect_status "compact mixed line keeps jdk 8" 0 "${jdk8_range}" "${tmp}/compact-mixed.xml"
+expect_found "compact netbeans 17 is not jdk 17" 17 "${tmp}/compact-mixed.xml" " 8"
 
-expect_status "one entry with two version tags matches 8" 0 8 "${tmp}/compact-two-versions.xml"
-expect_status "one entry with two version tags matches 17" 0 17 "${tmp}/compact-two-versions.xml"
+expect_status "one entry uses its last version tag" 1 "${jdk8_range}" "${tmp}/compact-two-versions.xml"
+expect_status "one entry with two version tags matches 17" 0 "${jdk17_range}" "${tmp}/compact-two-versions.xml"
 
-expect_status "commented jdk 21 is ignored and jdk 8 matches" 0 8 "${tmp}/commented-jdk.xml"
-expect_found "commented jdk 21 is not selected" 21 "${tmp}/commented-jdk.xml" "8 "
+expect_status "commented jdk 21 is ignored and jdk 8 matches" 0 "${jdk8_range}" "${tmp}/commented-jdk.xml"
+expect_found "commented jdk 21 is not selected" 21 "${tmp}/commented-jdk.xml" " 8"
 
-expect_status "whitespace inside type and version matches" 0 17 "${tmp}/spaced.xml"
+expect_status "whitespace inside type and version matches" 0 "${jdk17_range}" "${tmp}/spaced.xml"
 expect_found "type JDK is not type jdk" 17 "${tmp}/uppercase-type.xml" " none"
-expect_status "CRLF toolchains.xml matches" 0 17 "${tmp}/crlf.xml"
+expect_status "CRLF toolchains.xml matches" 0 "${jdk17_range}" "${tmp}/crlf.xml"
 
 home="$(mktemp -d "${tmp}/home.XXXXXX")"
 mkdir -p "${home}/.m2"

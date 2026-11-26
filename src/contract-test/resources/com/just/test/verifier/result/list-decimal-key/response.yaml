@@ -1,0 +1,4 @@
+- amount[C]: 100
+  state: paid
+- amount[C]: 200
+  state: pending

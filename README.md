@@ -265,7 +265,7 @@ Map those YAML files onto the test classpath:
 
 ### `@JustTest`
 
-- Configures Spring Test, H2, `JdbcTemplate`, and a transaction manager so application services can exercise their normal transaction behavior.
+- Configures Spring Test, H2, `JdbcTemplate`, and a transaction manager. A `REQUIRES_NEW` transaction uses its own connection and commits or rolls back independently of the outer transaction.
 - Registers a `refresh` scope stand-in when none exists, so beans that use `@RefreshScope` or `@Scope("refresh")` load without Spring Cloud refresh infrastructure.
 - Tests do not get real refresh semantics.
 - Class-level execution contract: [lifecycle](#lifecycle).
@@ -276,13 +276,13 @@ Map those YAML files onto the test classpath:
 
 Recommended consumer startup annotation. An empty class is enough.
 
-- `@JustTestProject` meta-annotates `@SpringBootConfiguration` and `@EnableAutoConfiguration`.
+- `@JustTestProject` combines `@SpringBootConfiguration`, `@EnableAutoConfiguration`, and `@ComponentScan`.
 
 **Framework-owned**
 
 - H2, the transaction manager, and `JdbcTemplate`.
 - The default component-scan denylist. `FeignAutoConfiguration` and `FeignContext` are not excluded.
-- When `mapperPackages` is set: MyBatis `SqlSessionFactory`, `SqlSessionTemplate`, and MapperScan, bound to JustTest's DataSource.
+- When `mapperPackages` is set, JustTest registers MapperScan. An application-defined `SqlSessionFactory` takes precedence. MyBatis or MyBatis-Plus auto-configuration uses the primary `justTestDataSource` and binds its properties such as `mybatis.*`. In the absence of that auto-configuration, JustTest supplies any missing factory and template.
 - The framework does not choose a Feign HTTP client.
 - The framework does not auto-mock Redis, object storage, SDKs, or other non-Feign beans.
 
@@ -301,7 +301,7 @@ Recommended consumer startup annotation. An empty class is enough.
 
 **Scan excludes**
 
-- Other `@SpringBootApplication` / `@SpringBootConfiguration` types under `basePackages`.
+- Other `@SpringBootApplication` / `@SpringBootConfiguration` types under `basePackages`, including other `@JustTestProject` bootstraps.
 - `@Controller`, `@RestController`, and `@ControllerAdvice`, when those annotations exist.
 - `@FeignClient`, when OpenFeign is present.
 - Known job and scheduling stereotypes, when they can be detected without a hard dependency.
@@ -504,7 +504,7 @@ public TaskCenterClient taskCenterClient() {
 - The H2 database is isolated per JustTest `ApplicationContext` and active case.
 - Cleaned DDL is cached. The schema is cloned from a template database by default. Disable cloning with `justtest.schema.clone=false`.
 - Each case database is released at case end. Schema initialization is retried after failure.
-- For MySQL `schema.sql` dumps, the cleaner strips common `SHOW CREATE TABLE` extras: table `ROW_FORMAT`, `UNSIGNED`, `ON UPDATE CURRENT_TIMESTAMP`, column `CHARACTER SET`, and `DEFAULT b'0'`. Text inside strings, comments, and backtick identifiers is left unchanged.
+- For MySQL `schema.sql` dumps, the cleaner strips common `SHOW CREATE TABLE` extras: table `ROW_FORMAT`, `UNSIGNED`, `ON UPDATE CURRENT_TIMESTAMP`, column `CHARACTER SET`, and `DEFAULT b'0'`. JustTest splits the original script using MySQL quoting and escaping rules, removes comments including `#` line comments, and cleans each statement.
 - The cleaner does not cover every MySQL dialect.
 - A missing framework `JdbcTemplate` or `JustTestRoutingDataSource`, when `@JustTest` owns H2, is a configuration error and fails fast. It does not skip prepare or verify. See [boundaries](#boundaries).
 
@@ -513,7 +513,7 @@ public TaskCenterClient taskCenterClient() {
 ### MySQL-to-H2 rewrites
 
 - MyBatis test SQL gets a narrow rewrite: `IF(...)` becomes `CASEWHEN(...)`, and `DATE_FORMAT(...)` becomes `FORMATDATETIME(...)`.
-- The `DATE_FORMAT` rewrite runs through the MyBatis `StatementHandler` interceptor, the same path as `IF(...)` to `CASEWHEN(...)`.
+- The `DATE_FORMAT` rewrite runs through the MyBatis `StatementHandler` interceptor. The format argument must be a string literal, and `%M` returns English month names.
 - Plain `JdbcTemplate` SQL is not rewritten unless it goes through that interceptor.
 - Legacy double-quoted string literals are supported inside known string functions and on the right side of comparison operators.
 - New SQL should use standard single-quoted strings. That limit is also stated under [boundaries](#boundaries).
@@ -526,7 +526,13 @@ public TaskCenterClient taskCenterClient() {
 - `prepare.yaml`: rows inserted before the case.
 - `response.yaml`: expected return value. Compared only to the object written with `CaseContext.setResult`, not the test method's Java return value.
 - `expect.yaml`: expected database rows.
-- `expect_exception.yaml`: expected exception type and optional message. A file that is present but empty or missing `type` is a configuration error and does not accept an arbitrary exception.
+- `expect_exception.yaml`: expected exception type and optional message. An empty file, missing `type`, or extra fields are configuration errors.
+
+Unquoted `true` and `false` are booleans regardless of case. Only plain decimal integer literals become integers. Values such as `0123`, `10:30`, and `NO` stay strings. Quoted values stay strings.
+
+Use only letters, digits, and underscores in `prepare.yaml` and `expect.yaml` table and column names. JustTest quotes the names in generated SQL, so keywords such as `order` and `value` work.
+
+A bare `[A]`, `[R]`, `[D]` / `[D60]`, or `[J]` at the root of `response.yaml` asserts the entire result. A bare `[N]` skips the entire result and must be the only root key. In nested objects, flags must be field suffixes.
 
 Field suffix flags are stage-specific:
 
@@ -550,7 +556,7 @@ Field suffix flags are stage-specific:
 
 Flags are case-sensitive. An unknown flag such as `[cn]` or `[CC]`, or a flag used outside its stage, fails immediately. The error names the field, the case path, and the flags legal for that stage.
 
-For database expectations, prefer explicit `[C]` fields so the intended row is unambiguous. A `[C]` condition that matches more than one row fails until it is tightened to one row. `[J]` compares JSON structure; numeric values match as BigDecimal, so `1` and `1.0` are equal, and JSON that cannot be parsed is an error.
+For database expectations, prefer explicit `[C]` fields so the intended row is unambiguous. Both `[C]` and fallback row selection must match a single row. Fallback selection uses `IS NULL` for null fields. A `[C]` key in an unordered List must also identify a single element. `[J]` compares JSON structure; numeric values match as BigDecimal, so `1` and `1.0` are equal, and JSON that cannot be parsed is an error.
 
 Exact comparison drops a trailing `.0` from a `java.sql.Timestamp` on both the database and result paths, so YAML `2026-11-13 10:00:00` matches `2026-11-13 10:00:00.0`. `[D]` parses an actual timestamp string with ISO instant, offset date-time, and local date-time formatters before `yyyy-MM-dd HH:mm:ss`; a local date-time uses the system default zone.
 
@@ -707,6 +713,13 @@ A parallel failure is not automatically a JustTest isolation failure; first insp
 
 The current Maven Central release is `1.2.13`. The rules above match that release, plus the upcoming 1.2.14 items in the changelog.
 
+- **1.2.14** (upcoming) — Thread-scoped spies and real-bean intercepts keep Spring lifecycle callbacks on the real singleton’s own lifecycle. ThreadScope supports nested bean creation. [Issue #156](https://github.com/cyAquarius/just-test/issues/156).
+- **1.2.14** (upcoming) — Context caching distinguishes generic spy fields and preserves named and aliased thread-scoped bindings. Mock and spy definitions retain factory-method qualifiers. [Issue #157](https://github.com/cyAquarius/just-test/issues/157).
+- **1.2.14** (upcoming) — `@JustTestProject` scans during configuration parsing and excludes other project bootstraps. Scanned MyBatis factories take precedence, MyBatis auto-configuration properties apply, custom scan filters work, and Feign auto-mock requires a directly annotated interface. [Issue #158](https://github.com/cyAquarius/just-test/issues/158).
+- **1.2.14** (upcoming) — Each case supports independent `REQUIRES_NEW` transactions. MySQL schema splitting preserves escapes. SQL compatibility fixes cover nested `DATE_FORMAT`, English month names, double-quoted comparisons, and `FIND_IN_SET('', '')`. [Issue #159](https://github.com/cyAquarius/just-test/issues/159).
+- **1.2.14** (upcoming) — YAML implicitly resolves only decimal integers and `true` / `false` booleans for those types. SQL identifiers are quoted. Response flags, null row selection, ambiguous matches, and exception keys are validated. [Issue #160](https://github.com/cyAquarius/just-test/issues/160).
+- **1.2.14** (upcoming) — Verification hooks preserve case failures. Transaction leaks fail aborted cases, and cleanup checks bound resources without creating lazy beans. Fixed `@BeforeCase` overrides, repeated `@Sql` validation, and parameter conversions. [Issue #161](https://github.com/cyAquarius/just-test/issues/161).
+- **1.2.14** (upcoming) — Publishing verifies staged artifacts in an isolated Maven repository and includes core sources and Javadocs. The publish job requires main or a tag, tag versions must match the POM, and toolchain validation uses Maven’s version matcher. [Issue #162](https://github.com/cyAquarius/just-test/issues/162).
 - **1.2.14** (upcoming) — Case directory names with spaces or Chinese characters load their stages on a file classpath. Discovered cases with no loadable stage files fail with the case path. [Issue #148](https://github.com/cyAquarius/just-test/issues/148).
 - **1.2.14** (upcoming) — Prepare and expect require a list of mappings for each table and report the stage file, table, and invalid row index where applicable. [Issue #149](https://github.com/cyAquarius/just-test/issues/149).
 - **1.2.14** (upcoming) — Request YAML loads per case, so malformed input fails only that invocation. YAML parse errors include the classpath path. [Issue #151](https://github.com/cyAquarius/just-test/issues/151) [Issue #153](https://github.com/cyAquarius/just-test/issues/153).
@@ -738,7 +751,7 @@ The current Maven Central release is `1.2.13`. The rules above match that releas
 - **1.2.10** — MySQL DDL cleanup leaves strings, comments, and backtick identifiers unchanged. An escaped comment quote (`\'` or `''`) is removed with the `COMMENT` clause instead of leaving a fragment that breaks H2. `COLLATE` still strips column `COLLATE name` and table `COLLATE=name`, and no longer deletes identifiers such as `collate_flag`. [Issue #102](https://github.com/cyAquarius/just-test/issues/102).
 - **1.2.10** — double-quoted literal compatibility includes `CONCAT`. `CONCAT("a","b")` is rewritten to `CONCAT('a','b')`. New SQL should still use single quotes. [Issue #107](https://github.com/cyAquarius/just-test/issues/107).
 - **1.2.10** — `DATE_FORMAT` literal text is quoted for H2 `FORMATDATETIME`, so English text such as `Date: %Y` and `Day %d` keeps its letters. `%M` maps to the month name, `%T` maps to `HH:mm:ss`, and `%%` maps to one `%`. An unknown specifier fails fast and the error includes the original format string. Numeric patterns such as `%Y-%m-%d %H:%i:%s` and CJK literals still format as before. [Issue #101](https://github.com/cyAquarius/just-test/issues/101).
-- **1.2.10** — YAML load and assertion edges fail fast instead of passing silently. Duplicate keys are rejected. An `expect_exception.yaml` that exists but is empty or missing `type` is a configuration error and does not swallow exceptions. An `expect.yaml` `[C]` that matches more than one row fails until `[C]` is tightened. `[J]` compares numbers as BigDecimal (`1` equals `1.0`) and reports JSON parse failures instead of falling back to string comparison. A flag-only `[N]:` inside an object skips that key only. [Issue #113](https://github.com/cyAquarius/just-test/issues/113).
+- **1.2.10** — YAML load and assertion edges fail fast instead of passing silently. Duplicate keys are rejected. An `expect_exception.yaml` that exists but is empty or missing `type` is a configuration error and does not swallow exceptions. An `expect.yaml` `[C]` that matches more than one row fails until `[C]` is tightened. `[J]` compares numbers as BigDecimal (`1` equals `1.0`) and reports JSON parse failures instead of falling back to string comparison. The rules for bare flags in nested objects changed in 1.2.14. [Issue #113](https://github.com/cyAquarius/just-test/issues/113).
 - **1.2.10** — unknown or wrong-case YAML flags such as `[cn]` and `[CC]` fail fast instead of falling through to exact matching. The error names the field, the case path, and the flags legal for that stage. [Issue #108](https://github.com/cyAquarius/just-test/issues/108).
 - **1.2.10** — load `.yml` case stage files that discovery already accepts. A directory that only has `.yml` fixtures applies prepare data and assertions. The same stage with both `.yaml` and `.yml` fails fast. [Issue #100](https://github.com/cyAquarius/just-test/issues/100).
 

@@ -18,9 +18,24 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 class DataSetLoaderTest {
 
     @Test
+    void limitsImplicitBooleansAndIntegersToUnambiguousForms() {
+        Map<String, Object> data = DataSetLoader.parseYamlByPath(
+                "com/just/test/internal/loader/implicit-scalars", "request.yaml");
+        assertEquals("10:30", data.get("time"));
+        assertEquals("0123", data.get("code"));
+        assertEquals("no", data.get("NO"));
+        assertEquals("ON", data.get("on"));
+        assertEquals(true, data.get("active"));
+        assertEquals(false, data.get("valid"));
+        assertEquals(-12345, data.get("decimal"));
+        assertEquals("123", data.get("quotedInt"));
+        assertEquals("true", data.get("quotedBoolean"));
+    }
+
+    @Test
     void appliesPrepareOnlyFlagsWithoutTreatingThemAsColumnNames() {
         SingleConnectionDataSource dataSource = new SingleConnectionDataSource(
-                "jdbc:h2:mem:loader_flags;MODE=MySQL;DB_CLOSE_DELAY=-1", "sa", "", true);
+                "jdbc:h2:mem:loader_flags;MODE=MySQL;CASE_INSENSITIVE_IDENTIFIERS=TRUE;DB_CLOSE_DELAY=-1", "sa", "", true);
         try {
             JdbcTemplate jdbcTemplate = new JdbcTemplate(dataSource);
             jdbcTemplate.execute("CREATE TABLE loader_sample("
@@ -116,7 +131,7 @@ class DataSetLoaderTest {
     @Test
     void rejectsUnknownPrepareFlagsBeforeInsert() {
         SingleConnectionDataSource dataSource = new SingleConnectionDataSource(
-                "jdbc:h2:mem:loader_unknown_flags;MODE=MySQL;DB_CLOSE_DELAY=-1", "sa", "", true);
+                "jdbc:h2:mem:loader_unknown_flags;MODE=MySQL;CASE_INSENSITIVE_IDENTIFIERS=TRUE;DB_CLOSE_DELAY=-1", "sa", "", true);
         try {
             JdbcTemplate jdbcTemplate = new JdbcTemplate(dataSource);
             jdbcTemplate.execute("CREATE TABLE loader_sample(id INT, created_at TIMESTAMP)");

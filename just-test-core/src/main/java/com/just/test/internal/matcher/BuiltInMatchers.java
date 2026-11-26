@@ -1,9 +1,11 @@
 package com.just.test.internal.matcher;
 
 import com.alibaba.fastjson2.JSON;
+import com.just.test.internal.verifier.ExactComparison;
 
 import java.math.BigDecimal;
 import java.math.BigInteger;
+import java.sql.Timestamp;
 import java.time.Instant;
 import java.time.LocalDateTime;
 import java.time.OffsetDateTime;
@@ -141,23 +143,42 @@ public final class BuiltInMatchers {
         if (stage == null) {
             throw new IllegalArgumentException("[JustTest] Flag stage is required");
         }
-        walkFlags(node, stage, caseLocation);
+        walkFlags(node, stage, caseLocation, true);
     }
 
-    private static void walkFlags(Object node, FlagStage stage, String caseLocation) {
+    private static void walkFlags(Object node, FlagStage stage, String caseLocation, boolean root) {
         if (node instanceof Map) {
-            for (Map.Entry<?, ?> entry : ((Map<?, ?>) node).entrySet()) {
+            Map<?, ?> map = (Map<?, ?>) node;
+            for (Map.Entry<?, ?> entry : map.entrySet()) {
                 if (entry.getKey() instanceof String) {
-                    requireKnownFlag((String) entry.getKey(), stage, caseLocation);
+                    String key = (String) entry.getKey();
+                    requireKnownFlag(key, stage, caseLocation);
+                    if (stage == FlagStage.RESPONSE) {
+                        requireValidResponseKey(key, root, map.size(), caseLocation);
+                    }
                 }
-                walkFlags(entry.getValue(), stage, caseLocation);
+                walkFlags(entry.getValue(), stage, caseLocation, false);
             }
+        } else if (node instanceof List) {
+            for (Object item : (List<?>) node) {
+                walkFlags(item, stage, caseLocation, false);
+            }
+        }
+    }
+
+    private static void requireValidResponseKey(String key, boolean root, int keyCount, String caseLocation) {
+        String flag = extractFlag(key);
+        if (flag == null || !extractFieldName(key).isEmpty()) {
             return;
         }
-        if (node instanceof List) {
-            for (Object item : (List<?>) node) {
-                walkFlags(item, stage, caseLocation);
-            }
+        if (!root) {
+            throw new IllegalArgumentException("[JustTest] " + caseLocation + ": nested bare flag " + key);
+        }
+        if (FLAG_C.equals(flag)) {
+            throw new IllegalArgumentException("[JustTest] " + caseLocation + ": " + key + " requires a field name");
+        }
+        if (FLAG_N.equals(flag) && keyCount != 1) {
+            throw new IllegalArgumentException("[JustTest] " + caseLocation + ": [N] must be the only key");
         }
     }
 
@@ -352,7 +373,9 @@ public final class BuiltInMatchers {
             if (actualValue == null) {
                 return false;
             }
-            return pattern.matcher(actualValue.toString()).matches();
+            String text = actualValue instanceof Timestamp
+                    ? ExactComparison.normalizeActual(actualValue) : actualValue.toString();
+            return pattern.matcher(text).matches();
         }
 
         @Override
@@ -374,7 +397,7 @@ public final class BuiltInMatchers {
                 return false;
             }
             long actualMillis;
-            if (actualValue instanceof java.sql.Timestamp) {
+            if (actualValue instanceof Timestamp) {
                 actualMillis = ((java.sql.Timestamp) actualValue).getTime();
             } else if (actualValue instanceof java.util.Date) {
                 actualMillis = ((java.util.Date) actualValue).getTime();

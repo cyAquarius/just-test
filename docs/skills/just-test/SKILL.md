@@ -67,7 +67,7 @@ public class JustTestApplication {
 - 项目只声明 `basePackages`、差异过滤器、需要兼容的数据源 / 事务别名，以及是否打开 `autoMockFeignClients`。
 - 不要再叠 `@SpringBootTest` 或 `@BootstrapWith`。`@JustTest` 已包含 Boot TestContext 与 `test` profile。
 - 启动配置不得加载生产 `DataSource` / 事务管理器。
-- 不默认关闭 OkHttp。`autoMockFeignClients` 默认关闭；打开后只按 `@FeignClient` 注解 mock，不按 `*Client` 名字推断。
+- 不默认关闭 OkHttp。`autoMockFeignClients` 默认关闭；打开后只按直接标注的 `@FeignClient` 接口 mock，不按 `*Client` 名字推断，也不 mock 未再标注的子接口。
 - Redis / OSS / SDK / 自定义 Client 必须在 Support 上显式 `@JustMock`（或 `@ThreadScopedMock`）。
 - 显式 `@JustMock` / `@JustSpy` / `@ThreadScopedMock` 优先于自动 Feign mock。
 - JustTest **不会**自动 exclude 第三方 `*AutoConfiguration`。与同类型生产 Bean 冲突时启动期 fail-fast，不要指望静默替换。
@@ -75,7 +75,8 @@ public class JustTestApplication {
 - 从较窄的手写启动类迁到 `@JustTestProject` 时，把原来的 `excludeAutoConfiguration` 与 mock 一并迁过去。
 - 没有 `refresh` scope 时，框架会注册替代实现，`@RefreshScope` / `@Scope("refresh")` 的 Bean 可以直接加载。测试不提供真实 refresh 语义。不要为此再引入 Spring Cloud refresh，也不要自己覆盖框架的 scope 注册。
 - `dataSource` 与 `transactionManager` 在名称空闲时注册为 JustTest 主 Bean 的别名；`dataSourceAliases` / `transactionManagerAliases` 给存量 `@Qualifier` / `@Transactional` 用。空白忽略、重复去重；目标名已被 Bean 或别名占用则跳过，不会覆盖。
-- 声明了 `mapperPackages` 但缺少 mybatis-spring 会 fail-fast；有 mybatis-spring 但未声明时，不会猜测扫描根。
+- 声明了 `mapperPackages` 但缺少 mybatis-spring 会 fail-fast；有 mybatis-spring 但未声明时，不会猜测扫描根。若存在 MyBatis / MyBatis-Plus 自动配置，`mybatis.*` 等属性会生效；应用自己的 `SqlSessionFactory` 优先。
+- `basePackages` 下其他 `@JustTestProject` 启动类与普通 `@SpringBootConfiguration` 一样会被排除。
 - 若出现名为 `client` 的 OkHttp Bean，与 `@Resource private XxxClient client` 冲突，由项目关闭 OkHttp，或改 `@Resource(name=…)` / 字段名。不要指望框架默认关掉 OkHttp。
 
 ## 用例目录与 Java glue
@@ -151,7 +152,7 @@ class CreateJustTest extends OrderJustTestSupport {
 - 框架会命中已有定义（包括 MyBatis `MapperFactoryBean`），不会再生成 `#0` 双 Bean。不要为此再手写一份同类型 Bean。
 - 与某个 `*AutoConfiguration` 的同类型 Bean 共存时，启动期 fail-fast 一次：列出冲突类型、候选 Bean 名和来源。JUnit 中止该类，后续 YAML case 不会反复刷新同一个失败 Context。下一步是补 `excludeAutoConfiguration`，或删掉多余 mock。不要指望框架静默让 mock 压过生产 Bean。
 
-`@JustSpy` 只包裹已有 Bean，未 stub 的方法走真实逻辑（包括 `prepare.yaml` / H2），并且仍然进入缓存 key。Bean 选择规则与 `@JustMock` 相同。
+`@JustSpy` 只包裹已有 Bean，未 stub 的方法走真实逻辑（包括 `prepare.yaml` / H2），并且仍然进入缓存 key。Bean 选择规则与 `@JustMock` 相同。Spring init / destroy（含 `AutoCloseable.close`）不会转发给隐藏的真实单例；不要在 spy / 拦截 mock 上调用 `close()` 来关闭真实 Bean。
 
 - 必须用 `doReturn` / `doThrow` / `doNothing`。`when(spy.foo())` 会先调用真实方法。
 - 找不到 Bean 时启动失败，不会自动创建。同一字段不能同时标 `@JustMock` 和 `@JustSpy`。同一类型或解析到同一个 Bean 时，也不能再被 `@JustMock` / `@ThreadScopedMock` 替换，启动期 fail-fast 一次。
@@ -165,8 +166,9 @@ class CreateJustTest extends OrderJustTestSupport {
 
 ## H2 与 SQL
 
-- 必须提供 `src/test/resources/sql/schema.sql`。对 MySQL dump，清理器只剥离常见附加语法（如 `ROW_FORMAT`、`UNSIGNED`、`ON UPDATE CURRENT_TIMESTAMP` 等），不覆盖全部 MySQL 方言。字符串、注释和反引号标识符里的文本保持原样。不要假定任意生产 DDL 都能原样跑在 H2 上。
-- MyBatis 测试 SQL 只做窄改写：`IF(...)` → `CASEWHEN(...)`，`DATE_FORMAT(...)` → `FORMATDATETIME(...)`。纯 `JdbcTemplate` SQL 不走这条路径，不会被改写。
+- 必须提供 `src/test/resources/sql/schema.sql`。对 MySQL dump，框架先按 MySQL 的引号和转义规则切分原始脚本（含 `#` 行注释），再逐条清理常见附加语法（如 `ROW_FORMAT`、`UNSIGNED`、`ON UPDATE CURRENT_TIMESTAMP` 等）。不覆盖全部 MySQL 方言。不要假定任意生产 DDL 都能原样跑在 H2 上。
+- 每个 case 的 `REQUIRES_NEW` 使用独立连接，提交和回滚与外层事务互不影响。
+- MyBatis 测试 SQL 只做窄改写：`IF(...)` → `CASEWHEN(...)`，`DATE_FORMAT(...)` → `FORMATDATETIME(...)`。格式参数必须是字符串字面量，`%M` 固定为英文月份名。纯 `JdbcTemplate` SQL 不走这条路径，不会被改写。
 - 新 SQL 使用标准单引号。双引号字符串只是兼容历史 Mapper 的过渡能力。
 - 默认会缓存清理后的 DDL，并从模板库克隆 schema。不要给 case H2 URL 加 `DB_CLOSE_DELAY=-1` 来掩盖连接已关闭。
 - 框架拥有 H2 时，`JdbcTemplate` 或路由数据源缺失是配置错误，会 fail-fast，不会跳过 prepare / verify。
@@ -194,10 +196,12 @@ class CreateJustTest extends OrderJustTestSupport {
 | `[J]` | JSON 结构比较 |
 | `[F]` | 仅 `prepare.yaml`：原始库函数，如 `NOW()` |
 
-- `[C]` 一旦用在 List 上，每个预期元素都必须是对象，且至少有一个 `[C]` 字段。库表断言优先写明确的 `[C]`。`[C]` 命中多行时失败，收紧到唯一一行。
+- 未加引号的 `true` / `false`（忽略大小写）是布尔值；只有普通十进制整数字面量会变成整数。`0123`、`10:30`、`NO` 保持字符串，需要原样时请加引号。
+- `prepare.yaml` / `expect.yaml` 的表名和列名只用字母、数字和下划线。框架会在生成的 SQL 里加引号，因此 `order`、`value` 这类关键字也可以用。
+- `response.yaml` 根上单独的 `[A]`、`[R]`、`[D]` / `[D60]`、`[J]` 对整个结果断言。根上单独的 `[N]` 跳过整个结果，且必须是唯一的根键。嵌套对象里 Flag 必须写在字段名后缀上；单独的 `[N]:` 之类是配置错误。
+- `[C]` 一旦用在 List 上，每个预期元素都必须是对象，且至少有一个 `[C]` 字段。库表断言优先写明确的 `[C]`。`[C]` 和无 `[C]` 的兜底定位都必须只命中一行；兜底会把 null 字段写成 `IS NULL`。缺列即使期望为 null 也会失败。
 - `[J]` 比较 JSON 结构。数值按 BigDecimal 比较，`1` 与 `1.0` 相等。解析失败会报错，不会退回字符串比较。
-- 对象里单独的 `[N]:` 只跳过这个键，不会按键序跳过后面的字段。
-- YAML 重复 key 在解析时失败。`expect_exception.yaml` 存在但为空或没有 `type` 是配置错误，不会吞掉任意异常。
+- YAML 重复 key 在解析时失败。`expect_exception.yaml` 存在但为空、没有 `type`，或出现 `type` / `message` 以外的键，都是配置错误，不会吞掉任意异常。
 - Flag 区分大小写。未知、拼错或用错阶段（如 `[cn]`、`[CC]`）会立即失败，错误里有字段名、case 路径和该阶段合法 Flag。
 - 不要在 `@JustTest` 类或 `@CaseSource` 方法上使用 Spring `@Transactional` / `@Sql`。用 `prepare.yaml` / `expect.yaml`。
 - 业务代码仍必须在所有路径 commit / rollback。case 边界若检测到未结束的 Spring 事务，即使匹配 `expect_exception.yaml` 也会失败；框架隔离不是业务 rollback 的替代品。

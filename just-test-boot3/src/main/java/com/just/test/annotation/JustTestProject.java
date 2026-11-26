@@ -1,10 +1,12 @@
 package com.just.test.annotation;
 
 import com.just.test.internal.project.JustTestProjectRegistrar;
+import com.just.test.internal.project.JustTestProjectTypeExcludeFilter;
 import org.springframework.boot.SpringBootConfiguration;
 import org.springframework.boot.autoconfigure.EnableAutoConfiguration;
 import org.springframework.context.annotation.ComponentScan;
 import org.springframework.context.annotation.Import;
+import org.springframework.context.annotation.FilterType;
 import org.springframework.core.annotation.AliasFor;
 
 import java.lang.annotation.Documented;
@@ -42,25 +44,27 @@ import java.lang.annotation.Target;
 @Documented
 @SpringBootConfiguration
 @EnableAutoConfiguration
+@ComponentScan(excludeFilters = @ComponentScan.Filter(
+        type = FilterType.CUSTOM, classes = JustTestProjectTypeExcludeFilter.class))
 @Import(JustTestProjectRegistrar.class)
 public @interface JustTestProject {
 
     /**
      * {@link #basePackages} 的别名。
      */
-    @AliasFor("basePackages")
+    @AliasFor(annotation = ComponentScan.class, attribute = "basePackages")
     String[] value() default {};
 
     /**
      * 要扫描的业务根包。必须显式声明，框架不会猜测。
      */
-    @AliasFor("value")
+    @AliasFor(annotation = ComponentScan.class, attribute = "basePackages")
     String[] basePackages() default {};
 
     /**
      * MyBatis Mapper 扫描包。非空且 classpath 存在 mybatis-spring 时，
-     * 自动注册 MapperScan 以及绑定 JustTest DataSource 的
-     * {@code SqlSessionFactory} / {@code SqlSessionTemplate}。
+     * 自动注册 MapperScan。已有工厂和 MyBatis 自动配置优先，
+     * 无自动配置时补注册绑定 JustTest DataSource 的工厂和模板。
      * 未声明时不会猜测扫描根；声明了但缺少 mybatis-spring 时 fail-fast。
      */
     String[] mapperPackages() default {};
@@ -91,9 +95,15 @@ public @interface JustTestProject {
      */
     ComponentScan.Filter[] excludeFilters() default {};
 
+    /** 框架内部使用。显式映射避免 Spring 5 按同名属性覆盖默认排除。 */
+    @AliasFor(annotation = ComponentScan.class, attribute = "excludeFilters")
+    ComponentScan.Filter[] frameworkScanExclusions() default @ComponentScan.Filter(
+            type = FilterType.CUSTOM, classes = JustTestProjectTypeExcludeFilter.class);
+
     /**
      * 额外的组件扫描包含过滤器，叠加在默认 {@code @Component} 匹配之上。
      */
+    @AliasFor(annotation = ComponentScan.class, attribute = "includeFilters")
     ComponentScan.Filter[] includeFilters() default {};
 
     /**

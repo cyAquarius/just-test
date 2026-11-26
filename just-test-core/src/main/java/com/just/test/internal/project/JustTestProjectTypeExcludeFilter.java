@@ -1,5 +1,16 @@
 package com.just.test.internal.project;
 
+import org.springframework.beans.factory.BeanClassLoaderAware;
+import org.springframework.beans.factory.BeanFactory;
+import org.springframework.beans.factory.BeanFactoryAware;
+import org.springframework.beans.factory.annotation.AnnotatedBeanDefinition;
+import org.springframework.beans.factory.support.BeanDefinitionRegistry;
+import org.springframework.context.ConfigurableApplicationContext;
+import org.springframework.context.EnvironmentAware;
+import org.springframework.context.ResourceLoaderAware;
+import org.springframework.core.annotation.AnnotationAttributes;
+import org.springframework.core.env.Environment;
+import org.springframework.core.io.ResourceLoader;
 import org.springframework.core.type.AnnotationMetadata;
 import org.springframework.core.type.classreading.MetadataReader;
 import org.springframework.core.type.classreading.MetadataReaderFactory;
@@ -22,7 +33,8 @@ import java.util.Set;
  *
  * <p>不对消费方提供兼容承诺。按注解名 / 可选类型探测，不引入硬依赖。</p>
  */
-public class JustTestProjectTypeExcludeFilter implements TypeFilter {
+public class JustTestProjectTypeExcludeFilter implements TypeFilter, BeanClassLoaderAware, BeanFactoryAware,
+        EnvironmentAware, ResourceLoaderAware {
 
     static final String JUST_TEST_PROJECT = JustTestProjectRegistrar.ANNOTATION_NAME;
     static final String SPRING_BOOT_CONFIGURATION = "org.springframework.boot.SpringBootConfiguration";
@@ -46,9 +58,55 @@ public class JustTestProjectTypeExcludeFilter implements TypeFilter {
             "org.springframework.scheduling.quartz.QuartzJobBean"
     };
 
-    private final String importingClassName;
-    private final Set<String> excludeClassNames;
-    private final List<TypeFilter> stereotypeFilters;
+    private String importingClassName;
+    private Set<String> excludeClassNames = Collections.emptySet();
+    private List<TypeFilter> stereotypeFilters = Collections.emptyList();
+    private List<TypeFilter> userFilters = Collections.emptyList();
+    private AnnotationAttributes projectAttributes;
+    private BeanDefinitionRegistry registry;
+    private Environment environment;
+
+    public JustTestProjectTypeExcludeFilter() {
+    }
+
+    @Override
+    public void setBeanClassLoader(ClassLoader classLoader) {
+        stereotypeFilters = createStereotypeFilters(classLoader);
+    }
+
+    @Override
+    public void setBeanFactory(BeanFactory beanFactory) {
+        if (!(beanFactory instanceof BeanDefinitionRegistry)) {
+            return;
+        }
+        registry = (BeanDefinitionRegistry) beanFactory;
+        for (String name : registry.getBeanDefinitionNames()) {
+            if (registry.getBeanDefinition(name) instanceof AnnotatedBeanDefinition) {
+                AnnotationMetadata metadata = ((AnnotatedBeanDefinition) registry.getBeanDefinition(name)).getMetadata();
+                if (metadata.isAnnotated(JUST_TEST_PROJECT)) {
+                    importingClassName = metadata.getClassName();
+                    projectAttributes = JustTestProjectRegistrar.resolveAttributes(metadata);
+                    excludeClassNames = classNames(projectAttributes.getClassArray("excludeClasses"));
+                    break;
+                }
+            }
+        }
+    }
+
+    @Override
+    public void setEnvironment(Environment environment) {
+        this.environment = environment;
+    }
+
+    @Override
+    public void setResourceLoader(ResourceLoader resourceLoader) {
+        if (registry == null && resourceLoader instanceof ConfigurableApplicationContext) {
+            setBeanFactory(((ConfigurableApplicationContext) resourceLoader).getBeanFactory());
+        }
+        if (projectAttributes != null) {
+            userFilters = JustTestProjectScanFilters.excludes(projectAttributes, environment, resourceLoader, registry);
+        }
+    }
 
     public JustTestProjectTypeExcludeFilter(String importingClassName,
                                              Class<?>[] excludeClasses,
@@ -70,6 +128,11 @@ public class JustTestProjectTypeExcludeFilter implements TypeFilter {
             return true;
         }
         for (TypeFilter filter : stereotypeFilters) {
+            if (filter.match(metadataReader, metadataReaderFactory)) {
+                return true;
+            }
+        }
+        for (TypeFilter filter : userFilters) {
             if (filter.match(metadataReader, metadataReaderFactory)) {
                 return true;
             }
@@ -115,7 +178,7 @@ public class JustTestProjectTypeExcludeFilter implements TypeFilter {
                 && !metadata.isAnnotated(SPRING_BOOT_APPLICATION)) {
             return false;
         }
-        if (className.equals(importingClassName) || metadata.isAnnotated(JUST_TEST_PROJECT)) {
+        if (className.equals(importingClassName)) {
             return false;
         }
         return true;

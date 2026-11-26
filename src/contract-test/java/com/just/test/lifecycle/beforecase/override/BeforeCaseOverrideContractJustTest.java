@@ -30,8 +30,18 @@ class BeforeCaseOverrideContractJustTest extends BeforeCaseOverrideParent {
         order.add("child-body");
     }
 
+    @Override
+    @BeforeCase("different")
+    void renamedSetup() {
+        order.add("different-case");
+    }
+
     @CaseSource
     void invokesOverriddenBeforeCaseOnce(CaseContext context) {
+        if ("different".equals(context.getCaseName())) {
+            assertEquals(Arrays.asList("different-case", "beforeExecute"), order);
+            return;
+        }
         assertEquals("matching", context.getCaseName());
         // 父类未覆写的方法仍先执行。覆写留在子类的方法名位置，并且只进入一次。
         assertEquals(Arrays.asList(
@@ -59,6 +69,11 @@ abstract class BeforeCaseOverrideParent implements JustTestLifecycle {
     @BeforeCase("matching")
     void overriddenSetup() {
         order.add("parent-body");
+    }
+
+    @BeforeCase("matching")
+    void renamedSetup() {
+        order.add("old-case");
     }
 
     @Override

@@ -44,6 +44,7 @@ class JustTestProjectTypeExcludeFilterTest {
     void excludesProductionBootstrapExceptJustTestProject() throws IOException {
         assertTrue(matches(DemoProductionApplication.class));
         assertFalse(matches(JustTestApplication.class));
+        assertTrue(matches(com.just.test.demo.project.fixtures.scan.nested.OtherProjectApplication.class));
     }
 
     @Test

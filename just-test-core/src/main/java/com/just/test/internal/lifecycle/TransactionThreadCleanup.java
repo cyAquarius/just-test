@@ -6,7 +6,6 @@ import org.springframework.context.ApplicationContext;
 import org.springframework.jdbc.datasource.ConnectionHolder;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
 
-import javax.sql.DataSource;
 import java.lang.reflect.Method;
 import java.sql.Connection;
 import java.util.LinkedHashMap;
@@ -15,7 +14,6 @@ import java.util.Map;
 final class TransactionThreadCleanup {
 
     private static final Logger log = LoggerFactory.getLogger(TransactionThreadCleanup.class);
-    private static final String SQL_SESSION_FACTORY_CLASS = "org.apache.ibatis.session.SqlSessionFactory";
     private static final String SQL_SESSION_HOLDER_CLASS = "org.mybatis.spring.SqlSessionHolder";
     private static final String SQL_SESSION_CLASS = "org.apache.ibatis.session.SqlSession";
 
@@ -25,9 +23,8 @@ final class TransactionThreadCleanup {
             return failure;
         }
 
-        TransactionThreadSnapshot beforeCleanup = snapshot();
-        failure = clearKnownResources(context, failure);
-        Map<Object, Object> remainingResources = snapshotResources();
+        Map<Object, Object> remainingResources = new LinkedHashMap<>(TransactionSynchronizationManager.getResourceMap());
+        TransactionThreadSnapshot beforeCleanup = snapshot(remainingResources);
         if (!beforeCleanup.isActualTransactionActive()
                 && !beforeCleanup.isSynchronizationActive()
                 && remainingResources.isEmpty()) {
@@ -40,9 +37,8 @@ final class TransactionThreadCleanup {
         return quarantine(context, remainingResources, failure);
     }
 
-    private TransactionThreadSnapshot snapshot() {
+    private TransactionThreadSnapshot snapshot(Map<Object, Object> resources) {
         boolean synchronizationActive = TransactionSynchronizationManager.isSynchronizationActive();
-        Map<Object, Object> resources = snapshotResources();
         return new TransactionThreadSnapshot(
                 TransactionSynchronizationManager.isActualTransactionActive(),
                 synchronizationActive,
@@ -59,62 +55,6 @@ final class TransactionThreadCleanup {
         } catch (Throwable ignored) {
             return null;
         }
-    }
-
-    private Map<Object, Object> snapshotResources() {
-        return new LinkedHashMap<>(TransactionSynchronizationManager.getResourceMap());
-    }
-
-    private Throwable clearKnownResources(ApplicationContext context, Throwable failure) {
-        failure = clearMyBatisResources(context, failure);
-        return clearConnectionResources(context, failure);
-    }
-
-    private Throwable clearMyBatisResources(ApplicationContext context, Throwable failure) {
-        Class<?> sqlSessionFactoryType = loadOptionalClass(SQL_SESSION_FACTORY_CLASS, context);
-        if (sqlSessionFactoryType == null) {
-            return failure;
-        }
-
-        Map<String, ?> factories;
-        try {
-            factories = context.getBeansOfType(sqlSessionFactoryType);
-        } catch (Throwable cleanupFailure) {
-            return appendCleanupFailure(failure, "MyBatis SqlSessionFactory resources", cleanupFailure);
-        }
-
-        for (Map.Entry<String, ?> entry : factories.entrySet()) {
-            try {
-                Object resource = TransactionSynchronizationManager
-                        .unbindResourceIfPossible(entry.getValue());
-                closeSqlSessionResource(resource, context);
-            } catch (Throwable cleanupFailure) {
-                failure = appendCleanupFailure(
-                        failure, "MyBatis resource for bean '" + entry.getKey() + "'", cleanupFailure);
-            }
-        }
-        return failure;
-    }
-
-    private Throwable clearConnectionResources(ApplicationContext context, Throwable failure) {
-        Map<String, DataSource> dataSources;
-        try {
-            dataSources = context.getBeansOfType(DataSource.class);
-        } catch (Throwable cleanupFailure) {
-            return appendCleanupFailure(failure, "JDBC ConnectionHolder resources", cleanupFailure);
-        }
-
-        for (Map.Entry<String, DataSource> entry : dataSources.entrySet()) {
-            try {
-                Object resource = TransactionSynchronizationManager
-                        .unbindResourceIfPossible(entry.getValue());
-                closeConnectionResource(resource);
-            } catch (Throwable cleanupFailure) {
-                failure = appendCleanupFailure(
-                        failure, "JDBC resource for bean '" + entry.getKey() + "'", cleanupFailure);
-            }
-        }
-        return failure;
     }
 
     private Throwable quarantine(ApplicationContext context, Map<Object, Object> remainingResources,

@@ -48,6 +48,15 @@ write_checksums() {
   sha512sum "$file" | awk '{print $1}' > "${file}.sha512"
 }
 
+require_archive_entry() {
+  local archive="$1"
+  local entry="$2"
+  if [[ "$(unzip -Z1 "${archive}" "${entry}")" != "${entry}" ]]; then
+    echo "Staged archive ${archive} is missing ${entry}" >&2
+    exit 1
+  fi
+}
+
 http_code() {
   local url="$1"
   local code
@@ -135,6 +144,11 @@ upload_and_wait() {
   exit 1
 }
 
+smoke_repo="$(mktemp -d "${RUNNER_TEMP:-${TMPDIR:-/tmp}}/just-test-central.XXXXXX")"
+trap 'rm -rf "${smoke_repo}"' EXIT
+bundles=()
+deployment_names=()
+
 for module in just-test-boot2 just-test-boot3; do
   version="$(mvn --quiet -pl "${module}" help:evaluate -Dexpression=project.version -DforceStdout)"
   if [[ ! "${version}" =~ ^[0-9A-Za-z][0-9A-Za-z._+-]*$ ]]; then
@@ -193,6 +207,26 @@ for module in just-test-boot2 just-test-boot3; do
   cp "${target}/${base}-sources.jar.asc" "${stage_dir}/"
   cp "${target}/${base}-javadoc.jar.asc" "${stage_dir}/"
 
+  staged_pom="${root}/${stage_dir}/${base}.pom"
+  staged_jar="${root}/${stage_dir}/${base}.jar"
+  if grep -Eq '<parent[[:space:]>]|just-test-core' "${staged_pom}"; then
+    echo "Staged POM retains a parent or core dependency: ${staged_pom}" >&2
+    exit 1
+  fi
+  require_archive_entry "${staged_jar}" com/just/test/context/CaseContext.class
+  require_archive_entry "${stage_dir}/${base}-sources.jar" com/just/test/context/CaseContext.java
+  require_archive_entry "${stage_dir}/${base}-javadoc.jar" com/just/test/context/CaseContext.html
+  "${mvn_cmd[@]}" -f "${staged_pom}" -Dmaven.repo.local="${smoke_repo}" \
+    org.apache.maven.plugins:maven-install-plugin:3.1.4:install-file \
+    -Dfile="${staged_jar}" -DpomFile="${staged_pom}"
+  case "${module}" in
+    just-test-boot2) smoke_jdk="${JAVA_HOME_8_X64:?JDK 8 is required}";;
+    just-test-boot3) smoke_jdk="${JAVA_HOME_17_X64:?JDK 17 is required}";;
+  esac
+  JAVA_HOME="${smoke_jdk}" PATH="${smoke_jdk}/bin:${PATH}" \
+    "${mvn_cmd[@]}" -f "smoke-tests/${module#just-test-}/pom.xml" \
+    -Dmaven.repo.local="${smoke_repo}" -Djust-test.version="${version}" clean test
+
   for f in \
       "${stage_dir}/${base}.pom" \
       "${stage_dir}/${base}.jar" \
@@ -219,5 +253,10 @@ for module in just-test-boot2 just-test-boot3; do
     exit 1
   fi
 
-  upload_and_wait "${zip_path}" "${module}-${version}"
+  bundles+=("${zip_path}")
+  deployment_names+=("${module}-${version}")
+done
+
+for index in "${!bundles[@]}"; do
+  upload_and_wait "${bundles[index]}" "${deployment_names[index]}"
 done
